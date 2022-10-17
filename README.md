@@ -17,11 +17,11 @@ Most of the features proposed by the big networking libs are supported by defaul
 * *Encryption. [...] The details for shared key derivation and per-packet IV are based on the design used by Google's QUIC protocol*: -> by default
 * *Tools for simulating packet latency/loss, and detailed stats measurement*: -> Not by default
 * *Head-of-line blocking control and bandwidth sharing of multiple message streams on the same connection.*: -> by default
-* *IPv6 support*: => by default
-* *Peer-to-peer networking (NAT traversal with ICE + signaling + symmetric connect mode)*: => Not by default
-* *Cross platform*: => by default, where UDP is available
+* *IPv6 support*: -> by default
+* *Peer-to-peer networking (NAT traversal with ICE + signaling + symmetric connect mode)*: -> Not by default
+* *Cross platform*: -> by default, where UDP is available
 
-=> Roughly 9 points out of 11 by default.
+-> Roughly 9 points out of 11 by default.
 
 (*) Kinda, when sharing a QUIC stream, reliable messages need to be framed.
 
@@ -40,7 +40,8 @@ It currently features:
     - Receive reliable (ordered or unordered) messages from any client
 - Both client & server accept custom protocol structs/enums defined by the user as the message format.
 
-Although Quinn and parts of Quinnet are asynchronous, the APIs exposed by Quinnet for the client and server are synchronous. The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channelshttps://tokio.rs/tokio/tutorial/channels) to communicate with the networking async tasks. This makes the surface API easy to work with and adapted to a Bevy usage.
+Although Quinn and parts of Quinnet are asynchronous, the APIs exposed by Quinnet for the client and server are synchronous. This makes the surface API easy to work with and adapted to a Bevy usage.
+The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channelshttps://tokio.rs/tokio/tutorial/channels) to communicate with the networking async tasks.
 
 ##  Currently missing features
 
@@ -63,10 +64,6 @@ TODO
 TODO
 
 For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatbook.github.io/features/log.html).
-
-## Examples
-
-TODO
 
 ## Compatible Bevy versions
 
