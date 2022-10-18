@@ -50,7 +50,7 @@ Those are the features that will probably come next (in no particular order):
 - [ ] Security: Expose Quinn support of self-signed certificates for the server
 - [ ] Security: Expose Quinn support of CA certificates for the server
 - [ ] Feature: Send messages from the server to a specific client
-- [ ] Feature: Broadcast from the server to a subgroup of clients
+- [ ] Feature: Send messages from the server to a selected group of clients
 - [ ] Feature: Send reliable unordered messages from the server
 - [ ] Performance: Messages aggregation before sending
 - [ ] Clean: Rework the error handling
