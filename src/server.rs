@@ -2,14 +2,14 @@ use std::{
     collections::{HashMap},
     error::Error,
     net::SocketAddr,
-    sync::{Arc, Mutex},
+    sync::{Arc},
     time::Duration,
 };
 
 use bevy::prelude::*;
 use bytes::Bytes;
 use futures::{
-    sink::SinkExt,
+    sink::SinkExt, 
 };
 use futures_util::StreamExt;
 use quinn::{Endpoint, NewConnection, ServerConfig};
@@ -17,7 +17,7 @@ use serde::Deserialize;
 use tokio::{
     runtime::Runtime,
     sync::{
-        broadcast::{self, error::SendError},
+        broadcast::{self},
         mpsc::{
             self,
             error::{TryRecvError},
@@ -28,6 +28,13 @@ use tokio::{
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::{ClientId, QuinnetError, DEFAULT_KEEP_ALIVE_INTERVAL_S, DEFAULT_MESSAGE_QUEUE_SIZE, DEFAULT_KILL_MESSAGE_QUEUE_SIZE};
+
+pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
+
+#[derive(Debug)]
+pub(crate) enum InternalAsyncMessage {
+    ClientConnected(ClientConnection),
+}
 
 #[derive(Deserialize)]
 pub struct ServerConfigurationData {
@@ -42,25 +49,29 @@ pub struct ClientPayload {
     msg: Bytes,
 }
 
+#[derive(Debug)]
+pub(crate) struct ClientConnection {
+    client_id: ClientId, 
+    sender: mpsc::Sender<Bytes>,
+    close_sender: broadcast::Sender<()>,
+}
+
 pub struct Server {
-    broadcast_sender: broadcast::Sender<Bytes>,
+    clients: HashMap<ClientId, ClientConnection>,
     receiver: mpsc::Receiver<ClientPayload>,
-    close_senders: Arc<Mutex<HashMap<ClientId, broadcast::Sender<()>>>>,
+
+    pub(crate) internal_receiver: mpsc::Receiver<InternalAsyncMessage>,
 }
 
 impl Server {
     pub fn disconnect_client(&mut self, client_id: ClientId) {
-        match self.close_senders.lock() {
-            Ok(senders) => {
-                match senders.get(&client_id) {
-                    Some(close_sender) =>
-                        if let Err(_) =  close_sender.send(()) {
-                            error!("Failed to close client streams & resources while disconnecting client {}", client_id)
-                        }                 ,
-                    None =>  warn!("Tried to disconnect unknown client {}", client_id),
-                }
+        match self.clients.remove(&client_id) {
+            Some(client_connection) => {
+                if let Err(_) =  client_connection.close_sender.send(()) {
+                    error!("Failed to close client streams & resources while disconnecting client {}", client_id)
+                }           
             },
-            Err(_) => error!("Failed to acquire lock while disconnecting client {}", client_id),
+            None => error!("Failed to disconnect client {}, client not found", client_id),
         }
     }
 
@@ -76,22 +87,55 @@ impl Server {
         }
     }
 
+    pub fn send_message<T: serde::Serialize>(
+        &mut self,
+        client_id: ClientId,
+        message: T,
+    ) -> Result<(), QuinnetError> {
+        match bincode::serialize(&message) {
+            Ok(payload) => Ok(self.send_payload(client_id, payload)),
+            Err(_) => Err(QuinnetError::Serialization),
+        }
+    }
+
+    pub fn send_group_message<T: serde::Serialize>(
+        &mut self,
+        client_ids: Vec<ClientId>,
+        message: T,
+    ) -> Result<(), QuinnetError> {
+        match bincode::serialize(&message) {
+            Ok(payload) => {
+                // TODO Fix: Error handling
+                for id in client_ids {
+                    self.send_payload(id, payload.clone());
+                }
+                Ok(())
+            },
+            Err(_) => Err(QuinnetError::Serialization),
+        }
+    }
+
     pub fn broadcast_message<T: serde::Serialize>(
         &mut self,
         message: T,
     ) -> Result<(), QuinnetError> {
         match bincode::serialize(&message) {
-            Ok(payload) => self.broadcast_payload(payload),
+            Ok(payload) => Ok(self.broadcast_payload(payload)),
             Err(_) => Err(QuinnetError::Serialization),
         }
     }
 
-    pub fn broadcast_payload<T: Into<Bytes>>(&mut self, payload: T) -> Result<(), QuinnetError> {
-        match self.broadcast_sender.send(payload.into()) {
-            Ok(_) => Ok(()),
-            Err(err) => match err {
-                SendError(_) => Err(QuinnetError::ChannelClosed),
-            }
+    pub fn broadcast_payload<T: Into<Bytes> + Clone>(&mut self, payload: T) {
+        // TODO Fix: Error handling
+        for (_, client_connection) in self.clients.iter() {
+            client_connection.sender.try_send(payload.clone().into()).unwrap();
+        }
+    }
+
+    pub fn send_payload<T: Into<Bytes>>(&mut self, client_id: ClientId, payload: T) {
+        // TODO Fix: Error handling
+        if let Some(client) = self.clients.get(&client_id) {
+            client.sender.try_send(payload.into()).unwrap();
         }
     }
 
@@ -104,26 +148,6 @@ impl Server {
                 TryRecvError::Disconnected => Err(QuinnetError::ChannelClosed),
             },
         }
-    }
-}
-
-pub struct QuinnetServerPlugin {}
-
-impl Default for QuinnetServerPlugin {
-    fn default() -> Self {
-        Self {}
-    }
-}
-
-impl Plugin for QuinnetServerPlugin {
-    fn build(&self, app: &mut App) {
-        app.insert_resource(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap(),
-        )
-        .add_startup_system_to_stage(StartupStage::PreStartup, start_server);
     }
 }
 
@@ -163,14 +187,14 @@ fn start_server(
     // TODO Clean: Configure size
     let (from_clients_sender, from_clients_receiver) =
         mpsc::channel::<ClientPayload>(DEFAULT_MESSAGE_QUEUE_SIZE);
-    let (broadcast_channel_sender, _) =
-        broadcast::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
 
-    let close_senders = Arc::new(Mutex::new(HashMap::new()));
+    let (to_sync_server, from_async_server) =
+        mpsc::channel::<InternalAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+
     commands.insert_resource(Server {
-        broadcast_sender: broadcast_channel_sender.clone(),
+        clients: HashMap::new(),
         receiver: from_clients_receiver,
-        close_senders: close_senders.clone()
+        internal_receiver: from_async_server
     });
 
     // Create server task
@@ -199,31 +223,34 @@ fn start_server(
                 client_id,
                 connection.stable_id()
             );
-   
+
             // Create a close channel for this client
             let (close_sender, mut close_receiver): (
                 tokio::sync::broadcast::Sender<()>,
                 tokio::sync::broadcast::Receiver<()>,
             ) = broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
-            // Create the broadcast stream
+            // Create an ordered reliable send channel for this client
+            let (to_client_sender, mut to_client_receiver) =
+            mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
+
+            // Create a reliable ordered send stream
             let send_stream = connection
                 .open_uni()
                 .await
-                .expect( format!("Failed to open broadcast send stream for client: {}", client_id).as_str());
-            let mut framed_send_stream = FramedWrite::new(send_stream, LengthDelimitedCodec::new());
-            let mut broadcast_channel_receiver = broadcast_channel_sender.subscribe();
+                .expect( format!("Failed to open unidirectional send stream for client: {}", client_id).as_str());
+            let mut framed_send_stream = FramedWrite::new(send_stream, LengthDelimitedCodec::new());            
             let _network_broadcaster = tokio::spawn(async move {
                 tokio::select! {
                     _ = close_receiver.recv() => {
-                        trace!("Broadcaster forced to disconnected for client: {}", client_id)
+                        trace!("Unidirectional send stream forced to disconnected for client: {}", client_id)
                     }
                     _ = async {
-                        while let Ok(msg_bytes) = broadcast_channel_receiver.recv().await {
+                        while let Some(msg_bytes) = to_client_receiver.recv().await {
                                 // TODO Perf: Batch frames for a send_all
                                 // TODO Clean: Error handling
                             if let Err(err) = framed_send_stream.send(msg_bytes.clone()).await {
-                                error!("Error while broadcasting to client {}: {}", client_id, err);
+                                error!("Error while sending to client {}: {}", client_id, err);
                             };
                         }
                     } => {}
@@ -267,10 +294,43 @@ fn start_server(
                 trace!("All unidirectional stream receivers cleaned for client: {}", client_id)
             });
 
-            {
-                let mut close_senders = close_senders.lock().unwrap();
-                close_senders.insert(client_id, close_sender);
-            }
+            to_sync_server
+            .send(InternalAsyncMessage::ClientConnected(ClientConnection { client_id: client_id, sender: to_client_sender, close_sender: close_sender }))
+            .await
+            .expect("Failed to signal connection to sync client");
         }
     });
+}
+
+// Receive messages from the async server tasks and update the sync server.
+fn update_sync_server(mut server: ResMut<Server>) {
+    while let Ok(message) = server.internal_receiver.try_recv() {
+        match message {
+            // TODO Clean: Raise a connected event
+            InternalAsyncMessage::ClientConnected(connection) => {
+                server.clients.insert(connection.client_id, connection);
+            }
+        }
+    }
+}
+
+pub struct QuinnetServerPlugin {}
+
+impl Default for QuinnetServerPlugin {
+    fn default() -> Self {
+        Self {}
+    }
+}
+
+impl Plugin for QuinnetServerPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap(),
+        )
+        .add_startup_system_to_stage(StartupStage::PreStartup, start_server)
+        .add_system(update_sync_server);
+    }
 }
