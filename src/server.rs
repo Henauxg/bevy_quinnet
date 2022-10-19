@@ -98,16 +98,16 @@ impl Server {
         }
     }
 
-    pub fn send_group_message<T: serde::Serialize>(
+    pub fn send_group_message<'a, I: Iterator<Item=&'a ClientId>, T: serde::Serialize>(
         &mut self,
-        client_ids: Vec<ClientId>,
+        client_ids: I,
         message: T,
     ) -> Result<(), QuinnetError> {
         match bincode::serialize(&message) {
             Ok(payload) => {
                 // TODO Fix: Error handling
                 for id in client_ids {
-                    self.send_payload(id, payload.clone());
+                    self.send_payload(*id, payload.clone());
                 }
                 Ok(())
             },
