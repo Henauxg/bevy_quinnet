@@ -36,7 +36,7 @@ It currently features:
     - Receive reliable (ordered or unordered) messages from the server
 - A Server plugin which can:
     - Accept client connections
-    - Brodcast reliable ordered messages to the clients
+    - Send reliable ordered messages to the clients
     - Receive reliable (ordered or unordered) messages from any client
 - Both client & server accept custom protocol structs/enums defined by the user as the message format.
 
