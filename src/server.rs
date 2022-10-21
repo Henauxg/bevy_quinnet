@@ -36,6 +36,11 @@ pub(crate) enum InternalAsyncMessage {
     ClientConnected(ClientConnection),
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum InternalSyncMessage {
+    ClientConnectedAck(ClientId),
+}
+
 #[derive(Deserialize)]
 pub struct ServerConfigurationData {
     host: String,
@@ -61,6 +66,7 @@ pub struct Server {
     receiver: mpsc::Receiver<ClientPayload>,
 
     pub(crate) internal_receiver: mpsc::Receiver<InternalAsyncMessage>,
+    pub(crate) internal_sender: broadcast::Sender<InternalSyncMessage>,
 }
 
 impl Server {
@@ -136,6 +142,8 @@ impl Server {
         // TODO Fix: Error handling
         if let Some(client) = self.clients.get(&client_id) {
             client.sender.try_send(payload.into()).unwrap();
+        } else {
+            warn!("Failed to send payload to unknown client {}", client_id)
         }
     }
 
@@ -190,12 +198,16 @@ fn start_server(
 
     let (to_sync_server, from_async_server) =
         mpsc::channel::<InternalAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+    let (to_async_server, _) =
+        broadcast::channel::<InternalSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
 
     commands.insert_resource(Server {
         clients: HashMap::new(),
         receiver: from_clients_receiver,
-        internal_receiver: from_async_server
+        internal_receiver: from_async_server,
+        internal_sender: to_async_server.clone()
     });
+
 
     // Create server task
     runtime.spawn(async move {
@@ -257,6 +269,25 @@ fn start_server(
                 }
             });
 
+            let mut sync_msg_receiver = to_async_server.subscribe();
+            to_sync_server.send(
+                InternalAsyncMessage::ClientConnected(ClientConnection {
+                    client_id: client_id,
+                    sender: to_client_sender,
+                    close_sender: close_sender.clone()
+                }))
+                .await
+                .expect("Failed to signal connection to sync client");
+
+            // Wait for the sync server to acknowledge the connection before spawning reception tasks.         
+            while let Ok(message) = sync_msg_receiver.recv().await {
+                match message {
+                    InternalSyncMessage::ClientConnectedAck(id) =>{
+                        if id == client_id {break;}
+                    },
+                }
+            }
+
             // Spawn a task to listen for stream opened from this client
             let from_client_sender_clone = from_clients_sender.clone();
             let mut uni_receivers:JoinSet<()> = JoinSet::new();
@@ -293,11 +324,6 @@ fn start_server(
                 uni_receivers.shutdown().await;
                 trace!("All unidirectional stream receivers cleaned for client: {}", client_id)
             });
-
-            to_sync_server
-            .send(InternalAsyncMessage::ClientConnected(ClientConnection { client_id: client_id, sender: to_client_sender, close_sender: close_sender }))
-            .await
-            .expect("Failed to signal connection to sync client");
         }
     });
 }
@@ -308,7 +334,9 @@ fn update_sync_server(mut server: ResMut<Server>) {
         match message {
             // TODO Clean: Raise a connected event
             InternalAsyncMessage::ClientConnected(connection) => {
-                server.clients.insert(connection.client_id, connection);
+                let id = connection.client_id;
+                server.clients.insert(id, connection);
+                server.internal_sender.send(InternalSyncMessage::ClientConnectedAck(id)).unwrap();
             }
         }
     }
