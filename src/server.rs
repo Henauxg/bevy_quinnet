@@ -34,6 +34,7 @@ pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 #[derive(Debug)]
 pub(crate) enum InternalAsyncMessage {
     ClientConnected(ClientConnection),
+    ClientDisconnected(ClientId),
 }
 
 #[derive(Debug, Clone)]
@@ -73,9 +74,9 @@ impl Server {
     pub fn disconnect_client(&mut self, client_id: ClientId) {
         match self.clients.remove(&client_id) {
             Some(client_connection) => {
-                if let Err(_) =  client_connection.close_sender.send(()) {
+                if let Err(_) = client_connection.close_sender.send(()) {
                     error!("Failed to close client streams & resources while disconnecting client {}", client_id)
-                }           
+                }
             },
             None => error!("Failed to disconnect client {}, client not found", client_id),
         }
@@ -246,12 +247,15 @@ fn start_server(
             let (to_client_sender, mut to_client_receiver) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
 
-            // Create a reliable ordered send stream
             let send_stream = connection
                 .open_uni()
                 .await
                 .expect( format!("Failed to open unidirectional send stream for client: {}", client_id).as_str());
-            let mut framed_send_stream = FramedWrite::new(send_stream, LengthDelimitedCodec::new());            
+
+            let mut framed_send_stream = FramedWrite::new(send_stream, LengthDelimitedCodec::new());    
+
+            let to_sync_server_clone = to_sync_server.clone();
+            let close_sender_clone = close_sender.clone();
             let _network_broadcaster = tokio::spawn(async move {
                 tokio::select! {
                     _ = close_receiver.recv() => {
@@ -259,16 +263,24 @@ fn start_server(
                     }
                     _ = async {
                         while let Some(msg_bytes) = to_client_receiver.recv().await {
-                                // TODO Perf: Batch frames for a send_all
-                                // TODO Clean: Error handling
+                            // TODO Perf: Batch frames for a send_all
+                            // TODO Clean: Error handling
                             if let Err(err) = framed_send_stream.send(msg_bytes.clone()).await {
                                 error!("Error while sending to client {}: {}", client_id, err);
+                                error!("Client {} seems disconnected, closing resources", client_id);
+                                if let Err(_) = close_sender_clone.send(()) {
+                                    error!("Failed to close all client streams & resources for client {}", client_id)
+                                }
+                                to_sync_server_clone.send(
+                                    InternalAsyncMessage::ClientDisconnected(client_id))
+                                    .await
+                                    .expect("Failed to signal disconnection to sync client");                    
                             };
                         }
                     } => {}
                 }
             });
-
+            
             let mut sync_msg_receiver = to_async_server.subscribe();
             to_sync_server.send(
                 InternalAsyncMessage::ClientConnected(ClientConnection {
@@ -279,7 +291,7 @@ fn start_server(
                 .await
                 .expect("Failed to signal connection to sync client");
 
-            // Wait for the sync server to acknowledge the connection before spawning reception tasks.         
+            // Wait for the sync server to acknowledge the connection before spawning reception tasks.
             while let Ok(message) = sync_msg_receiver.recv().await {
                 match message {
                     InternalSyncMessage::ClientConnectedAck(id) =>{
@@ -338,6 +350,10 @@ fn update_sync_server(mut server: ResMut<Server>) {
                 server.clients.insert(id, connection);
                 server.internal_sender.send(InternalSyncMessage::ClientConnectedAck(id)).unwrap();
             }
+            // TODO Clean: Raise a disconnected event
+            InternalAsyncMessage::ClientDisconnected(client_id) => {
+                server.clients.remove(&client_id);
+            },
         }
     }
 }
