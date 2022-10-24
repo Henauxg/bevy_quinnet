@@ -27,6 +27,22 @@ pub struct ClientConfigurationData {
     local_bind_port: u16,
 }
 
+impl ClientConfigurationData {
+    pub fn new(
+        server_host: String,
+        server_port: u16,
+        local_bind_host: String,
+        local_bind_port: u16,
+    ) -> Self {
+        Self {
+            server_host,
+            server_port,
+            local_bind_host,
+            local_bind_port,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum ClientState {
     Connecting,

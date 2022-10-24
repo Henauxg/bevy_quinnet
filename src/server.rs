@@ -49,6 +49,21 @@ pub struct ServerConfigurationData {
     local_bind_host: String,
 }
 
+impl ServerConfigurationData {
+    pub fn new(
+        host: String,
+        port: u16,
+        local_bind_host: String,
+    ) -> Self {
+        Self {
+            host,
+            port,
+            local_bind_host,
+        }
+    }
+}
+
+
 #[derive(Debug)]
 pub struct ClientPayload {
     client_id: ClientId,
