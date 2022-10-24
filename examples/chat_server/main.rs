@@ -52,14 +52,8 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
                 }
             }
             ClientMessage::Disconnect {} => {
-                if !users.names.contains_key(&client_id) {
-                    warn!(
-                        "Received a Disconnect from an unknown or disconnected client: {}",
-                        client_id
-                    )
-                } else {
+                if let Some(username) = users.names.remove(&client_id) {
                     server.disconnect_client(client_id);
-                    let username = users.names.remove(&client_id);
                     // Broadcast its deconnection
                     server
                         .send_group_message(
@@ -69,7 +63,12 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
                             },
                         )
                         .unwrap();
-                    info!("{:?} disconnected", username);
+                    info!("{} disconnected", username);
+                } else {
+                    warn!(
+                        "Received a Disconnect from an unknown or disconnected client: {}",
+                        client_id
+                    )
                 }
             }
             ClientMessage::ChatMessage { message } => {
@@ -99,8 +98,8 @@ fn main() {
         .add_plugin(QuinnetServerPlugin::default())
         .insert_resource(ServerConfigurationData::new(
             "127.0.0.1".to_string(),
-            5000,
-            "127.0.0.1".to_string(),
+            6000,
+            "0.0.0.0".to_string(),
         ))
         .insert_resource(Users::default())
         .add_system(handle_client_messages)

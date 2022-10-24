@@ -1,11 +1,12 @@
 use std::{
     collections::HashMap,
     thread::{self, sleep},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 use bevy::{
-    app::AppExit,
+    app::{AppExit, ScheduleRunnerPlugin},
+    log::LogPlugin,
     prelude::{info, warn, App, Commands, CoreStage, EventReader, EventWriter, Res, ResMut},
 };
 use bevy_quinnet::{
@@ -13,6 +14,7 @@ use bevy_quinnet::{
     ClientId,
 };
 use chat_protocol::{ClientMessage, ServerMessage};
+use rand::{distributions::Alphanumeric, Rng};
 use tokio::sync::mpsc;
 
 #[path = "../chat_protocol/lib.rs"] // Because we can't have a shared lib between Cargo examples
@@ -44,14 +46,16 @@ fn handle_server_messages(mut client: ResMut<Client>, mut users: ResMut<Users>) 
             }
             ServerMessage::ClientDisconnected { client_id } => {
                 if let Some(username) = users.names.remove(&client_id) {
-                    info!("{} left", username);
+                    println!("{} left", username);
                 } else {
                     warn!("ClientDisconnected for an unknown client_id: {}", client_id)
                 }
             }
             ServerMessage::ChatMessage { client_id, message } => {
                 if let Some(username) = users.names.get(&client_id) {
-                    info!("{}: {}", username, message);
+                    if client_id != users.self_id {
+                        println!("{}: {}", username, message);
+                    }
                 } else {
                     warn!("Chat message from an unknown client_id: {}", client_id)
                 }
@@ -100,21 +104,31 @@ fn start_terminal_listener(mut commands: Commands) {
 fn start_connection(client: ResMut<Client>) {
     client.connect().unwrap();
 
-    let random_name = format!("User_{:?}", SystemTime::now());
+    let username: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(7)
+        .map(char::from)
+        .collect();
+
+    println!("--- Joining with name: {}", username);
+    println!("--- Type 'quit' to disconnect");
+
     // You can already send message(s) even before being connected, they will be buffered. Else, just wait for client.is_connected()
     client
-        .send_message(ClientMessage::Join { name: random_name })
+        .send_message(ClientMessage::Join { name: username })
         .unwrap();
 }
 
 fn main() {
     App::new()
+        .add_plugin(ScheduleRunnerPlugin::default())
+        .add_plugin(LogPlugin::default())
         .add_plugin(QuinnetClientPlugin::default())
         // Currently, bevy_quinnet takes its configuration as a resource
         .insert_resource(ClientConfigurationData::new(
             "127.0.0.1".to_string(),
-            5000,
-            "127.0.0.1".to_string(),
+            6000,
+            "0.0.0.0".to_string(),
             0,
         ))
         .insert_resource(Users::default())
