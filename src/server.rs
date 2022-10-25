@@ -205,7 +205,7 @@ fn start_server(
         .expect("Failed to parse server address");
 
     // TODO Security: Server certificate
-    let (server_config, server_cert) =
+    let (server_config, _server_cert) =
         configure_server(&config.host).expect("Failed to configure server");
 
     // TODO Clean: Configure size
