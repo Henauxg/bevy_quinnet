@@ -8,14 +8,18 @@ use quinn::{ClientConfig, Endpoint};
 use serde::Deserialize;
 use tokio::{
     runtime::Runtime,
-    sync::mpsc::{
-        self,
-        error::{TryRecvError, TrySendError},
+    sync::{
+        broadcast,
+        mpsc::{
+            self,
+            error::{TryRecvError, TrySendError},
+        },
     },
+    task::JoinSet,
 };
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
-use crate::{QuinnetError, DEFAULT_MESSAGE_QUEUE_SIZE};
+use crate::{QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE};
 
 pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 
@@ -46,9 +50,10 @@ impl ClientConfigurationData {
     }
 }
 
+/// Current state of the client driver
 #[derive(Debug, PartialEq, Eq)]
 enum ClientState {
-    Connecting,
+    Disconnected,
     Connected,
 }
 
@@ -67,6 +72,7 @@ pub struct Client {
     // TODO Perf: multiple channels
     sender: mpsc::Sender<Bytes>,
     receiver: mpsc::Receiver<Bytes>,
+    close_sender: broadcast::Sender<()>,
 
     pub(crate) internal_receiver: mpsc::Receiver<InternalAsyncMessage>,
     pub(crate) internal_sender: mpsc::Sender<InternalSyncMessage>,
@@ -78,6 +84,17 @@ impl Client {
             Ok(_) => Ok(()),
             Err(_) => Err(QuinnetError::FullQueue),
         }
+    }
+
+    /// Disconnect the client. This does not send any message to the server, and simply closes all the connection tasks locally.
+    pub fn disconnect(&mut self) -> Result<(), QuinnetError> {
+        if self.is_connected() {
+            if let Err(_) = self.close_sender.send(()) {
+                return Err(QuinnetError::ChannelClosed);
+            }
+        }
+        self.state = ClientState::Disconnected;
+        Ok(())
     }
 
     pub fn receive_message<T: serde::de::DeserializeOwned>(
@@ -183,6 +200,13 @@ fn initialize_client(
     let (to_async_client, mut from_sync_client) =
         mpsc::channel::<InternalSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
 
+    // Create a close channel for this connection
+    let (close_sender, mut close_receiver): (
+        tokio::sync::broadcast::Sender<()>,
+        tokio::sync::broadcast::Receiver<()>,
+    ) = broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
+
+    let close_sender_clone = close_sender.clone();
     runtime.spawn(async move {
         // Wait for a connection signal before starting client
         if let Some(message) = from_sync_client.recv().await {
@@ -220,36 +244,56 @@ fn initialize_client(
             .expect("Failed to open send stream");
         let mut frame_send = FramedWrite::new(send, LengthDelimitedCodec::new());
 
-        let network_sends = async move {
-            loop {
-                if let Some(msg_bytes) = to_server_receiver.recv().await {
-                    if let Err(err) = frame_send.send(msg_bytes).await {
-                        error!("Error while sending, {}", err); // TODO Fix: error event
+        let _network_sends = tokio::spawn(async move {
+            tokio::select! {
+                _ = close_receiver.recv() => {
+                    trace!("Unidirectional send Stream forced to disconnected")
+                }
+                _ = async {
+                    while let Some(msg_bytes) = to_server_receiver.recv().await {
+                        if let Err(err) = frame_send.send(msg_bytes).await {
+                            error!("Error while sending, {}", err); // TODO Fix: error event
+                        }
                     }
+                } => {
+                    trace!("Unidirectional send Stream ended")
                 }
             }
-        };
+        });
 
-        let network_reads = async move {
-            while let Some(Ok(recv)) = new_connection.uni_streams.next().await {
-                let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
-                let from_server_sender = from_server_sender.clone();
-                tokio::spawn(async move {
-                    while let Some(Ok(msg_bytes)) = frame_recv.next().await {
-                        from_server_sender.send(msg_bytes.into()).await.unwrap();
-                        // TODO Fix: error event
+        let mut uni_receivers: JoinSet<()> = JoinSet::new();
+        let mut close_receiver = close_sender_clone.subscribe();
+        let _network_reads = tokio::spawn(async move {
+            tokio::select! {
+                _ = close_receiver.recv() => {
+                    trace!("New Stream listener forced to disconnected")
+                }
+                _ = async {
+                    while let Some(Ok(recv)) = new_connection.uni_streams.next().await {
+                        let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
+                        let from_server_sender = from_server_sender.clone();
+
+                        uni_receivers.spawn(async move {
+                            while let Some(Ok(msg_bytes)) = frame_recv.next().await {
+                                from_server_sender.send(msg_bytes.into()).await.unwrap();
+                                // TODO Fix: error event
+                            }
+                        });
                     }
-                });
+                } => {
+                    trace!("New Stream listener ended ")
+                }
             }
-        };
-
-        tokio::join!(network_sends, network_reads);
+            uni_receivers.shutdown().await;
+            trace!("All unidirectional stream receivers cleaned");
+        });
     });
 
     commands.insert_resource(Client {
-        state: ClientState::Connecting,
+        state: ClientState::Disconnected,
         sender: to_server_sender,
         receiver: from_server_receiver,
+        close_sender: close_sender,
         internal_receiver: from_async_client,
         internal_sender: to_async_client,
     });
