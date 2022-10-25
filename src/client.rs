@@ -19,6 +19,9 @@ use crate::{QuinnetError, DEFAULT_MESSAGE_QUEUE_SIZE};
 
 pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 10;
 
+/// Connection event raised when the client just connected to the server. Raised in the CoreStage::PreUpdate stage.
+pub struct ConnectionEvent;
+
 #[derive(Deserialize)]
 pub struct ClientConfigurationData {
     server_host: String,
@@ -221,7 +224,7 @@ fn initialize_client(
             loop {
                 if let Some(msg_bytes) = to_server_receiver.recv().await {
                     if let Err(err) = frame_send.send(msg_bytes).await {
-                        error!("Error sending {}", err) // TODO Fix: error event
+                        error!("Error while sending, {}", err); // TODO Fix: error event
                     }
                 }
             }
@@ -253,11 +256,16 @@ fn initialize_client(
 }
 
 // Receive messages from the async client tasks and update the sync client.
-fn update_sync_client(mut client: ResMut<Client>) {
+fn update_sync_client(
+    mut client: ResMut<Client>,
+    mut connection_events: EventWriter<ConnectionEvent>,
+) {
     while let Ok(message) = client.internal_receiver.try_recv() {
         match message {
-            // TODO Clean: Raise a connected event
-            InternalAsyncMessage::Connected => client.state = ClientState::Connected,
+            InternalAsyncMessage::Connected => {
+                client.state = ClientState::Connected;
+                connection_events.send(ConnectionEvent);
+            }
         }
     }
 }
@@ -278,6 +286,7 @@ impl Plugin for QuinnetClientPlugin {
                 .build()
                 .unwrap(),
         )
+        .add_event::<ConnectionEvent>()
         // StartupStage::PreStartup so that resources created in commands are available to default startup_systems
         .add_startup_system_to_stage(StartupStage::PreStartup, initialize_client)
         .add_system(update_sync_client);

@@ -363,7 +363,11 @@ fn start_server(
 }
 
 // Receive messages from the async server tasks and update the sync server.
-fn update_sync_server(mut server: ResMut<Server>,    mut connection_events: EventWriter<ConnectionEvent>, mut disconnection_events: EventWriter<DisconnectionEvent>, ) {
+fn update_sync_server(
+    mut server: ResMut<Server>,
+    mut connection_events: EventWriter<ConnectionEvent>,
+    mut disconnection_events: EventWriter<DisconnectionEvent>
+) {
     while let Ok(message) = server.internal_receiver.try_recv() {
         match message {
             InternalAsyncMessage::ClientConnected(connection) => {
