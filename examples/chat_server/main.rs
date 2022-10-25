@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use bevy_quinnet::{
-    server::{QuinnetServerPlugin, Server, ServerConfigurationData},
+    server::{DisconnectionEvent, QuinnetServerPlugin, Server, ServerConfigurationData},
     ClientId,
 };
 
@@ -18,6 +18,7 @@ struct Users {
 
 fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) {
     while let Ok(Some(message)) = server.receive_message::<ClientMessage>() {
+        // Retrieve the assigned ClientId.
         let client_id = message.1;
         match message.0 {
             ClientMessage::Join { name } => {
@@ -52,24 +53,9 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
                 }
             }
             ClientMessage::Disconnect {} => {
-                if let Some(username) = users.names.remove(&client_id) {
-                    server.disconnect_client(client_id);
-                    // Broadcast its deconnection
-                    server
-                        .send_group_message(
-                            users.names.keys().into_iter(),
-                            ServerMessage::ClientDisconnected {
-                                client_id: client_id,
-                            },
-                        )
-                        .unwrap();
-                    info!("{} disconnected", username);
-                } else {
-                    warn!(
-                        "Received a Disconnect from an unknown or disconnected client: {}",
-                        client_id
-                    )
-                }
+                // We tell the server to disconnect this user
+                server.disconnect_client(client_id);
+                handle_disconnect(&mut server, &mut users, client_id);
             }
             ClientMessage::ChatMessage { message } => {
                 info!(
@@ -91,6 +77,39 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
     }
 }
 
+fn handle_server_events(
+    mut disconnections: EventReader<DisconnectionEvent>,
+    mut server: ResMut<Server>,
+    mut users: ResMut<Users>,
+) {
+    // The server signals us about users that disconnected (connection lost)
+    for client in disconnections.iter() {
+        handle_disconnect(&mut server, &mut users, client.id);
+    }
+}
+
+/// Shared disconnection behaviour, whether the client lost connection or asked to disconnect
+fn handle_disconnect(server: &mut ResMut<Server>, users: &mut ResMut<Users>, client_id: ClientId) {
+    // Remove this user
+    if let Some(username) = users.names.remove(&client_id) {
+        // Broadcast its deconnection
+        server
+            .send_group_message(
+                users.names.keys().into_iter(),
+                ServerMessage::ClientDisconnected {
+                    client_id: client_id,
+                },
+            )
+            .unwrap();
+        info!("{} disconnected", username);
+    } else {
+        warn!(
+            "Received a Disconnect from an unknown or disconnected client: {}",
+            client_id
+        )
+    }
+}
+
 fn main() {
     App::new()
         .add_plugin(ScheduleRunnerPlugin::default())
@@ -103,5 +122,6 @@ fn main() {
         ))
         .insert_resource(Users::default())
         .add_system(handle_client_messages)
+        .add_system(handle_server_events)
         .run();
 }
