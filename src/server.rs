@@ -31,6 +31,13 @@ use crate::{ClientId, QuinnetError, DEFAULT_KEEP_ALIVE_INTERVAL_S, DEFAULT_MESSA
 
 pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 
+
+/// Connection event raised when a client just connected to the server. Raised in the CoreStage::PreUpdate stage.
+pub struct ConnectionEvent { pub id: ClientId }
+
+/// Disconnection event raised when a client just disconnected from the server. Raised in the CoreStage::PreUpdate stage. This is not an "app" level disconnection, but rather a connection lost.
+pub struct DisconnectionEvent { pub id: ClientId }
+
 #[derive(Debug)]
 pub(crate) enum InternalAsyncMessage {
     ClientConnected(ClientConnection),
@@ -243,7 +250,6 @@ fn start_server(
             client_gen_id += 1; // TODO Fix: Better id generation/check
             let client_id = client_gen_id;
             client_id_mappings.insert(connection.stable_id(), client_id);
-            // TODO Clean: Raise a connection event to the sync side.
 
             info!(
                 "New connection from {}, client_id: {}, stable_id : {}",
@@ -296,6 +302,7 @@ fn start_server(
                 }
             });
             
+            // Signal the sync server of this new connection
             let mut sync_msg_receiver = to_async_server.subscribe();
             to_sync_server.send(
                 InternalAsyncMessage::ClientConnected(ClientConnection {
@@ -356,18 +363,18 @@ fn start_server(
 }
 
 // Receive messages from the async server tasks and update the sync server.
-fn update_sync_server(mut server: ResMut<Server>) {
+fn update_sync_server(mut server: ResMut<Server>,    mut connection_events: EventWriter<ConnectionEvent>, mut disconnection_events: EventWriter<DisconnectionEvent>, ) {
     while let Ok(message) = server.internal_receiver.try_recv() {
         match message {
-            // TODO Clean: Raise a connected event
             InternalAsyncMessage::ClientConnected(connection) => {
                 let id = connection.client_id;
                 server.clients.insert(id, connection);
                 server.internal_sender.send(InternalSyncMessage::ClientConnectedAck(id)).unwrap();
+                connection_events.send(ConnectionEvent { id: id });
             }
-            // TODO Clean: Raise a disconnected event
             InternalAsyncMessage::ClientDisconnected(client_id) => {
                 server.clients.remove(&client_id);
+                disconnection_events.send(DisconnectionEvent { id: client_id });
             },
         }
     }
@@ -389,7 +396,9 @@ impl Plugin for QuinnetServerPlugin {
                 .build()
                 .unwrap(),
         )
+        .add_event::<ConnectionEvent>()
+        .add_event::<DisconnectionEvent>()
         .add_startup_system_to_stage(StartupStage::PreStartup, start_server)
-        .add_system(update_sync_server);
+        .add_system_to_stage(CoreStage::PreUpdate,update_sync_server);
     }
 }
