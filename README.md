@@ -57,6 +57,7 @@ Those are the features/tasks that will probably come next (in no particular orde
 - [ ] Feature: Raise connection/disconnection events from the plugins
 - [ ] Feature: Send unordered reliable messages from the server
 - [ ] Feature: Implementing a way to launch a local server from a client
+- [ ] Feature: Client should be capable to connect to another server after disconnecting
 - [ ] Performance: Messages aggregation before sending
 - [ ] Clean: Rework the error handling
 - [ ] Clean: Rework the configuration input for the client & server plugins
