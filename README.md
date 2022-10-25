@@ -52,6 +52,7 @@ Those are the features/tasks that will probably come next (in no particular orde
 - [ ] Security: Expose Quinn support of CA certificates for the server
 - [x] Feature: Send messages from the server to a specific client
 - [x] Feature: Send messages from the server to a selected group of clients
+- [ ] Feature: Raise connection/disconnection events from the plugins
 - [ ] Feature: Send unordered reliable messages from the server
 - [ ] Feature: Implementing a way to launch a local server from a client
 - [ ] Performance: Messages aggregation before sending
@@ -163,7 +164,7 @@ fn handle_client_messages(
 }
 ```
 
-You can also use `server.broadcast_message`, which will send a message to all connected clients. "Connected" here means connected to the server plugin, which happens before your own app handshakes/verifications if you have any. Use `send_group_message` to ccontrol the recipients.
+You can also use `server.broadcast_message`, which will send a message to all connected clients. "Connected" here means connected to the server plugin, which happens before your own app handshakes/verifications if you have any. Use `send_group_message` if you want to control the recipients.
 
 ## Example
 
