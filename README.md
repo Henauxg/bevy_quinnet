@@ -175,6 +175,8 @@ This demo comes with an headless [server](examples/chat_server/), a [terminal cl
 
 Start the server with `cargo run --example chat_server` and as many clients as needed with `cargo run --example terminal_chat_client`. Type `quit` to disconnect with a client.
 
+![terminal_chat_demo](https://user-images.githubusercontent.com/19689618/197757086-0643e6e7-6c69-4760-9af6-cb323529dc52.gif)
+
 ## Logs
 
 For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatbook.github.io/features/log.html).
