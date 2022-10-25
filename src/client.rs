@@ -17,7 +17,7 @@ use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::{QuinnetError, DEFAULT_MESSAGE_QUEUE_SIZE};
 
-pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 10;
+pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 
 /// Connection event raised when the client just connected to the server. Raised in the CoreStage::PreUpdate stage.
 pub struct ConnectionEvent;
