@@ -172,7 +172,7 @@ Examples can be found in the [examples](examples) directory.
 
 This demo comes with an headless [server](examples/chat_server/), a [terminal client](examples/terminal_chat_client/) and a shared [protocol](examples/chat_protocol/)
 
-Start the server with `cargo run --example chat_server` and as many clients as needed with `cargo run --example terminal_chat_client`. Type `quit` to disonnect with a client.
+Start the server with `cargo run --example chat_server` and as many clients as needed with `cargo run --example terminal_chat_client`. Type `quit` to disconnect with a client.
 
 ## Logs
 
