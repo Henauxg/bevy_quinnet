@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use bevy_quinnet::{
-    server::{DisconnectionEvent, QuinnetServerPlugin, Server, ServerConfigurationData},
+    server::{ConnectionLostEvent, QuinnetServerPlugin, Server, ServerConfigurationData},
     ClientId,
 };
 
@@ -78,12 +78,12 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
 }
 
 fn handle_server_events(
-    mut disconnections: EventReader<DisconnectionEvent>,
+    mut connection_lost_events: EventReader<ConnectionLostEvent>,
     mut server: ResMut<Server>,
     mut users: ResMut<Users>,
 ) {
-    // The server signals us about users that disconnected (connection lost)
-    for client in disconnections.iter() {
+    // The server signals us about users that lost connection
+    for client in connection_lost_events.iter() {
         handle_disconnect(&mut server, &mut users, client.id);
     }
 }
