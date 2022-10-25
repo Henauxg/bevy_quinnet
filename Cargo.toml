@@ -5,7 +5,7 @@ description = "Bevy plugin for Client/Server multiplayer games using QUIC"
 repository = "https://github.com/Henauxg/bevy_quinnet"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-keywords = ["gamedev", "networking", "quic", "quinn", "bevy", "plugin"]
+keywords = ["gamedev", "networking", "quic", "bevy", "plugin"]
 categories = ["game-development", "network-programming"]
 readme = "README.md"
 
