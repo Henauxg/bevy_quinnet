@@ -27,41 +27,154 @@ Most of the features proposed by the big networking libs are supported by defaul
 
 ## Features
 
-Quinnet does not swim in features, I made it mostly to satisfy my own needs in my game projects.
+Quinnet does not have many features, I made it mostly to satisfy my own needs for my own game projects.
+
 It currently features:
 
 - A Client plugin which can:
-    - Connect to a server
+    - Connect/disconnect to/from a server
     - Send ordered reliable messages (same as messages over TCP) to the server
-    - Receive reliable (ordered or unordered) messages from the server
+    - Receive (ordered or unordered) reliable messages from the server
 - A Server plugin which can:
-    - Accept client connections
-    - Send reliable ordered messages to the clients
-    - Receive reliable (ordered or unordered) messages from any client
+    - Accept client connections & disconnect them
+    - Send ordered reliable messages to the clients
+    - Receive (ordered or unordered) reliable messages from any client
 - Both client & server accept custom protocol structs/enums defined by the user as the message format.
 
 Although Quinn and parts of Quinnet are asynchronous, the APIs exposed by Quinnet for the client and server are synchronous. This makes the surface API easy to work with and adapted to a Bevy usage.
 The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channelshttps://tokio.rs/tokio/tutorial/channels) to communicate with the networking async tasks.
 
-##  Currently missing features
+##  Roadmap
 
-Those are the features that will probably come next (in no particular order):
+Those are the features/tasks that will probably come next (in no particular order):
 
 - [ ] Security: Expose Quinn support of self-signed certificates for the server
 - [ ] Security: Expose Quinn support of CA certificates for the server
 - [x] Feature: Send messages from the server to a specific client
 - [x] Feature: Send messages from the server to a selected group of clients
-- [ ] Feature: Send reliable unordered messages from the server
+- [ ] Feature: Send unordered reliable messages from the server
+- [ ] Feature: Implementing a way to launch a local server from a client
 - [ ] Performance: Messages aggregation before sending
 - [ ] Clean: Rework the error handling
+- [ ] Clean: Rework the configuration input for the client & server plugins
+- [ ] Documentation: Document the API
 
-## Small sample
+## Quickstart
 
-TODO
+### Client
 
-## Systems and resources
+- Add the `QuinnetClientPlugin` to the bevy app and give it a `ClientConfigurationData` resource:
 
-TODO
+```rust
+ App::new()
+        // ...
+        .add_plugin(QuinnetClientPlugin::default())
+        .insert_resource(ClientConfigurationData::new(
+            "127.0.0.1".to_string(),
+            6000,
+            "0.0.0.0".to_string(),
+            0,
+        ))
+        // ...
+        .run();
+```
+
+- You can then use the `Client` resource to connect, send & receive messages:
+
+```rust
+fn start_connection(client: ResMut<Client>) {
+    client.connect().unwrap();
+
+    // You can already send message(s) even before being connected, they will be buffered. Else, just wait for client.is_connected()
+    client
+        .send_message(...)
+        .unwrap();
+}
+```
+
+- To process server messages, you can use a bevy system such as the one below. The function `receive_message` is generic, here `ServerMessage` is a user provided enum deriving `Serialize` and `Deserialize`.
+
+```rust
+fn handle_server_messages(
+    mut client: ResMut<Client>,
+    /*...*/
+) {
+    while let Ok(Some(message)) = client.receive_message::<ServerMessage>() {
+        match message {
+            // Match on your own message types ...
+            ServerMessage::ClientConnected { client_id, username} => {/*...*/}
+            ServerMessage::ClientDisconnected { client_id } => {/*...*/}
+            ServerMessage::ChatMessage { client_id, message } => {/*...*/}
+        }
+    }
+}
+```
+
+### Server
+
+- Add the `QuinnetServerPlugin` to the bevy app and give it a `ServerConfigurationData` resource:
+
+```rust
+ App::new()
+        /*...*/
+        .add_plugin(QuinnetServerPlugin::default())
+        .insert_resource(ServerConfigurationData::new(
+            "127.0.0.1".to_string(),
+            6000,
+            "0.0.0.0".to_string(),
+        ))
+        /*...*/
+        .run();
+```
+
+- To process client messages, you can use a bevy system such as the one below. The function `receive_message` is generic, here `ClientMessage` is a user provided enum deriving `Serialize` and `Deserialize`.
+
+```rust
+fn handle_client_messages(
+    mut server: ResMut<Server>,
+    /*...*/
+) {
+    while let Ok(Some(message)) = server.receive_message::<ClientMessage>() {
+        // Retrieve the assigned ClientId.
+        let client_id = message.1;
+        match message.0 {
+            // Match on your own message types ...
+            ClientMessage::Join { username} => {
+                // Send a messsage to 1 client
+                server.send_message(client_id, ServerMessage::InitClient {/*...*/}).unwrap();
+                /*...*/
+            }
+            ClientMessage::Disconnect { } => {
+                // Disconnect a client
+                server.disconnect_client(client_id);
+                /*...*/
+            }
+            ClientMessage::ChatMessage { message } => {
+                // Send a message to a group of clients
+                server.send_group_message(
+                        client_group, // Iterator of ClientId
+                        ServerMessage::ChatMessage {/*...*/}
+                    )
+                    .unwrap();
+                /*...*/
+            }           
+        }
+    }
+}
+```
+
+You can also use `server.broadcast_message`, which will send a message to all connected clients. "Connected" here means connected to the server plugin, which happens before your own app handshakes/verifications if you have any. Use `send_group_message` to ccontrol the recipients.
+
+## Example
+
+Examples can be found in the [examples](examples) directory.
+### Chat example
+
+This demo comes with an headless [server](examples/chat_server/), a [terminal client](examples/terminal_chat_client/) and a shared [protocol](examples/chat_protocol/)
+
+Start the server with `cargo run --example chat_server` and as many clients as needed with `cargo run --example terminal_chat_client`. Type `quit` to disonnect with a client.
+
+## Logs
 
 For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatbook.github.io/features/log.html).
 
@@ -75,7 +188,7 @@ Compatibility of `bevy_quinnet` versions:
 
 ## Limitations
 
-* QUIC is not available in a Browser (used in browsers but not exposed as an API).
+* QUIC is not available in a Browser (used in browsers but not exposed as an API). For now I would rather wait on [WebTransport](https://web.dev/webtransport/)("QUIC" on the Web) than hack on WebRTC data channels.
 
 ## Credits
 
