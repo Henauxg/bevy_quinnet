@@ -50,8 +50,7 @@ The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channel
 
 Those are the features/tasks that will probably come next (in no particular order):
 
-- [ ] Security: Expose Quinn support of self-signed certificates for the server
-- [ ] Security: Expose Quinn support of CA certificates for the server
+- [ ] Security: More certificates support, see [certificates](#certificates)
 - [x] Feature: Send messages from the server to a specific client
 - [x] Feature: Send messages from the server to a selected group of clients
 - [x] Feature: Raise connection/disconnection events from the plugins
@@ -60,25 +59,19 @@ Those are the features/tasks that will probably come next (in no particular orde
 - [ ] Feature: Client should be capable to connect to another server after disconnecting
 - [ ] Performance: Messages aggregation before sending
 - [ ] Clean: Rework the error handling
-- [ ] Clean: Rework the configuration input for the client & server plugins
+- [x] Clean: Rework the configuration input for the client & server plugins
 - [ ] Documentation: Document the API
 
 ## Quickstart
 
 ### Client
 
-- Add the `QuinnetClientPlugin` to the bevy app and give it a `ClientConfigurationData` resource:
+- Add the `QuinnetClientPlugin` to the bevy app:
 
 ```rust
  App::new()
         // ...
         .add_plugin(QuinnetClientPlugin::default())
-        .insert_resource(ClientConfigurationData::new(
-            "127.0.0.1".to_string(),
-            6000,
-            "0.0.0.0".to_string(),
-            0,
-        ))
         // ...
         .run();
 ```
@@ -87,9 +80,19 @@ Those are the features/tasks that will probably come next (in no particular orde
 
 ```rust
 fn start_connection(client: ResMut<Client>) {
-    client.connect().unwrap();
+    client
+        .connect(
+            ClientConfigurationData::new(
+                "127.0.0.1".to_string(),
+                6000,
+                "0.0.0.0".to_string(),
+                0,
+            ),
+            CertificateVerificationMode::SkipVerification,
+        )
+        .unwrap();
 
-    // You can already send message(s) even before being connected, they will be buffered. Else, just wait for client.is_connected()
+    // You can already send message(s) even before being connected, they will be buffered. To be trully connected, you should wait for a ConnectionEvent or check client.is_connected()
     client
         .send_message(...)
         .unwrap();
@@ -116,22 +119,30 @@ fn handle_server_messages(
 
 ### Server
 
-- Add the `QuinnetServerPlugin` to the bevy app and give it a `ServerConfigurationData` resource:
+- Add the `QuinnetServerPlugin` to the bevy app:
 
 ```rust
  App::new()
         /*...*/
         .add_plugin(QuinnetServerPlugin::default())
-        .insert_resource(ServerConfigurationData::new(
-            "127.0.0.1".to_string(),
-            6000,
-            "0.0.0.0".to_string(),
-        ))
         /*...*/
         .run();
 ```
 
-- To process client messages, you can use a bevy system such as the one below. The function `receive_message` is generic, here `ClientMessage` is a user provided enum deriving `Serialize` and `Deserialize`.
+- You can then use the `Server` resource to start the listening server:
+
+```rust
+fn start_listening(server: ResMut<Server>) {
+    server
+        .start(
+            ServerConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string()),
+            CertificateRetrievalMode::GenerateSelfSigned,
+        )
+        .unwrap();
+}
+```
+
+- To process client messages & send messages, you can use a bevy system such as the one below. The function `receive_message` is generic, here `ClientMessage` is a user provided enum deriving `Serialize` and `Deserialize`.
 
 ```rust
 fn handle_client_messages(
@@ -180,6 +191,19 @@ Start the server with `cargo run --example chat_server` and as many clients as n
 
 ![terminal_chat_demo](https://user-images.githubusercontent.com/19689618/197757086-0643e6e7-6c69-4760-9af6-cb323529dc52.gif)
 
+## Certificates
+
+Bevy Quinnet (through Quinn & QUIC) uses TLS 1.3 for authentication, the server needs to provide the client with a certificate confirming its identity, and the client must be configured to trust the certificates it receives from the server.
+
+Here are the current options available to the server and client plugins:
+- Client : 
+    - [x] Accept certificates issued by a Certificate Authority
+    - [x] Skip certificate verification
+    - [ ] "Trust on first use" certificates
+- Server:
+    - [x] Generate and issue a self-signed certificate
+    - [ ] Issue an already existing certificate (CA or self-signed)
+
 ## Logs
 
 For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatbook.github.io/features/log.html).
@@ -188,9 +212,9 @@ For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatboo
 
 Compatibility of `bevy_quinnet` versions:
 
-| `bevy_quinnet` | `bevy` |
-| :--           | :--    |
-| `0.1`         | `0.8`  |
+| `bevy_quinnet`      | `bevy` |
+| :--                 | :--    |
+| `0.1` - `0.2`       | `0.8`  |
 
 ## Limitations
 
