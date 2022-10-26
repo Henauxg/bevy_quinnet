@@ -54,7 +54,7 @@ Those are the features/tasks that will probably come next (in no particular orde
 - [ ] Security: Expose Quinn support of CA certificates for the server
 - [x] Feature: Send messages from the server to a specific client
 - [x] Feature: Send messages from the server to a selected group of clients
-- [ ] Feature: Raise connection/disconnection events from the plugins
+- [x] Feature: Raise connection/disconnection events from the plugins
 - [ ] Feature: Send unordered reliable messages from the server
 - [ ] Feature: Implementing a way to launch a local server from a client
 - [ ] Feature: Client should be capable to connect to another server after disconnecting
