@@ -28,7 +28,8 @@ pub struct ConnectionEvent;
 /// ConnectionLost event raised when the client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
 pub struct ConnectionLostEvent;
 
-#[derive(Deserialize)]
+/// Configuration of the client, used when connecting to a server
+#[derive(Debug, Deserialize)]
 pub struct ClientConfigurationData {
     server_host: String,
     server_port: u16,
@@ -37,6 +38,25 @@ pub struct ClientConfigurationData {
 }
 
 impl ClientConfigurationData {
+    /// Creates a new ClientConfigurationData
+    ///
+    /// # Arguments
+    ///
+    /// * `server_host` - Adress of the server
+    /// * `server_port` - Port that the server is listening on
+    /// * `local_bind_host` - Local address to bind to, which should usually be a wildcard address like `0.0.0.0` or `[::]`, which allow communication with any reachable IPv4 or IPv6 address. See [`quinn::endpoint::Endpoint`] for more precision
+    /// * `local_bind_port` - Local port to bind to. Use 0 to get an OS-assigned port.. See [`quinn::endpoint::Endpoint`] for more precision
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let config = ClientConfigurationData::new(
+    ///         "127.0.0.1".to_string(),
+    ///         6000,
+    ///         "0.0.0.0".to_string(),
+    ///         0,
+    ///     );
+    /// ```
     pub fn new(
         server_host: String,
         server_port: u16,
