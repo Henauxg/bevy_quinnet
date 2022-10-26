@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use bevy_quinnet::{
-    server::{ConnectionLostEvent, QuinnetServerPlugin, Server, ServerConfigurationData},
+    server::{
+        CertificateRetrievalMode, ConnectionLostEvent, QuinnetServerPlugin, Server,
+        ServerConfigurationData,
+    },
     ClientId,
 };
 
@@ -110,17 +113,22 @@ fn handle_disconnect(server: &mut ResMut<Server>, users: &mut ResMut<Users>, cli
     }
 }
 
+fn start_listening(server: ResMut<Server>) {
+    server
+        .start(
+            ServerConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string()),
+            CertificateRetrievalMode::GenerateSelfSigned,
+        )
+        .unwrap();
+}
+
 fn main() {
     App::new()
         .add_plugin(ScheduleRunnerPlugin::default())
         .add_plugin(LogPlugin::default())
         .add_plugin(QuinnetServerPlugin::default())
-        .insert_resource(ServerConfigurationData::new(
-            "127.0.0.1".to_string(),
-            6000,
-            "0.0.0.0".to_string(),
-        ))
         .insert_resource(Users::default())
+        .add_startup_system(start_listening)
         .add_system(handle_client_messages)
         .add_system(handle_server_events)
         .run();
