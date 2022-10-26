@@ -1,6 +1,6 @@
 [package]
 name = "bevy_quinnet"
-version = "0.1.0"
+version = "0.2.0-dev"
 description = "Bevy plugin for Client/Server multiplayer games using QUIC"
 repository = "https://github.com/Henauxg/bevy_quinnet"
 edition = "2021"
