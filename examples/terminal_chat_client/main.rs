@@ -10,7 +10,10 @@ use bevy::{
     prelude::{info, warn, App, Commands, CoreStage, EventReader, EventWriter, Res, ResMut},
 };
 use bevy_quinnet::{
-    client::{Client, ClientConfigurationData, QuinnetClientPlugin},
+    client::{
+        CertificateVerificationMode, Client, ClientConfigurationData, ConnectionEvent,
+        QuinnetClientPlugin,
+    },
     ClientId,
 };
 use chat_protocol::{ClientMessage, ServerMessage};
@@ -102,21 +105,34 @@ fn start_terminal_listener(mut commands: Commands) {
 }
 
 fn start_connection(client: ResMut<Client>) {
-    client.connect().unwrap();
-
-    let username: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(7)
-        .map(char::from)
-        .collect();
-
-    println!("--- Joining with name: {}", username);
-    println!("--- Type 'quit' to disconnect");
-
-    // You can already send message(s) even before being connected, they will be buffered. Else, just wait for client.is_connected()
     client
-        .send_message(ClientMessage::Join { name: username })
+        .connect(
+            ClientConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string(), 0),
+            CertificateVerificationMode::SkipVerification,
+        )
         .unwrap();
+
+    // You can already send message(s) even before being connected, they will be buffered. In this example we will wait for a ConnectionEvent. We could also check client.is_connected()
+}
+
+fn handle_server_events(connection_events: EventReader<ConnectionEvent>, client: ResMut<Client>) {
+    if !connection_events.is_empty() {
+        // We are connected
+        let username: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(7)
+            .map(char::from)
+            .collect();
+
+        println!("--- Joining with name: {}", username);
+        println!("--- Type 'quit' to disconnect");
+
+        client
+            .send_message(ClientMessage::Join { name: username })
+            .unwrap();
+
+        connection_events.clear();
+    }
 }
 
 fn main() {
@@ -124,18 +140,12 @@ fn main() {
         .add_plugin(ScheduleRunnerPlugin::default())
         .add_plugin(LogPlugin::default())
         .add_plugin(QuinnetClientPlugin::default())
-        // Currently, bevy_quinnet takes its configuration as a resource
-        .insert_resource(ClientConfigurationData::new(
-            "127.0.0.1".to_string(),
-            6000,
-            "0.0.0.0".to_string(),
-            0,
-        ))
         .insert_resource(Users::default())
         .add_startup_system(start_terminal_listener)
         .add_startup_system(start_connection)
         .add_system(handle_terminal_messages)
         .add_system(handle_server_messages)
+        .add_system(handle_server_events)
         // CoreStage::PostUpdate so that AppExit events generated in the previous stage are available
         .add_system_to_stage(CoreStage::PostUpdate, on_app_exit)
         .run();
