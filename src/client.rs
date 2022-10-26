@@ -1,10 +1,11 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::HashMap};
 use bytes::Bytes;
 use futures::sink::SinkExt;
 use futures_util::StreamExt;
 use quinn::{ClientConfig, Endpoint};
+use rustls::Certificate;
 use serde::Deserialize;
 use tokio::{
     runtime::Runtime,
@@ -72,6 +73,21 @@ impl ClientConfigurationData {
     }
 }
 
+/// How the client should handle the server certificate.
+#[derive(Debug)]
+pub enum CertificateVerificationMode {
+    /// No verification will be done on the server certificate
+    SkipVerification,
+    /// The client will look up the server identifier in `trusted_endpoints`.
+    /// - If no identifier exists yet for this server, the client will accept the given server's certificate and return it.
+    /// - If some certificate already existed for this server, and the received one is different, an error will be raised.
+    TrustOnFirstUse {
+        trusted_endpoints: HashMap<String, Vec<Certificate>>,
+    },
+    /// Client will only trust a server certificate signed by a conventional certificate authority
+    WithCertificateAuthority,
+}
+
 /// Current state of the client driver
 #[derive(Debug, PartialEq, Eq)]
 enum ClientState {
@@ -81,13 +97,16 @@ enum ClientState {
 
 #[derive(Debug)]
 pub(crate) enum InternalAsyncMessage {
-    Connected,
+    Connected(Option<Vec<Certificate>>),
     LostConnection,
 }
 
 #[derive(Debug)]
 pub(crate) enum InternalSyncMessage {
-    Connect,
+    Connect {
+        config: ClientConfigurationData,
+        cert_mode: CertificateVerificationMode,
+    },
 }
 
 pub struct Client {
@@ -102,8 +121,16 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn connect(&self) -> Result<(), QuinnetError> {
-        match self.internal_sender.try_send(InternalSyncMessage::Connect) {
+    /// Connect to a server with the given [ClientConfigurationData] and [CertificateVerificationMode]
+    pub fn connect(
+        &self,
+        config: ClientConfigurationData,
+        cert_mode: CertificateVerificationMode,
+    ) -> Result<(), QuinnetError> {
+        match self
+            .internal_sender
+            .try_send(InternalSyncMessage::Connect { config, cert_mode })
+        {
             Ok(_) => Ok(()),
             Err(_) => Err(QuinnetError::FullQueue),
         }
@@ -187,19 +214,31 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
     }
 }
 
-fn configure_client() -> ClientConfig {
-    let crypto = rustls::ClientConfig::builder()
-        .with_safe_defaults()
-        .with_custom_certificate_verifier(SkipServerVerification::new())
-        .with_no_client_auth();
+fn configure_client(cert_mode: CertificateVerificationMode) -> ClientConfig {
+    match cert_mode {
+        CertificateVerificationMode::SkipVerification => {
+            let crypto = rustls::ClientConfig::builder()
+                .with_safe_defaults()
+                .with_custom_certificate_verifier(SkipServerVerification::new())
+                .with_no_client_auth();
 
-    ClientConfig::new(Arc::new(crypto))
+            ClientConfig::new(Arc::new(crypto))
+        }
+        CertificateVerificationMode::TrustOnFirstUse { trusted_endpoints } => {
+            todo!()
+        }
+        CertificateVerificationMode::WithCertificateAuthority => ClientConfig::with_native_roots(),
+    }
 }
 
-fn initialize_client(
-    mut commands: Commands,
-    runtime: Res<Runtime>,
-    config: Res<ClientConfigurationData>,
+async fn connection_task(
+    config: ClientConfigurationData,
+    cert_mode: CertificateVerificationMode,
+    to_sync_client: mpsc::Sender<InternalAsyncMessage>,
+    close_sender: tokio::sync::broadcast::Sender<()>,
+    mut close_receiver: tokio::sync::broadcast::Receiver<()>,
+    mut to_server_receiver: mpsc::Receiver<Bytes>,
+    from_server_sender: mpsc::Sender<Bytes>,
 ) {
     let server_adr_str = format!("{}:{}", config.server_host, config.server_port);
     let srv_host = config.server_host.clone();
@@ -211,12 +250,92 @@ fn initialize_client(
         .parse()
         .expect("Failed to parse server address");
 
-    let client_cfg = configure_client();
+    let client_cfg = configure_client(cert_mode);
 
+    let mut endpoint = Endpoint::client(local_bind_adr.parse().unwrap())
+        .expect("Failed to create client endpoint");
+    endpoint.set_default_client_config(client_cfg);
+
+    let mut new_connection = endpoint
+        .connect(server_addr, &srv_host) // TODO Clean: error handling
+        .expect("Failed to connect: configuration error")
+        .await
+        .expect("Failed to connect");
+    info!(
+        "Connected to {}",
+        new_connection.connection.remote_address()
+    );
+
+    to_sync_client
+        .send(InternalAsyncMessage::Connected(None)) // TODO Fix: Trust on first use
+        .await
+        .expect("Failed to signal connection to sync client");
+
+    let send = new_connection
+        .connection
+        .open_uni()
+        .await
+        .expect("Failed to open send stream");
+    let mut frame_send = FramedWrite::new(send, LengthDelimitedCodec::new());
+
+    let close_sender_clone = close_sender.clone();
+    let _network_sends = tokio::spawn(async move {
+        tokio::select! {
+            _ = close_receiver.recv() => {
+                trace!("Unidirectional send Stream forced to disconnected")
+            }
+            _ = async {
+                while let Some(msg_bytes) = to_server_receiver.recv().await {
+                    if let Err(err) = frame_send.send(msg_bytes).await {
+                        error!("Error while sending, {}", err); // TODO Fix: error event
+                        error!("Client seems disconnected, closing resources");
+                        if let Err(_) = close_sender_clone.send(()) {
+                            error!("Failed to close all client streams & resources")
+                        }
+                        to_sync_client.send(
+                            InternalAsyncMessage::LostConnection)
+                            .await
+                            .expect("Failed to signal connection lost to sync client");
+                    }
+                }
+            } => {
+                trace!("Unidirectional send Stream ended")
+            }
+        }
+    });
+
+    let mut uni_receivers: JoinSet<()> = JoinSet::new();
+    let mut close_receiver = close_sender.subscribe();
+    let _network_reads = tokio::spawn(async move {
+        tokio::select! {
+            _ = close_receiver.recv() => {
+                trace!("New Stream listener forced to disconnected")
+            }
+            _ = async {
+                while let Some(Ok(recv)) = new_connection.uni_streams.next().await {
+                    let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
+                    let from_server_sender = from_server_sender.clone();
+
+                    uni_receivers.spawn(async move {
+                        while let Some(Ok(msg_bytes)) = frame_recv.next().await {
+                            from_server_sender.send(msg_bytes.into()).await.unwrap();
+                            // TODO Fix: error event
+                        }
+                    });
+                }
+            } => {
+                trace!("New Stream listener ended ")
+            }
+        }
+        uni_receivers.shutdown().await;
+        trace!("All unidirectional stream receivers cleaned");
+    });
+}
+
+fn start_async_client(mut commands: Commands, runtime: Res<Runtime>) {
     let (from_server_sender, from_server_receiver) =
         mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
-    let (to_server_sender, mut to_server_receiver) =
-        mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
+    let (to_server_sender, to_server_receiver) = mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
 
     let (to_sync_client, from_async_client) =
         mpsc::channel::<InternalAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
@@ -224,101 +343,31 @@ fn initialize_client(
         mpsc::channel::<InternalSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
 
     // Create a close channel for this connection
-    let (close_sender, mut close_receiver): (
+    let (close_sender, close_receiver): (
         tokio::sync::broadcast::Sender<()>,
         tokio::sync::broadcast::Receiver<()>,
     ) = broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
+    // Async client
     let close_sender_clone = close_sender.clone();
     runtime.spawn(async move {
         // Wait for a connection signal before starting client
         if let Some(message) = from_sync_client.recv().await {
             match message {
-                InternalSyncMessage::Connect => info!("Client requested to connect"),
+                InternalSyncMessage::Connect { config, cert_mode } => {
+                    connection_task(
+                        config,
+                        cert_mode,
+                        to_sync_client,
+                        close_sender_clone,
+                        close_receiver,
+                        to_server_receiver,
+                        from_server_sender,
+                    )
+                    .await;
+                }
             }
-        } else {
-            warn!("Client closed before requesting a connection");
-            return;
         }
-
-        let mut endpoint = Endpoint::client(local_bind_adr.parse().unwrap())
-            .expect("Failed to create client endpoint");
-        endpoint.set_default_client_config(client_cfg);
-
-        let mut new_connection = endpoint
-            .connect(server_addr, &srv_host) // TODO Clean: error handling
-            .expect("Failed to connect: configuration error")
-            .await
-            .expect("Failed to connect");
-        info!(
-            "Connected to {}",
-            new_connection.connection.remote_address()
-        );
-
-        to_sync_client
-            .send(InternalAsyncMessage::Connected)
-            .await
-            .expect("Failed to signal connection to sync client");
-
-        let send = new_connection
-            .connection
-            .open_uni()
-            .await
-            .expect("Failed to open send stream");
-        let mut frame_send = FramedWrite::new(send, LengthDelimitedCodec::new());
-
-        let close_sender = close_sender_clone.clone();
-        let _network_sends = tokio::spawn(async move {
-            tokio::select! {
-                _ = close_receiver.recv() => {
-                    trace!("Unidirectional send Stream forced to disconnected")
-                }
-                _ = async {
-                    while let Some(msg_bytes) = to_server_receiver.recv().await {
-                        if let Err(err) = frame_send.send(msg_bytes).await {
-                            error!("Error while sending, {}", err); // TODO Fix: error event
-                            error!("Client seems disconnected, closing resources");
-                            if let Err(_) = close_sender.send(()) {
-                                error!("Failed to close all client streams & resources")
-                            }
-                            to_sync_client.send(
-                                InternalAsyncMessage::LostConnection)
-                                .await
-                                .expect("Failed to signal connection lost to sync client");
-                        }
-                    }
-                } => {
-                    trace!("Unidirectional send Stream ended")
-                }
-            }
-        });
-
-        let mut uni_receivers: JoinSet<()> = JoinSet::new();
-        let mut close_receiver = close_sender_clone.subscribe();
-        let _network_reads = tokio::spawn(async move {
-            tokio::select! {
-                _ = close_receiver.recv() => {
-                    trace!("New Stream listener forced to disconnected")
-                }
-                _ = async {
-                    while let Some(Ok(recv)) = new_connection.uni_streams.next().await {
-                        let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
-                        let from_server_sender = from_server_sender.clone();
-
-                        uni_receivers.spawn(async move {
-                            while let Some(Ok(msg_bytes)) = frame_recv.next().await {
-                                from_server_sender.send(msg_bytes.into()).await.unwrap();
-                                // TODO Fix: error event
-                            }
-                        });
-                    }
-                } => {
-                    trace!("New Stream listener ended ")
-                }
-            }
-            uni_receivers.shutdown().await;
-            trace!("All unidirectional stream receivers cleaned");
-        });
     });
 
     commands.insert_resource(Client {
@@ -339,7 +388,7 @@ fn update_sync_client(
 ) {
     while let Ok(message) = client.internal_receiver.try_recv() {
         match message {
-            InternalAsyncMessage::Connected => {
+            InternalAsyncMessage::Connected(server_cert) => {
                 client.state = ClientState::Connected;
                 connection_events.send(ConnectionEvent);
             }
@@ -370,7 +419,7 @@ impl Plugin for QuinnetClientPlugin {
         .add_event::<ConnectionEvent>()
         .add_event::<ConnectionLostEvent>()
         // StartupStage::PreStartup so that resources created in commands are available to default startup_systems
-        .add_startup_system_to_stage(StartupStage::PreStartup, initialize_client)
+        .add_startup_system_to_stage(StartupStage::PreStartup, start_async_client)
         .add_system(update_sync_client);
     }
 }
