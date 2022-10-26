@@ -41,7 +41,7 @@ pub struct ConnectionLostEvent { pub id: ClientId }
 #[derive(Debug)]
 pub(crate) enum InternalAsyncMessage {
     ClientConnected(ClientConnection),
-    ClientDisconnected(ClientId),
+    ClientLostConnection(ClientId),
 }
 
 #[derive(Debug, Clone)]
@@ -293,9 +293,9 @@ fn start_server(
                                     error!("Failed to close all client streams & resources for client {}", client_id)
                                 }
                                 to_sync_server_clone.send(
-                                    InternalAsyncMessage::ClientDisconnected(client_id))
+                                    InternalAsyncMessage::ClientLostConnection(client_id))
                                     .await
-                                    .expect("Failed to signal disconnection to sync client");                    
+                                    .expect("Failed to signal connection lost to sync server");                    
                             };
                         }
                     } => {}
@@ -376,7 +376,7 @@ fn update_sync_server(
                 server.internal_sender.send(InternalSyncMessage::ClientConnectedAck(id)).unwrap();
                 connection_events.send(ConnectionEvent { id: id });
             }
-            InternalAsyncMessage::ClientDisconnected(client_id) => {
+            InternalAsyncMessage::ClientLostConnection(client_id) => {
                 server.clients.remove(&client_id);
                 connection_lost_events.send(ConnectionLostEvent { id: client_id });
             },
