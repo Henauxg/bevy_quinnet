@@ -224,7 +224,9 @@ fn configure_client(cert_mode: CertificateVerificationMode) -> ClientConfig {
 
             ClientConfig::new(Arc::new(crypto))
         }
-        CertificateVerificationMode::TrustOnFirstUse { trusted_endpoints } => {
+        CertificateVerificationMode::TrustOnFirstUse {
+            trusted_endpoints: _,
+        } => {
             todo!()
         }
         CertificateVerificationMode::WithCertificateAuthority => ClientConfig::with_native_roots(),
@@ -388,7 +390,8 @@ fn update_sync_client(
 ) {
     while let Ok(message) = client.internal_receiver.try_recv() {
         match message {
-            InternalAsyncMessage::Connected(server_cert) => {
+            // TODO Fix: if TrustOnFirstUse, return certificate
+            InternalAsyncMessage::Connected(_) => {
                 client.state = ClientState::Connected;
                 connection_events.send(ConnectionEvent);
             }
