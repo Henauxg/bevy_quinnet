@@ -25,6 +25,8 @@ pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 
 /// Connection event raised when the client just connected to the server. Raised in the CoreStage::PreUpdate stage.
 pub struct ConnectionEvent;
+/// ConnectionLost event raised when the client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
+pub struct ConnectionLostEvent;
 
 #[derive(Deserialize)]
 pub struct ClientConfigurationData {
@@ -60,6 +62,7 @@ enum ClientState {
 #[derive(Debug)]
 pub(crate) enum InternalAsyncMessage {
     Connected,
+    LostConnection,
 }
 
 #[derive(Debug)]
@@ -244,6 +247,7 @@ fn initialize_client(
             .expect("Failed to open send stream");
         let mut frame_send = FramedWrite::new(send, LengthDelimitedCodec::new());
 
+        let close_sender = close_sender_clone.clone();
         let _network_sends = tokio::spawn(async move {
             tokio::select! {
                 _ = close_receiver.recv() => {
@@ -253,6 +257,14 @@ fn initialize_client(
                     while let Some(msg_bytes) = to_server_receiver.recv().await {
                         if let Err(err) = frame_send.send(msg_bytes).await {
                             error!("Error while sending, {}", err); // TODO Fix: error event
+                            error!("Client seems disconnected, closing resources");
+                            if let Err(_) = close_sender.send(()) {
+                                error!("Failed to close all client streams & resources")
+                            }
+                            to_sync_client.send(
+                                InternalAsyncMessage::LostConnection)
+                                .await
+                                .expect("Failed to signal connection lost to sync client");
                         }
                     }
                 } => {
@@ -303,12 +315,17 @@ fn initialize_client(
 fn update_sync_client(
     mut client: ResMut<Client>,
     mut connection_events: EventWriter<ConnectionEvent>,
+    mut connection_lost_events: EventWriter<ConnectionLostEvent>,
 ) {
     while let Ok(message) = client.internal_receiver.try_recv() {
         match message {
             InternalAsyncMessage::Connected => {
                 client.state = ClientState::Connected;
                 connection_events.send(ConnectionEvent);
+            }
+            InternalAsyncMessage::LostConnection => {
+                client.state = ClientState::Disconnected;
+                connection_lost_events.send(ConnectionLostEvent);
             }
         }
     }
@@ -331,6 +348,7 @@ impl Plugin for QuinnetClientPlugin {
                 .unwrap(),
         )
         .add_event::<ConnectionEvent>()
+        .add_event::<ConnectionLostEvent>()
         // StartupStage::PreStartup so that resources created in commands are available to default startup_systems
         .add_startup_system_to_stage(StartupStage::PreStartup, initialize_client)
         .add_system(update_sync_client);
