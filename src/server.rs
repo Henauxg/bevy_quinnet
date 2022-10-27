@@ -1,11 +1,19 @@
-use std::{collections::HashMap, error::Error, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fs::{self, File},
+    io::BufReader,
+    net::SocketAddr,
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
 
 use bevy::prelude::*;
 use bytes::Bytes;
 use futures::sink::SinkExt;
 use futures_util::StreamExt;
 use quinn::{Endpoint, NewConnection, ServerConfig};
-use rustls::Certificate;
 use serde::Deserialize;
 use tokio::{
     runtime::Runtime,
@@ -83,11 +91,17 @@ pub struct ClientPayload {
 /// How the server should retrieve its certificate.
 #[derive(Debug, Clone)]
 pub enum CertificateRetrievalMode {
-    Provided(Certificate),
-    /// The server will generate a new self-signed certificate when starting up
+    /// The server will always generate a new self-signed certificate when starting up
     GenerateSelfSigned,
-    LoadCertFromFile(String),
-    LoadCertFromFileOrGenerateSelfSigned(String),
+    /// Try to load cert & key from files.
+    LoadFromFile { cert_file: String, key_file: String },
+    /// Try to load cert & key from files.
+    /// If the files do not exist, generate a self-signed certificate, and optionally save it to disk.
+    LoadFromFileOrGenerateSelfSigned {
+        cert_file: String,
+        key_file: String,
+        save_on_disk: bool,
+    },
 }
 
 #[derive(Debug)]
@@ -234,28 +248,106 @@ impl Server {
     }
 }
 
-/// Returns default server configuration along with its certificate.
-fn configure_server(
+fn read_certs_from_files(
+    cert_file: &String,
+    key_file: &String,
+) -> Result<(Vec<rustls::Certificate>, rustls::PrivateKey), Box<dyn Error>> {
+    let mut cert_chain_reader = BufReader::new(File::open(cert_file)?);
+    let certs = rustls_pemfile::certs(&mut cert_chain_reader)?
+        .into_iter()
+        .map(rustls::Certificate)
+        .collect();
+
+    let mut key_reader = BufReader::new(File::open(key_file)?);
+    let mut keys = rustls_pemfile::pkcs8_private_keys(&mut key_reader)?;
+
+    assert_eq!(keys.len(), 1);
+    let key = rustls::PrivateKey(keys.remove(0));
+
+    Ok((certs, key))
+}
+
+fn write_certs_to_files(
+    cert: &rcgen::Certificate,
+    cert_file: &String,
+    key_file: &String,
+) -> Result<(), Box<dyn Error>> {
+    let pem_cert = cert.serialize_pem()?;
+    let pem_key = cert.serialize_private_key_pem();
+
+    fs::write(cert_file, pem_cert)?;
+    fs::write(key_file, pem_key)?;
+
+    Ok(())
+}
+
+fn generate_self_signed_certificate(
+    server_host: &String,
+) -> Result<
+    (
+        Vec<rustls::Certificate>,
+        rustls::PrivateKey,
+        rcgen::Certificate,
+    ),
+    Box<dyn Error>,
+> {
+    let cert = rcgen::generate_simple_self_signed(vec![server_host.into()]).unwrap();
+    let cert_der = cert.serialize_der().unwrap();
+    let priv_key = rustls::PrivateKey(cert.serialize_private_key_der());
+    let cert_chain = vec![rustls::Certificate(cert_der.clone())];
+
+    Ok((cert_chain, priv_key, cert))
+}
+
+fn retrieve_certificate(
     server_host: &String,
     cert_mode: CertificateRetrievalMode,
-) -> Result<(ServerConfig, Vec<u8>), Box<dyn Error>> {
+) -> Result<(Vec<rustls::Certificate>, rustls::PrivateKey), Box<dyn Error>> {
     match cert_mode {
-        CertificateRetrievalMode::Provided(_cert) => todo!(),
         CertificateRetrievalMode::GenerateSelfSigned => {
-            let cert = rcgen::generate_simple_self_signed(vec![server_host.into()]).unwrap();
-            let cert_der = cert.serialize_der().unwrap();
-            let priv_key = rustls::PrivateKey(cert.serialize_private_key_der());
-            let cert_chain = vec![rustls::Certificate(cert_der.clone())];
-
-            let mut server_config = ServerConfig::with_single_cert(cert_chain, priv_key)?;
-            Arc::get_mut(&mut server_config.transport)
-                .unwrap()
-                .keep_alive_interval(Some(Duration::from_secs(DEFAULT_KEEP_ALIVE_INTERVAL_S)));
-
-            Ok((server_config, cert_der))
+            trace!("Generating a new self-signed certificate");
+            match generate_self_signed_certificate(server_host) {
+                Ok((cert_chain, priv_key, _rcgen_cert)) => Ok((cert_chain, priv_key)),
+                Err(e) => Err(e),
+            }
         }
-        CertificateRetrievalMode::LoadCertFromFile(_) => todo!(),
-        CertificateRetrievalMode::LoadCertFromFileOrGenerateSelfSigned(_) => todo!(),
+        CertificateRetrievalMode::LoadFromFile {
+            cert_file,
+            key_file,
+        } => match read_certs_from_files(&cert_file, &key_file) {
+            Ok((cert_chain, priv_key)) => {
+                trace!("Successfuly loaded cert and key from files");
+                Ok((cert_chain, priv_key))
+            }
+            Err(e) => Err(e),
+        },
+        CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
+            save_on_disk,
+            cert_file,
+            key_file,
+        } => {
+            if Path::new(&cert_file).exists() && Path::new(&key_file).exists() {
+                match read_certs_from_files(&cert_file, &key_file) {
+                    Ok((cert_chain, priv_key)) => {
+                        trace!("Successfuly loaded cert and key from files");
+                        Ok((cert_chain, priv_key))
+                    }
+                    Err(e) => Err(e),
+                }
+            } else {
+                warn!("{} and/or {} do not exist, could not load existing certificate. Generating a self-signed one.", cert_file, key_file);
+                match generate_self_signed_certificate(server_host) {
+                    Ok((cert_chain, priv_key, rcgen_cert)) => {
+                        if save_on_disk {
+                            write_certs_to_files(&rcgen_cert, &cert_file, &key_file)?;
+                            trace!("Successfuly saved cert and key to files");
+                        }
+                        Ok((cert_chain, priv_key))
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+        }
     }
 }
 
@@ -274,8 +366,13 @@ async fn connections_listening_task(
         .parse()
         .expect("Failed to parse server address");
 
-    let (server_config, _server_cert) =
-        configure_server(&config.host, cert_mode).expect("Failed to configure server");
+    // Endpoint configuration
+    let (cert_chain, priv_key) =
+        retrieve_certificate(&config.host, cert_mode).expect("Failed to retrieve certificate");
+    let mut server_config = ServerConfig::with_single_cert(cert_chain, priv_key).unwrap();
+    Arc::get_mut(&mut server_config.transport)
+        .unwrap()
+        .keep_alive_interval(Some(Duration::from_secs(DEFAULT_KEEP_ALIVE_INTERVAL_S)));
 
     let mut client_gen_id: ClientId = 0;
     let mut client_id_mappings = HashMap::new();
@@ -349,7 +446,6 @@ async fn connections_listening_task(
         });
 
         // Signal the sync server of this new connection
-        // let mut sync_msg_receiver = to_async_server.subscribe();
         to_sync_server
             .send(InternalAsyncMessage::ClientConnected(ClientConnection {
                 client_id: client_id,
