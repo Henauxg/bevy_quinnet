@@ -115,7 +115,7 @@ fn start_connection(client: ResMut<Client>) {
     // You can already send message(s) even before being connected, they will be buffered. In this example we will wait for a ConnectionEvent. We could also check client.is_connected()
 }
 
-fn handle_server_events(connection_events: EventReader<ConnectionEvent>, client: ResMut<Client>) {
+fn handle_client_events(connection_events: EventReader<ConnectionEvent>, client: ResMut<Client>) {
     if !connection_events.is_empty() {
         // We are connected
         let username: String = rand::thread_rng()
@@ -145,7 +145,7 @@ fn main() {
         .add_startup_system(start_connection)
         .add_system(handle_terminal_messages)
         .add_system(handle_server_messages)
-        .add_system(handle_server_events)
+        .add_system(handle_client_events)
         // CoreStage::PostUpdate so that AppExit events generated in the previous stage are available
         .add_system_to_stage(CoreStage::PostUpdate, on_app_exit)
         .run();
