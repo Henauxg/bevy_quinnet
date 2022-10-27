@@ -149,10 +149,8 @@ fn handle_client_messages(
     mut server: ResMut<Server>,
     /*...*/
 ) {
-    while let Ok(Some(message)) = server.receive_message::<ClientMessage>() {
-        // Retrieve the assigned ClientId.
-        let client_id = message.1;
-        match message.0 {
+    while let Ok(Some((message, client_id))) = server.receive_message::<ClientMessage>() {
+        match message {
             // Match on your own message types ...
             ClientMessage::Join { username} => {
                 // Send a messsage to 1 client
