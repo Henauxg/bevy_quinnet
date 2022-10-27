@@ -1,5 +1,3 @@
-use serde::{Deserialize, Serialize};
-
 pub const DEFAULT_MESSAGE_QUEUE_SIZE: usize = 150;
 pub const DEFAULT_KILL_MESSAGE_QUEUE_SIZE: usize = 10;
 pub const DEFAULT_KEEP_ALIVE_INTERVAL_S: u64 = 4;
@@ -22,9 +20,4 @@ pub enum QuinnetError {
     /// The receive half of the channel was explicitly closed or has been
     /// dropped.
     ChannelClosed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-enum ServerMessage {
-    AssignId { client_id: ClientId },
 }
