@@ -30,7 +30,7 @@ pub struct ConnectionEvent;
 pub struct ConnectionLostEvent;
 
 /// Configuration of the client, used when connecting to a server
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ClientConfigurationData {
     server_host: String,
     server_port: u16,
