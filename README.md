@@ -200,7 +200,7 @@ Here are the current options available to the server and client plugins:
     - [ ] "Trust on first use" certificates
 - Server:
     - [x] Generate and issue a self-signed certificate
-    - [ ] Issue an already existing certificate (CA or self-signed)
+    - [x] Issue an already existing certificate (CA or self-signed)
 
 ## Logs
 
