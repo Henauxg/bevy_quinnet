@@ -26,12 +26,68 @@ pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 
 /// Connection event raised when a client just connected to the server. Raised in the CoreStage::PreUpdate stage.
 pub struct ConnectionEvent {
+    /// Id of the client who connected
     pub id: ClientId,
 }
 
 /// ConnectionLost event raised when a client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
 pub struct ConnectionLostEvent {
+    /// Id of the client who lost connection
     pub id: ClientId,
+}
+
+/// Configuration of the server, used when the server starts
+#[derive(Debug, Deserialize, Clone)]
+pub struct ServerConfigurationData {
+    host: String,
+    port: u16,
+    local_bind_host: String,
+}
+
+impl ServerConfigurationData {
+    /// Creates a new ServerConfigurationData
+    ///
+    /// # Arguments
+    ///
+    /// * `host` - Address of the server
+    /// * `port` - Port that the server is listening on
+    /// * `local_bind_host` - Local address to bind to, which should usually be a wildcard address like `0.0.0.0` or `[::]`, which allow communication with any reachable IPv4 or IPv6 address. See [`quinn::endpoint::Endpoint`] for more precision
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let config = ServerConfigurationData::new(
+    ///         "127.0.0.1".to_string(),
+    ///         6000,
+    ///         "0.0.0.0".to_string(),
+    ///     );
+    /// ```
+    pub fn new(host: String, port: u16, local_bind_host: String) -> Self {
+        Self {
+            host,
+            port,
+            local_bind_host,
+        }
+    }
+}
+
+/// Represents a client message in its binary form
+#[derive(Debug)]
+pub struct ClientPayload {
+    /// Id of the client sending the message
+    client_id: ClientId,
+    /// Content of the message as bytes
+    msg: Bytes,
+}
+
+/// How the server should retrieve its certificate.
+#[derive(Debug, Clone)]
+pub enum CertificateRetrievalMode {
+    Provided(Certificate),
+    /// The server will generate a new self-signed certificate when starting up
+    GenerateSelfSigned,
+    LoadCertFromFile(String),
+    LoadCertFromFileOrGenerateSelfSigned(String),
 }
 
 #[derive(Debug)]
@@ -49,29 +105,6 @@ pub(crate) enum InternalSyncMessage {
     ClientConnectedAck(ClientId),
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct ServerConfigurationData {
-    host: String,
-    port: u16,
-    local_bind_host: String,
-}
-
-impl ServerConfigurationData {
-    pub fn new(host: String, port: u16, local_bind_host: String) -> Self {
-        Self {
-            host,
-            port,
-            local_bind_host,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct ClientPayload {
-    client_id: ClientId,
-    msg: Bytes,
-}
-
 #[derive(Debug)]
 pub(crate) struct ClientConnection {
     client_id: ClientId,
@@ -85,15 +118,6 @@ pub struct Server {
 
     pub(crate) internal_receiver: mpsc::Receiver<InternalAsyncMessage>,
     pub(crate) internal_sender: broadcast::Sender<InternalSyncMessage>,
-}
-
-/// How the server should retrieve its certificate.
-#[derive(Debug, Clone)]
-pub enum CertificateRetrievalMode {
-    Provided(Certificate),
-    GenerateSelfSigned,
-    LoadCertFromFile(String),
-    LoadCertFromFileOrGenerateSelfSigned(String),
 }
 
 impl Server {
