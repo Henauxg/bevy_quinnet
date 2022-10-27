@@ -20,10 +20,8 @@ struct Users {
 }
 
 fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) {
-    while let Ok(Some(message)) = server.receive_message::<ClientMessage>() {
-        // Retrieve the assigned ClientId.
-        let client_id = message.1;
-        match message.0 {
+    while let Ok(Some((message, client_id))) = server.receive_message::<ClientMessage>() {
+        match message {
             ClientMessage::Join { name } => {
                 if users.names.contains_key(&client_id) {
                     warn!(
