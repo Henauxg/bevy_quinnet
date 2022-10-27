@@ -195,12 +195,39 @@ Bevy Quinnet (through Quinn & QUIC) uses TLS 1.3 for authentication, the server 
 
 Here are the current options available to the server and client plugins:
 - Client : 
-    - [x] Accept certificates issued by a Certificate Authority
     - [x] Skip certificate verification
     - [ ] "Trust on first use" certificates
+    - [x] Accept certificates issued by a Certificate Authority
 - Server:
     - [x] Generate and issue a self-signed certificate
     - [x] Issue an already existing certificate (CA or self-signed)
+
+- On the client:
+
+```rust
+    // To accept any certificate
+    client.connect(/*...*/, CertificateVerificationMode::SkipVerification);
+    // To only accept certificates issued by a Certificate Authority
+    client.connect(/*...*/, CertificateVerificationMode::WithCertificateAuthority);
+```
+
+- On the server:
+
+```rust
+    // To generate a new self-signed certificate on each startup 
+    server.start(/*...*/, CertificateRetrievalMode::GenerateSelfSigned);
+    // To load a pre-existing one from files
+    server.start(/*...*/, CertificateRetrievalMode::LoadFromFile {
+        cert_file: "./certificates.pem".into(),
+        key_file: "./privkey.pem".into(),
+    },
+    // To load one from files, or to generate a new self-signed one if the files do not exist.
+    server.start(/*...*/, CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
+        cert_file: "./certificates.pem".into(),
+        key_file: "./privkey.pem".into(),
+        save_on_disk: true, // To persist on disk if generated
+    },
+```
 
 ## Logs
 
