@@ -104,6 +104,13 @@ pub enum CertificateRetrievalMode {
     },
 }
 
+/// Current state of the client driver
+#[derive(Debug, PartialEq, Eq)]
+enum ServerState {
+    Idle,
+    Listening,
+}
+
 #[derive(Debug)]
 pub(crate) enum InternalAsyncMessage {
     ClientConnected(ClientConnection),
@@ -129,6 +136,7 @@ pub(crate) struct ClientConnection {
 pub struct Server {
     clients: HashMap<ClientId, ClientConnection>,
     receiver: mpsc::Receiver<ClientPayload>,
+    state: ServerState,
 
     pub(crate) internal_receiver: mpsc::Receiver<InternalAsyncMessage>,
     pub(crate) internal_sender: broadcast::Sender<InternalSyncMessage>,
@@ -137,7 +145,7 @@ pub struct Server {
 impl Server {
     /// Run the server with the given [ServerConfigurationData] and [CertificateRetrievalMode]
     pub fn start(
-        &self,
+        &mut self,
         config: ServerConfigurationData,
         cert_mode: CertificateRetrievalMode,
     ) -> Result<(), QuinnetError> {
@@ -145,8 +153,19 @@ impl Server {
             .internal_sender
             .send(InternalSyncMessage::StartListening { config, cert_mode })
         {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                self.state = ServerState::Listening;
+                Ok(())
+            }
             Err(_) => Err(QuinnetError::FullQueue),
+        }
+    }
+
+    /// Returns true if the server is currently listening for messages and connections.
+    pub fn is_listening(&self) -> bool {
+        match self.state {
+            ServerState::Idle => false,
+            ServerState::Listening => true,
         }
     }
 
@@ -522,6 +541,7 @@ fn start_async_server(mut commands: Commands, runtime: Res<Runtime>) {
     commands.insert_resource(Server {
         clients: HashMap::new(),
         receiver: from_clients_receiver,
+        state: ServerState::Idle,
         internal_receiver: from_async_server,
         internal_sender: to_async_server.clone(),
     });
@@ -582,15 +602,18 @@ impl Default for QuinnetServerPlugin {
 
 impl Plugin for QuinnetServerPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap(),
-        )
-        .add_event::<ConnectionEvent>()
-        .add_event::<ConnectionLostEvent>()
-        .add_startup_system_to_stage(StartupStage::PreStartup, start_async_server)
-        .add_system_to_stage(CoreStage::PreUpdate, update_sync_server);
+        app.add_event::<ConnectionEvent>()
+            .add_event::<ConnectionLostEvent>()
+            .add_startup_system_to_stage(StartupStage::PreStartup, start_async_server)
+            .add_system_to_stage(CoreStage::PreUpdate, update_sync_server);
+
+        if app.world.get_resource_mut::<Runtime>().is_none() {
+            app.insert_resource(
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap(),
+            );
+        }
     }
 }

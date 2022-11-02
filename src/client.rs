@@ -413,16 +413,19 @@ impl Default for QuinnetClientPlugin {
 
 impl Plugin for QuinnetClientPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap(),
-        )
-        .add_event::<ConnectionEvent>()
-        .add_event::<ConnectionLostEvent>()
-        // StartupStage::PreStartup so that resources created in commands are available to default startup_systems
-        .add_startup_system_to_stage(StartupStage::PreStartup, start_async_client)
-        .add_system(update_sync_client);
+        app.add_event::<ConnectionEvent>()
+            .add_event::<ConnectionLostEvent>()
+            // StartupStage::PreStartup so that resources created in commands are available to default startup_systems
+            .add_startup_system_to_stage(StartupStage::PreStartup, start_async_client)
+            .add_system(update_sync_client);
+
+        if app.world.get_resource_mut::<Runtime>().is_none() {
+            app.insert_resource(
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap(),
+            );
+        }
     }
 }
