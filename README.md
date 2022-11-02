@@ -134,7 +134,7 @@ fn handle_server_messages(
 - You can then use the `Server` resource to start the listening server:
 
 ```rust
-fn start_listening(server: ResMut<Server>) {
+fn start_listening(mut server: ResMut<Server>) {
     server
         .start(
             ServerConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string()),

@@ -111,7 +111,7 @@ fn handle_disconnect(server: &mut ResMut<Server>, users: &mut ResMut<Users>, cli
     }
 }
 
-fn start_listening(server: ResMut<Server>) {
+fn start_listening(mut server: ResMut<Server>) {
     server
         .start(
             ServerConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string()),
