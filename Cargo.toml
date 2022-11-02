@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 keywords = ["gamedev", "networking", "quic", "bevy", "plugin"]
 categories = ["game-development", "network-programming"]
 readme = "README.md"
+exclude = ["assets/"]
 
 [dependencies]
 bevy = { version = "0.8.1", default-features = false, features = [] }
@@ -24,4 +25,9 @@ bytes = "1.2.1"
 rustls-pemfile = "1.0.1"
 
 [dev-dependencies]
+bevy = { version = "0.8.1", default-features = false, features = ["bevy_asset", "bevy_audio", "bevy_winit", "render"] }
 rand = "0.8.5"
+
+[[example]]
+name = "breakout"
+path = "examples/breakout/breakout.rs"
