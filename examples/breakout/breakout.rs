@@ -11,7 +11,7 @@ use bevy_quinnet::{
     client::QuinnetClientPlugin,
     server::{QuinnetServerPlugin, Server},
 };
-use client::{handle_server_messages, start_connection};
+use client::{handle_client_events, handle_server_messages, start_connection};
 use server::{handle_client_messages, handle_server_events, start_listening};
 
 mod client;
@@ -105,14 +105,14 @@ fn main() {
                 .with_system(handle_client_messages)
                 .with_system(handle_server_events)
                 .with_system(handle_server_messages)
-                .with_system(handle_server_events),
+                .with_system(handle_client_events),
         )
         // or just Joining
         .add_system_set(SystemSet::on_enter(GameState::JoiningLobby).with_system(start_connection))
         .add_system_set(
             SystemSet::on_update(GameState::JoiningLobby)
                 .with_system(handle_server_messages)
-                .with_system(handle_server_events),
+                .with_system(handle_client_events),
         )
         // Running the game
         .add_system_set(SystemSet::on_enter(GameState::Running).with_system(setup_breakout))
@@ -135,7 +135,7 @@ fn main() {
         .add_system_set(
             SystemSet::on_update(GameState::Running)
                 .with_system(handle_server_messages)
-                .with_system(handle_server_events),
+                .with_system(handle_client_events),
         )
         // But hosting apps are also a server
         .add_system_set(
@@ -152,7 +152,7 @@ fn main() {
                 // .with_system(apply_velocity.before(check_for_collisions))
                 // .with_system(play_collision_sound.after(check_for_collisions))
                 // .with_system(update_scoreboard)
-                .with_system(handle_server_messages)
+                .with_system(handle_client_messages)
                 .with_system(handle_server_events),
         )
         .add_system(bevy::window::close_on_esc)
