@@ -1,4 +1,5 @@
 //! A simplified implementation of the classic game "Breakout".
+//! => Original example by Bevy, modified for Bevy Quinnet to add a 2 players versus mode.
 
 use bevy::{
     ecs::schedule::ShouldRun,
@@ -6,9 +7,12 @@ use bevy::{
     sprite::collide_aabb::{collide, Collision},
     time::FixedTimestep,
 };
-use bevy_quinnet::{client::QuinnetClientPlugin, server::QuinnetServerPlugin};
+use bevy_quinnet::{
+    client::QuinnetClientPlugin,
+    server::{QuinnetServerPlugin, Server},
+};
 use client::{handle_server_messages, start_connection};
-use server::{handle_client_messages, handle_server_events, start_listening, Users};
+use server::{handle_client_messages, handle_server_events, start_listening};
 
 mod client;
 mod protocol;
@@ -69,8 +73,8 @@ const COLLISION_SOUND_EFFECT: &str = "sounds/breakout_collision.ogg";
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 enum GameState {
     MainMenu,
-    Hosting,
-    Joining,
+    HostingLobby,
+    JoiningLobby,
     Running,
 }
 
@@ -84,23 +88,29 @@ fn main() {
         .insert_resource(Scoreboard { score: 0 })
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         // Resources
-        .insert_resource(server::Users::default()) //TODO Move ?
+        .insert_resource(server::Players::default()) //TODO Move ?
         .insert_resource(client::Users::default())
         // Main menu
         .add_system_set(SystemSet::on_enter(GameState::MainMenu).with_system(setup_main_menu))
         .add_system_set(SystemSet::on_update(GameState::MainMenu).with_system(handle_menu_buttons))
         .add_system_set(SystemSet::on_exit(GameState::MainMenu).with_system(teardown_main_menu))
         // Hosting
-        .add_system_set(SystemSet::on_enter(GameState::Hosting).with_system(start_listening))
         .add_system_set(
-            SystemSet::on_update(GameState::Hosting)
+            SystemSet::on_enter(GameState::HostingLobby)
+                .with_system(start_listening)
+                .with_system(start_connection),
+        )
+        .add_system_set(
+            SystemSet::on_update(GameState::HostingLobby)
                 .with_system(handle_client_messages)
+                .with_system(handle_server_events)
+                .with_system(handle_server_messages)
                 .with_system(handle_server_events),
         )
-        // or Joining
-        .add_system_set(SystemSet::on_enter(GameState::Joining).with_system(start_connection))
+        // or just Joining
+        .add_system_set(SystemSet::on_enter(GameState::JoiningLobby).with_system(start_connection))
         .add_system_set(
-            SystemSet::on_update(GameState::Joining)
+            SystemSet::on_update(GameState::JoiningLobby)
                 .with_system(handle_server_messages)
                 .with_system(handle_server_events),
         )
@@ -120,6 +130,30 @@ fn main() {
                 .with_system(apply_velocity.before(check_for_collisions))
                 .with_system(play_collision_sound.after(check_for_collisions))
                 .with_system(update_scoreboard),
+        )
+        // Every app is a client
+        .add_system_set(
+            SystemSet::on_update(GameState::Running)
+                .with_system(handle_server_messages)
+                .with_system(handle_server_events),
+        )
+        // But hosting apps are also a server
+        .add_system_set(
+            SystemSet::new()
+                // https://github.com/bevyengine/bevy/issues/1839
+                .with_run_criteria(run_if_host.chain(
+                    |In(input): In<ShouldRun>, state: Res<State<GameState>>| match state.current() {
+                        GameState::Running => input,
+                        _ => ShouldRun::No,
+                    },
+                ))
+                // .with_system(check_for_collisions)
+                // .with_system(move_paddle.before(check_for_collisions))
+                // .with_system(apply_velocity.before(check_for_collisions))
+                // .with_system(play_collision_sound.after(check_for_collisions))
+                // .with_system(update_scoreboard)
+                .with_system(handle_server_messages)
+                .with_system(handle_server_events),
         )
         .add_system(bevy::window::close_on_esc)
         .run();
@@ -233,6 +267,13 @@ struct Scoreboard {
     score: usize,
 }
 
+fn run_if_host(server: Res<Server>) -> ShouldRun {
+    match server.is_listening() {
+        true => ShouldRun::No,
+        false => ShouldRun::Yes,
+    }
+}
+
 fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Camera
     commands.spawn_bundle(Camera2dBundle::default());
@@ -286,8 +327,8 @@ fn handle_menu_buttons(
             Interaction::Clicked => {
                 *color = PRESSED_BUTTON_COLOR.into();
                 match item {
-                    MenuItem::Host => game_state.set(GameState::Hosting).unwrap(),
-                    MenuItem::Join => game_state.set(GameState::Joining).unwrap(),
+                    MenuItem::Host => game_state.set(GameState::HostingLobby).unwrap(),
+                    MenuItem::Join => game_state.set(GameState::JoiningLobby).unwrap(),
                 }
             }
             Interaction::Hovered => {
