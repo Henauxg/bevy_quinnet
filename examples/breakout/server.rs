@@ -232,6 +232,7 @@ pub(crate) fn check_for_collisions(
 
                 server
                     .broadcast_message(ServerMessage::BallCollided {
+                        owner_client_id: ball.last_hit_by,
                         entity: ball_entity,
                         position: ball_transform.translation,
                         velocity: ball_velocity.0,
@@ -250,6 +251,18 @@ pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<
 }
 
 fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &ResMut<Players>) {
+    // Assign ids
+    for client_id in players.map.keys().into_iter() {
+        server
+            .send_message(
+                *client_id,
+                ServerMessage::InitClient {
+                    client_id: *client_id,
+                },
+            )
+            .unwrap();
+    }
+
     // Spawn paddles
     for (position, client_id) in PADDLES_STARTING_POSITION
         .iter()
@@ -279,6 +292,7 @@ fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &Re
             .send_group_message(
                 players.map.keys().into_iter(),
                 ServerMessage::SpawnBall {
+                    owner_client_id: *client_id,
                     entity: ball,
                     position: *position,
                     direction: *direction,

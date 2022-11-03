@@ -30,6 +30,7 @@ pub(crate) enum ServerMessage {
         position: Vec3,
     },
     SpawnBall {
+        owner_client_id: ClientId,
         entity: Entity,
         position: Vec3,
         direction: Vec2,
@@ -45,6 +46,7 @@ pub(crate) enum ServerMessage {
         brick_id: BrickId,
     },
     BallCollided {
+        owner_client_id: ClientId,
         entity: Entity,
         position: Vec3,
         velocity: Vec2,

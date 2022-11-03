@@ -30,7 +30,9 @@ const SCOREBOARD_TEXT_PADDING: Val = Val::Px(5.0);
 
 pub(crate) const BACKGROUND_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
 const PADDLE_COLOR: Color = Color::rgb(0.3, 0.3, 0.7);
-const BALL_COLOR: Color = Color::rgb(1.0, 0.5, 0.5);
+const OPPONENT_PADDLE_COLOR: Color = Color::rgb(1.0, 0.5, 0.5);
+const BALL_COLOR: Color = Color::rgb(0.35, 0.35, 0.6);
+const OPPONENT_BALL_COLOR: Color = Color::rgb(0.9, 0.6, 0.6);
 const BRICK_COLOR: Color = Color::rgb(0.5, 0.5, 1.0);
 const WALL_COLOR: Color = Color::rgb(0.8, 0.8, 0.8);
 const TEXT_COLOR: Color = Color::rgb(0.5, 0.5, 1.0);
@@ -96,7 +98,7 @@ pub(crate) fn start_connection(client: ResMut<Client>) {
         .unwrap();
 }
 
-fn spawn_paddle(commands: &mut Commands, position: &Vec3) -> Entity {
+fn spawn_paddle(commands: &mut Commands, position: &Vec3, owned: bool) -> Entity {
     commands
         .spawn()
         .insert_bundle(SpriteBundle {
@@ -106,7 +108,11 @@ fn spawn_paddle(commands: &mut Commands, position: &Vec3) -> Entity {
                 ..default()
             },
             sprite: Sprite {
-                color: PADDLE_COLOR,
+                color: if owned {
+                    PADDLE_COLOR
+                } else {
+                    OPPONENT_PADDLE_COLOR
+                },
                 ..default()
             },
             ..default()
@@ -115,7 +121,7 @@ fn spawn_paddle(commands: &mut Commands, position: &Vec3) -> Entity {
         .id()
 }
 
-fn spawn_ball(commands: &mut Commands, pos: &Vec3, direction: &Vec2) -> Entity {
+fn spawn_ball(commands: &mut Commands, pos: &Vec3, direction: &Vec2, owned: bool) -> Entity {
     commands
         .spawn()
         .insert(Ball)
@@ -126,7 +132,7 @@ fn spawn_ball(commands: &mut Commands, pos: &Vec3, direction: &Vec2) -> Entity {
                 ..default()
             },
             sprite: Sprite {
-                color: BALL_COLOR,
+                color: ball_color_from_bool(owned),
                 ..default()
             },
             ..default()
@@ -179,8 +185,7 @@ pub(crate) fn handle_server_messages(
     mut entity_mapping: ResMut<NetworkMapping>,
     mut game_state: ResMut<State<GameState>>,
     mut paddles: Query<&mut Transform, With<Paddle>>,
-    mut balls: Query<(&mut Transform, &mut Velocity), (With<Ball>, Without<Paddle>)>,
-    // mut bricks: Query<(&mut Transform, &mut Velocity, Entity, &Brick)>, //  (With<Brick>, Without<Paddle>, Without<Ball>),
+    mut balls: Query<(&mut Transform, &mut Velocity, &mut Sprite), (With<Ball>, Without<Paddle>)>,
     mut bricks: ResMut<BricksMapping>,
     mut collision_events: EventWriter<CollisionEvent>,
 ) {
@@ -190,19 +195,29 @@ pub(crate) fn handle_server_messages(
                 client_data.self_id = client_id;
             }
             ServerMessage::SpawnPaddle {
-                owner_client_id: client_id,
+                owner_client_id,
                 entity,
                 position,
             } => {
-                let paddle = spawn_paddle(&mut commands, &position);
+                let paddle = spawn_paddle(
+                    &mut commands,
+                    &position,
+                    owner_client_id == client_data.self_id,
+                );
                 entity_mapping.map.insert(entity, paddle);
             }
             ServerMessage::SpawnBall {
+                owner_client_id,
                 entity,
                 position,
                 direction,
             } => {
-                let ball = spawn_ball(&mut commands, &position, &direction);
+                let ball = spawn_ball(
+                    &mut commands,
+                    &position,
+                    &direction,
+                    owner_client_id == client_data.self_id,
+                );
                 entity_mapping.map.insert(entity, ball);
             }
             ServerMessage::SpawnBricks {
@@ -220,15 +235,19 @@ pub(crate) fn handle_server_messages(
                 }
             }
             ServerMessage::BallCollided {
+                owner_client_id,
                 entity,
                 position,
                 velocity,
             } => {
                 if let Some(local_ball) = entity_mapping.map.get(&entity) {
-                    if let Ok((mut ball_transform, mut ball_velocity)) = balls.get_mut(*local_ball)
+                    if let Ok((mut ball_transform, mut ball_velocity, mut ball_sprite)) =
+                        balls.get_mut(*local_ball)
                     {
                         ball_transform.translation = position;
                         ball_velocity.0 = velocity;
+                        ball_sprite.color =
+                            ball_color_from_bool(owner_client_id == client_data.self_id);
                     }
                 }
                 // Sends a collision event so that other systems can react to the collision
@@ -416,6 +435,14 @@ pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<
     for (mut transform, velocity) in &mut query {
         transform.translation.x += velocity.x * TIME_STEP;
         transform.translation.y += velocity.y * TIME_STEP;
+    }
+}
+
+fn ball_color_from_bool(owned: bool) -> Color {
+    if owned {
+        BALL_COLOR
+    } else {
+        OPPONENT_BALL_COLOR
     }
 }
 

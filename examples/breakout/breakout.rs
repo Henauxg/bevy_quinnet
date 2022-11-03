@@ -6,7 +6,7 @@ use bevy_quinnet::{
     client::QuinnetClientPlugin,
     server::{QuinnetServerPlugin, Server},
 };
-use client::{NetworkMapping, BACKGROUND_COLOR};
+use client::BACKGROUND_COLOR;
 
 mod client;
 mod protocol;
