@@ -222,13 +222,13 @@ Here are the current options available to the server and client plugins:
     server.start(/*...*/, CertificateRetrievalMode::LoadFromFile {
         cert_file: "./certificates.pem".into(),
         key_file: "./privkey.pem".into(),
-    };
+    });
     // To load one from files, or to generate a new self-signed one if the files do not exist.
     server.start(/*...*/, CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
         cert_file: "./certificates.pem".into(),
         key_file: "./privkey.pem".into(),
         save_on_disk: true, // To persist on disk if generated
-    };
+    });
 ```
 
 ## Logs
