@@ -5,6 +5,23 @@
 
 A Client/Server game networking plugin using [QUIC](https://www.chromium.org/quic/), for the Bevy game engine.
 
+- [Bevy Quinnet](#bevy-quinnet)
+  - [QUIC as a game networking protocol](#quic-as-a-game-networking-protocol)
+  - [Features](#features)
+  - [Roadmap](#roadmap)
+  - [Quickstart](#quickstart)
+    - [Client](#client)
+    - [Server](#server)
+  - [Certificates](#certificates)
+  - [Logs](#logs)
+  - [Examples](#examples)
+    - [Chat example](#chat-example)
+    - [Breakout versus](#breakout-versus)
+  - [Compatible Bevy versions](#compatible-bevy-versions)
+  - [Limitations](#limitations)
+  - [Credits](#credits)
+  - [License](#license)
+
 ## QUIC as a game networking protocol
 
 QUIC was really attractive to me as a game networking protocol because most of the hard-work is done by the protocol specification and the implementation (here [Quinn](https://github.com/quinn-rs/quinn)). No need to reinvent the wheel once again on error-prones subjects such as a UDP reliability wrapper, some encryption & authentication mechanisms, congestion-control, and so on.
@@ -180,27 +197,6 @@ fn handle_client_messages(
 
 You can also use `server.broadcast_message`, which will send a message to all connected clients. "Connected" here means connected to the server plugin, which happens before your own app handshakes/verifications if you have any. Use `send_group_message` if you want to control the recipients.
 
-## Examples
-
-Examples can be found in the [examples](examples) directory.
-### Chat example
-
-This demo comes with an headless [server](examples/chat_server/), a [terminal client](examples/terminal_chat_client/) and a shared [protocol](examples/chat_protocol/).
-
-Start the server with `cargo run --example chat_server` and as many clients as needed with `cargo run --example terminal_chat_client`. Type `quit` to disconnect with a client.
-
-![terminal_chat_demo](https://user-images.githubusercontent.com/19689618/197757086-0643e6e7-6c69-4760-9af6-cb323529dc52.gif)
-
-### Breakout versus
-
-This demo is a modification of the classic [Bevy breakout](https://bevyengine.org/examples/games/breakout/) example to turn it into a 2 players versus game.
-
-It hosts a local server from inside a client, instead of a dedicated headless server as in the chat demo. You can find a [server module](examples/breakout/server.rs), a [client module](examples/breakout/client.rs), a shared [protocol](examples/breakout/protocol.rs) and the [bevy app schedule](examples/breakout/breakout.rs).
-
-![breakout_versus_demo_short](https://user-images.githubusercontent.com/19689618/199804335-17df365c-32aa-49b1-94f1-11b8c7162ae3.gif)
-
-Start two clients with `cargo run --example breakout`, "Host" one one and "Join" on the other.
-
 ## Certificates
 
 Bevy Quinnet (through Quinn & QUIC) uses TLS 1.3 for authentication, the server needs to provide the client with a certificate confirming its identity, and the client must be configured to trust the certificates it receives from the server.
@@ -245,13 +241,34 @@ Here are the current options available to the server and client plugins:
 
 For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatbook.github.io/features/log.html).
 
+## Examples
+
+Examples can be found in the [examples](examples) directory.
+### Chat example
+
+This demo comes with an headless [server](examples/chat_server/), a [terminal client](examples/terminal_chat_client/) and a shared [protocol](examples/chat_protocol/).
+
+Start the server with `cargo run --example chat_server` and as many clients as needed with `cargo run --example terminal_chat_client`. Type `quit` to disconnect with a client.
+
+![terminal_chat_demo](https://user-images.githubusercontent.com/19689618/197757086-0643e6e7-6c69-4760-9af6-cb323529dc52.gif)
+
+### Breakout versus
+
+This demo is a modification of the classic [Bevy breakout](https://bevyengine.org/examples/games/breakout/) example to turn it into a 2 players versus game.
+
+It hosts a local server from inside a client, instead of a dedicated headless server as in the chat demo. You can find a [server module](examples/breakout/server.rs), a [client module](examples/breakout/client.rs), a shared [protocol](examples/breakout/protocol.rs) and the [bevy app schedule](examples/breakout/breakout.rs).
+
+Start two clients with `cargo run --example breakout`, "Host" one one and "Join" on the other.
+
+![breakout_versus_demo_short](https://user-images.githubusercontent.com/19689618/199804335-17df365c-32aa-49b1-94f1-11b8c7162ae3.gif)
+
 ## Compatible Bevy versions
 
 Compatibility of `bevy_quinnet` versions:
 
-| `bevy_quinnet`      | `bevy` |
-| :--                 | :--    |
-| `0.1` - `0.2`       | `0.8`  |
+| `bevy_quinnet` | `bevy` |
+| :------------- | :----- |
+| `0.1` - `0.2`  | `0.8`  |
 
 ## Limitations
 
