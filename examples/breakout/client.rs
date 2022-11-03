@@ -20,8 +20,9 @@ use bevy_quinnet::{
 
 use crate::{
     protocol::{ClientMessage, PaddleInput, ServerMessage},
-    Collider, CollisionEvent, CollisionSound, GameState, Score, Scoreboard, Velocity, WallLocation,
-    BALL_SIZE, BALL_SPEED, BRICK_SIZE, GAP_BETWEEN_BRICKS, PADDLE_SIZE, SERVER_PORT, TIME_STEP,
+    BrickId, CollisionEvent, CollisionSound, GameState, Score, Scoreboard, Velocity, WallLocation,
+    BALL_SIZE, BALL_SPEED, BRICK_SIZE, GAP_BETWEEN_BRICKS, PADDLE_SIZE, SERVER_HOST, SERVER_PORT,
+    TIME_STEP,
 };
 
 const SCOREBOARD_FONT_SIZE: f32 = 40.0;
@@ -53,6 +54,10 @@ pub(crate) struct NetworkMapping {
     // Network entity id to local entity id
     map: HashMap<Entity, Entity>,
 }
+#[derive(Default)]
+pub struct BricksMapping {
+    map: HashMap<BrickId, Entity>,
+}
 
 #[derive(Component)]
 pub(crate) struct Paddle;
@@ -60,7 +65,6 @@ pub(crate) struct Paddle;
 #[derive(Component)]
 pub(crate) struct Ball;
 
-pub type BrickId = u64;
 #[derive(Component)]
 pub(crate) struct Brick(BrickId);
 
@@ -74,18 +78,15 @@ pub(crate) enum MenuItem {
 // This bundle is a collection of the components that define a "wall" in our game
 #[derive(Bundle)]
 struct WallBundle {
-    // You can nest bundles inside of other bundles like this
-    // Allowing you to compose their functionality
     #[bundle]
     sprite_bundle: SpriteBundle,
-    collider: Collider,
 }
 
 pub(crate) fn start_connection(client: ResMut<Client>) {
     client
         .connect(
             ClientConfigurationData::new(
-                "127.0.0.1".to_string(),
+                SERVER_HOST.to_string(),
                 SERVER_PORT,
                 "0.0.0.0".to_string(),
                 0,
@@ -110,7 +111,6 @@ fn spawn_paddle(commands: &mut Commands, position: &Vec3) -> Entity {
             },
             ..default()
         })
-        .insert(Collider)
         .insert(Paddle)
         .id()
 }
@@ -135,7 +135,13 @@ fn spawn_ball(commands: &mut Commands, pos: &Vec3, direction: &Vec2) -> Entity {
         .id()
 }
 
-pub(crate) fn spawn_bricks(commands: &mut Commands, offset: Vec2, rows: usize, columns: usize) {
+pub(crate) fn spawn_bricks(
+    commands: &mut Commands,
+    bricks: &mut ResMut<BricksMapping>,
+    offset: Vec2,
+    rows: usize,
+    columns: usize,
+) {
     let mut brick_id = 0;
     for row in 0..rows {
         for column in 0..columns {
@@ -144,8 +150,7 @@ pub(crate) fn spawn_bricks(commands: &mut Commands, offset: Vec2, rows: usize, c
                 offset.y + row as f32 * (BRICK_SIZE.y + GAP_BETWEEN_BRICKS),
             );
 
-            // brick
-            commands
+            let brick = commands
                 .spawn()
                 .insert(Brick(brick_id))
                 .insert_bundle(SpriteBundle {
@@ -160,7 +165,8 @@ pub(crate) fn spawn_bricks(commands: &mut Commands, offset: Vec2, rows: usize, c
                     },
                     ..default()
                 })
-                .insert(Collider);
+                .id();
+            bricks.map.insert(brick_id, brick);
             brick_id += 1;
         }
     }
@@ -174,10 +180,8 @@ pub(crate) fn handle_server_messages(
     mut game_state: ResMut<State<GameState>>,
     mut paddles: Query<&mut Transform, With<Paddle>>,
     mut balls: Query<(&mut Transform, &mut Velocity), (With<Ball>, Without<Paddle>)>,
-    mut bricks: Query<
-        (&mut Transform, &mut Velocity),
-        (With<Brick>, Without<Paddle>, Without<Ball>),
-    >,
+    // mut bricks: Query<(&mut Transform, &mut Velocity, Entity, &Brick)>, //  (With<Brick>, Without<Paddle>, Without<Ball>),
+    mut bricks: ResMut<BricksMapping>,
     mut collision_events: EventWriter<CollisionEvent>,
 ) {
     while let Ok(Some(message)) = client.receive_message::<ServerMessage>() {
@@ -186,7 +190,7 @@ pub(crate) fn handle_server_messages(
                 client_data.self_id = client_id;
             }
             ServerMessage::SpawnPaddle {
-                client_id,
+                owner_client_id: client_id,
                 entity,
                 position,
             } => {
@@ -205,9 +209,16 @@ pub(crate) fn handle_server_messages(
                 offset,
                 rows,
                 columns,
-            } => spawn_bricks(&mut commands, offset, rows, columns),
+            } => spawn_bricks(&mut commands, &mut bricks, offset, rows, columns),
             ServerMessage::StartGame {} => game_state.set(GameState::Running).unwrap(),
-            ServerMessage::BrickDestroyed { client_id } => todo!(),
+            ServerMessage::BrickDestroyed {
+                by_client_id,
+                brick_id,
+            } => {
+                if let Some(brick_entity) = bricks.map.get(&brick_id) {
+                    commands.entity(*brick_entity).despawn();
+                }
+            }
             ServerMessage::BallCollided {
                 entity,
                 position,
@@ -409,8 +420,6 @@ pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<
 }
 
 impl WallBundle {
-    // This "builder method" allows us to reuse logic across our wall entities,
-    // making our code easier to read and less prone to bugs when we change the logic
     fn new(location: WallLocation) -> WallBundle {
         WallBundle {
             sprite_bundle: SpriteBundle {
@@ -430,7 +439,6 @@ impl WallBundle {
                 },
                 ..default()
             },
-            collider: Collider,
         }
     }
 }

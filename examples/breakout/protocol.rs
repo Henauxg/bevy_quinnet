@@ -2,6 +2,8 @@ use bevy::prelude::{Entity, Vec2, Vec3};
 use bevy_quinnet::ClientId;
 use serde::{Deserialize, Serialize};
 
+use crate::BrickId;
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) enum PaddleInput {
     #[default]
@@ -23,7 +25,7 @@ pub(crate) enum ServerMessage {
         client_id: ClientId,
     },
     SpawnPaddle {
-        client_id: ClientId,
+        owner_client_id: ClientId,
         entity: Entity,
         position: Vec3,
     },
@@ -39,7 +41,8 @@ pub(crate) enum ServerMessage {
     },
     StartGame,
     BrickDestroyed {
-        client_id: ClientId,
+        by_client_id: ClientId,
+        brick_id: BrickId,
     },
     BallCollided {
         entity: Entity,

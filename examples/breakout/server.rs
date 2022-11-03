@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use bevy::{
     prelude::{
-        default, Commands, Component, Entity, EventReader, Query, ResMut, Transform, Vec2, Vec3,
-        With,
+        default, Bundle, Commands, Component, Entity, EventReader, Query, ResMut, Transform, Vec2,
+        Vec3, With,
     },
     sprite::collide_aabb::{collide, Collision},
     transform::TransformBundle,
@@ -15,10 +15,10 @@ use bevy_quinnet::{
 
 use crate::{
     protocol::{ClientMessage, PaddleInput, ServerMessage},
-    Collider, Scoreboard, Velocity, BALL_SIZE, BALL_SPEED, BOTTOM_WALL, BRICK_SIZE,
+    BrickId, Scoreboard, Velocity, WallLocation, BALL_SIZE, BALL_SPEED, BOTTOM_WALL, BRICK_SIZE,
     GAP_BETWEEN_BRICKS, GAP_BETWEEN_BRICKS_AND_SIDES, GAP_BETWEEN_PADDLE_AND_BRICKS,
     GAP_BETWEEN_PADDLE_AND_FLOOR, LEFT_WALL, PADDLE_PADDING, PADDLE_SIZE, PADDLE_SPEED, RIGHT_WALL,
-    SERVER_PORT, TIME_STEP, TOP_WALL, WALL_THICKNESS,
+    SERVER_HOST, SERVER_PORT, TIME_STEP, TOP_WALL, WALL_THICKNESS,
 };
 
 const GAP_BETWEEN_PADDLE_AND_BALL: f32 = 35.;
@@ -59,18 +59,29 @@ pub(crate) struct Paddle {
     player_id: ClientId,
 }
 
-pub type BrickId = u64;
 #[derive(Component)]
 pub(crate) struct Brick(BrickId);
 
 #[derive(Component)]
-pub(crate) struct Ball;
+pub(crate) struct Collider;
+
+#[derive(Component)]
+pub(crate) struct Ball {
+    last_hit_by: ClientId,
+}
+
+#[derive(Bundle)]
+struct WallBundle {
+    #[bundle]
+    transform_bundle: TransformBundle,
+    collider: Collider,
+}
 
 pub(crate) fn start_listening(mut server: ResMut<Server>) {
     server
         .start(
             ServerConfigurationData::new(
-                "127.0.0.1".to_string(),
+                SERVER_HOST.to_string(),
                 SERVER_PORT,
                 "0.0.0.0".to_string(),
             ),
@@ -108,7 +119,6 @@ pub(crate) fn handle_server_events(
                 Player {
                     score: 0,
                     input: PaddleInput::None,
-                    // paddle: None,
                 },
             );
             if players.map.len() == 2 {
@@ -163,14 +173,14 @@ pub(crate) fn check_for_collisions(
     mut commands: Commands,
     mut server: ResMut<Server>,
     mut scoreboard: ResMut<Scoreboard>,
-    mut ball_query: Query<(&mut Velocity, &Transform, Entity), With<Ball>>,
-    collider_query: Query<(Entity, &Transform, Option<&Brick>), With<Collider>>,
+    mut ball_query: Query<(&mut Velocity, &Transform, Entity, &mut Ball)>,
+    collider_query: Query<(Entity, &Transform, Option<&Brick>, Option<&Paddle>), With<Collider>>,
 ) {
-    for (mut ball_velocity, ball_transform, ball) in ball_query.iter_mut() {
+    for (mut ball_velocity, ball_transform, ball_entity, mut ball) in ball_query.iter_mut() {
         let ball_size = ball_transform.scale.truncate();
 
         // check collision with walls
-        for (collider_entity, transform, maybe_brick) in &collider_query {
+        for (collider_entity, transform, maybe_brick, maybe_paddle) in &collider_query {
             let collision = collide(
                 ball_transform.translation,
                 ball_size,
@@ -178,10 +188,22 @@ pub(crate) fn check_for_collisions(
                 transform.scale.truncate(),
             );
             if let Some(collision) = collision {
+                // When a ball hit a paddle, mark this ball as belonging to this client
+                if let Some(paddle) = maybe_paddle {
+                    ball.last_hit_by = paddle.player_id;
+                }
+
                 // Bricks should be despawned and increment the scoreboard on collision
-                if maybe_brick.is_some() {
+                if let Some(brick) = maybe_brick {
                     scoreboard.score += 1;
                     commands.entity(collider_entity).despawn();
+
+                    server
+                        .broadcast_message(ServerMessage::BrickDestroyed {
+                            by_client_id: ball.last_hit_by,
+                            brick_id: brick.0,
+                        })
+                        .unwrap();
                 }
 
                 // reflect the ball when it collides
@@ -210,7 +232,7 @@ pub(crate) fn check_for_collisions(
 
                 server
                     .broadcast_message(ServerMessage::BallCollided {
-                        entity: ball,
+                        entity: ball_entity,
                         position: ball_transform.translation,
                         velocity: ball_velocity.0,
                     })
@@ -229,26 +251,30 @@ pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<
 
 fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &ResMut<Players>) {
     // Spawn paddles
-    for (index, (client_id, _)) in players.map.iter().enumerate() {
-        let paddle = spawn_paddle(commands, *client_id, &PADDLES_STARTING_POSITION[index]);
+    for (position, client_id) in PADDLES_STARTING_POSITION
+        .iter()
+        .zip(players.map.keys().into_iter())
+    {
+        let paddle = spawn_paddle(commands, *client_id, &position);
         server
             .send_group_message(
                 players.map.keys().into_iter(),
                 ServerMessage::SpawnPaddle {
-                    client_id: *client_id,
+                    owner_client_id: *client_id,
                     entity: paddle,
-                    position: PADDLES_STARTING_POSITION[index],
+                    position: *position,
                 },
             )
             .unwrap();
     }
 
     // Spawn balls
-    for (position, direction) in BALLS_STARTING_POSITION
+    for ((position, direction), client_id) in BALLS_STARTING_POSITION
         .iter()
         .zip(INITIAL_BALLS_DIRECTION.iter())
+        .zip(players.map.keys().into_iter())
     {
-        let ball = spawn_ball(commands, position, direction);
+        let ball = spawn_ball(commands, *client_id, position, direction);
         server
             .send_group_message(
                 players.map.keys().into_iter(),
@@ -260,6 +286,12 @@ fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &Re
             )
             .unwrap();
     }
+
+    // Spawn walls
+    commands.spawn_bundle(WallBundle::new(WallLocation::Left));
+    commands.spawn_bundle(WallBundle::new(WallLocation::Right));
+    commands.spawn_bundle(WallBundle::new(WallLocation::Bottom));
+    commands.spawn_bundle(WallBundle::new(WallLocation::Top));
 
     // Spawn bricks
     // Negative scales result in flipped sprites / meshes,
@@ -362,10 +394,17 @@ fn spawn_paddle(commands: &mut Commands, client_id: ClientId, pos: &Vec3) -> Ent
         .id()
 }
 
-fn spawn_ball(commands: &mut Commands, pos: &Vec3, direction: &Vec2) -> Entity {
+fn spawn_ball(
+    commands: &mut Commands,
+    client_id: ClientId,
+    pos: &Vec3,
+    direction: &Vec2,
+) -> Entity {
     commands
         .spawn()
-        .insert(Ball)
+        .insert(Ball {
+            last_hit_by: client_id,
+        })
         .insert_bundle(TransformBundle {
             local: Transform {
                 scale: BALL_SIZE,
@@ -376,4 +415,23 @@ fn spawn_ball(commands: &mut Commands, pos: &Vec3, direction: &Vec2) -> Entity {
         })
         .insert(Velocity(direction.normalize() * BALL_SPEED))
         .id()
+}
+
+impl WallBundle {
+    fn new(location: WallLocation) -> WallBundle {
+        WallBundle {
+            transform_bundle: TransformBundle {
+                local: Transform {
+                    translation: location.position().extend(0.0),
+                    // The z-scale of 2D objects must always be 1.0,
+                    // or their ordering will be affected in surprising ways.
+                    // See https://github.com/bevyengine/bevy/issues/4149
+                    scale: location.size().extend(1.0),
+                    ..default()
+                },
+                ..default()
+            },
+            collider: Collider,
+        }
+    }
 }

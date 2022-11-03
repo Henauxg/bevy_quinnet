@@ -12,6 +12,7 @@ mod client;
 mod protocol;
 mod server;
 
+const SERVER_HOST: &str = "127.0.0.1";
 const SERVER_PORT: u16 = 6000;
 
 // Defines the amount of time that should elapse between each physics step.
@@ -51,6 +52,60 @@ enum GameState {
     Running,
 }
 
+#[derive(Component, Deref, DerefMut)]
+struct Velocity(Vec2);
+
+#[derive(Default)]
+struct CollisionEvent;
+
+#[derive(Component)]
+struct Score;
+
+struct CollisionSound(Handle<AudioSource>);
+
+pub type BrickId = u64;
+
+/// Which side of the arena is this wall located on?
+enum WallLocation {
+    Left,
+    Right,
+    Bottom,
+    Top,
+}
+
+impl WallLocation {
+    fn position(&self) -> Vec2 {
+        match self {
+            WallLocation::Left => Vec2::new(LEFT_WALL, 0.),
+            WallLocation::Right => Vec2::new(RIGHT_WALL, 0.),
+            WallLocation::Bottom => Vec2::new(0., BOTTOM_WALL),
+            WallLocation::Top => Vec2::new(0., TOP_WALL),
+        }
+    }
+
+    fn size(&self) -> Vec2 {
+        let arena_height = TOP_WALL - BOTTOM_WALL;
+        let arena_width = RIGHT_WALL - LEFT_WALL;
+        // Make sure we haven't messed up our constants
+        assert!(arena_height > 0.0);
+        assert!(arena_width > 0.0);
+
+        match self {
+            WallLocation::Left | WallLocation::Right => {
+                Vec2::new(WALL_THICKNESS, arena_height + WALL_THICKNESS)
+            }
+            WallLocation::Bottom | WallLocation::Top => {
+                Vec2::new(arena_width + WALL_THICKNESS, WALL_THICKNESS)
+            }
+        }
+    }
+}
+
+// This resource tracks the game's score
+struct Scoreboard {
+    score: usize,
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -63,7 +118,8 @@ fn main() {
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(server::Players::default())
         .insert_resource(client::ClientData::default())
-        .insert_resource(NetworkMapping::default())
+        .insert_resource(client::NetworkMapping::default())
+        .insert_resource(client::BricksMapping::default())
         // Main menu
         .add_system_set(
             SystemSet::on_enter(GameState::MainMenu).with_system(client::setup_main_menu),
@@ -138,59 +194,4 @@ fn main() {
         )
         .add_system(bevy::window::close_on_esc)
         .run();
-}
-
-#[derive(Component, Deref, DerefMut)]
-struct Velocity(Vec2);
-
-#[derive(Component)]
-struct Collider;
-
-#[derive(Default)]
-struct CollisionEvent;
-
-#[derive(Component)]
-struct Score;
-
-struct CollisionSound(Handle<AudioSource>);
-
-/// Which side of the arena is this wall located on?
-enum WallLocation {
-    Left,
-    Right,
-    Bottom,
-    Top,
-}
-
-impl WallLocation {
-    fn position(&self) -> Vec2 {
-        match self {
-            WallLocation::Left => Vec2::new(LEFT_WALL, 0.),
-            WallLocation::Right => Vec2::new(RIGHT_WALL, 0.),
-            WallLocation::Bottom => Vec2::new(0., BOTTOM_WALL),
-            WallLocation::Top => Vec2::new(0., TOP_WALL),
-        }
-    }
-
-    fn size(&self) -> Vec2 {
-        let arena_height = TOP_WALL - BOTTOM_WALL;
-        let arena_width = RIGHT_WALL - LEFT_WALL;
-        // Make sure we haven't messed up our constants
-        assert!(arena_height > 0.0);
-        assert!(arena_width > 0.0);
-
-        match self {
-            WallLocation::Left | WallLocation::Right => {
-                Vec2::new(WALL_THICKNESS, arena_height + WALL_THICKNESS)
-            }
-            WallLocation::Bottom | WallLocation::Top => {
-                Vec2::new(arena_width + WALL_THICKNESS, WALL_THICKNESS)
-            }
-        }
-    }
-}
-
-// This resource tracks the game's score
-struct Scoreboard {
-    score: usize,
 }
