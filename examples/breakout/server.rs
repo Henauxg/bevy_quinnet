@@ -42,7 +42,6 @@ const PADDLES_STARTING_POSITION: [Vec3; 2] = [
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Player {
-    // paddle: Option<Entity>,
     input: PaddleInput,
     score: u64,
 }
@@ -108,7 +107,6 @@ pub(crate) fn handle_server_events(
 pub(crate) fn update_paddles(
     mut server: ResMut<Server>,
     players: ResMut<Players>,
-    // mut query: Query<&mut Transform, With<Paddle>>,
     mut paddles: Query<(&mut Transform, &Paddle, Entity)>,
 ) {
     for (mut paddle_transform, paddle, paddle_entity) in paddles.iter_mut() {

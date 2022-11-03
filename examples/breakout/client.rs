@@ -55,9 +55,12 @@ pub(crate) struct NetworkMapping {
     map: HashMap<Entity, Entity>,
 }
 
+#[derive(Component)]
+pub(crate) struct Paddle;
+
 /// The buttons in the main menu.
 #[derive(Clone, Copy, Component)]
-pub enum MenuItem {
+pub(crate) enum MenuItem {
     Host,
     Join,
 }
@@ -98,6 +101,7 @@ fn spawn_paddle(commands: &mut Commands, position: &Vec3) -> Entity {
             ..default()
         })
         .insert(Collider)
+        .insert(Paddle)
         .id()
 }
 
@@ -127,6 +131,7 @@ pub(crate) fn handle_server_messages(
     mut client_data: ResMut<ClientData>,
     mut entity_mapping: ResMut<NetworkMapping>,
     mut game_state: ResMut<State<GameState>>,
+    mut paddles: Query<&mut Transform, With<Paddle>>,
 ) {
     while let Ok(Some(message)) = client.receive_message::<ServerMessage>() {
         match message {
@@ -152,7 +157,13 @@ pub(crate) fn handle_server_messages(
             ServerMessage::StartGame {} => game_state.set(GameState::Running).unwrap(),
             ServerMessage::BrickDestroyed { client_id } => todo!(),
             ServerMessage::BallPosition { entity, position } => todo!(),
-            ServerMessage::PaddlePosition { entity, position } => todo!(),
+            ServerMessage::PaddlePosition { entity, position } => {
+                if let Some(local_paddle) = entity_mapping.map.get(&entity) {
+                    if let Ok(mut paddle_transform) = paddles.get_mut(*local_paddle) {
+                        paddle_transform.translation = position;
+                    }
+                }
+            }
         }
     }
 }

@@ -67,10 +67,10 @@ fn main() {
         .add_plugin(QuinnetClientPlugin::default())
         .add_event::<CollisionEvent>()
         .add_state(GameState::MainMenu)
+        // Resources
         .insert_resource(Scoreboard { score: 0 })
         .insert_resource(ClearColor(BACKGROUND_COLOR))
-        // Resources
-        .insert_resource(server::Players::default()) //TODO Move ?
+        .insert_resource(server::Players::default())
         .insert_resource(client::ClientData::default())
         .insert_resource(NetworkMapping::default())
         // Main menu
@@ -94,7 +94,8 @@ fn main() {
         .add_system_set(
             SystemSet::on_update(GameState::JoiningLobby).with_system(handle_server_messages),
         )
-        // Running the game
+        // Running the game.
+        // Every app is a client
         .add_system_set(SystemSet::on_enter(GameState::Running).with_system(setup_breakout))
         .add_system_set(
             SystemSet::new()
@@ -105,33 +106,36 @@ fn main() {
                         _ => ShouldRun::No,
                     },
                 ))
-                .with_system(check_for_collisions)
-                .with_system(move_paddle.before(check_for_collisions))
-                .with_system(apply_velocity.before(check_for_collisions))
-                .with_system(play_collision_sound.after(check_for_collisions))
+                .with_system(handle_server_messages)
+                // .with_system(check_for_collisions)
+                // .with_system(move_paddle.before(check_for_collisions))
+                .with_system(move_paddle)
+                // .with_system(apply_velocity.before(check_for_collisions))
+                // .with_system(play_collision_sound.after(check_for_collisions))
                 .with_system(update_scoreboard),
-        )
-        // Every app is a client
-        .add_system_set(
-            SystemSet::on_update(GameState::Running).with_system(handle_server_messages),
         )
         // But hosting apps are also a server
         .add_system_set(
             SystemSet::new()
                 // https://github.com/bevyengine/bevy/issues/1839
-                .with_run_criteria(run_if_host.chain(
-                    |In(input): In<ShouldRun>, state: Res<State<GameState>>| match state.current() {
-                        GameState::Running => input,
+                // Run on a fixed Timestep, only for the server, in GameState::Running
+                .with_run_criteria(FixedTimestep::step(TIME_STEP as f64).chain(
+                    |In(input): In<ShouldRun>,
+                     state: Res<State<GameState>>,
+                     server: Res<Server>| match state.current() {
+                        GameState::Running => match server.is_listening() {
+                            true => input,
+                            false => ShouldRun::Yes,
+                        },
                         _ => ShouldRun::No,
                     },
                 ))
-                // .with_system(check_for_collisions)
+                .with_system(handle_client_messages.before(update_paddles))
                 .with_system(update_paddles.before(check_for_collisions))
-                // .with_system(apply_velocity.before(check_for_collisions))
-                // .with_system(play_collision_sound.after(check_for_collisions))
-                // .with_system(update_scoreboard)
-                .with_system(handle_client_messages)
-                .with_system(handle_server_events),
+                .with_system(check_for_collisions),
+            // .with_system(apply_velocity.before(check_for_collisions))
+            // .with_system(play_collision_sound.after(check_for_collisions))
+            // .with_system(update_scoreboard)
         )
         .add_system(bevy::window::close_on_esc)
         .run();
@@ -196,13 +200,6 @@ impl WallLocation {
 // This resource tracks the game's score
 struct Scoreboard {
     score: usize,
-}
-
-fn run_if_host(server: Res<Server>) -> ShouldRun {
-    match server.is_listening() {
-        true => ShouldRun::No,
-        false => ShouldRun::Yes,
-    }
 }
 
 fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>) {
