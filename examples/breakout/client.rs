@@ -363,14 +363,19 @@ pub(crate) fn setup_breakout(mut commands: Commands, asset_server: Res<AssetServ
     let total_width_of_bricks = (RIGHT_WALL - LEFT_WALL) - 2. * GAP_BETWEEN_BRICKS_AND_SIDES;
     let bottom_edge_of_bricks =
         BOTTOM_WALL + GAP_BETWEEN_PADDLE_AND_FLOOR + GAP_BETWEEN_PADDLE_AND_BRICKS;
-    let total_height_of_bricks = TOP_WALL - bottom_edge_of_bricks - GAP_BETWEEN_BRICKS_AND_CEILING;
+    let available_height_for_bricks = TOP_WALL
+        - bottom_edge_of_bricks
+        - (GAP_BETWEEN_PADDLE_AND_FLOOR + GAP_BETWEEN_PADDLE_AND_BRICKS);
 
     assert!(total_width_of_bricks > 0.0);
-    assert!(total_height_of_bricks > 0.0);
+    assert!(available_height_for_bricks > 0.0);
 
     // Given the space available, compute how many rows and columns of bricks we can fit
     let n_columns = (total_width_of_bricks / (BRICK_SIZE.x + GAP_BETWEEN_BRICKS)).floor() as usize;
-    let n_rows = (total_height_of_bricks / (BRICK_SIZE.y + GAP_BETWEEN_BRICKS)).floor() as usize;
+    let n_rows =
+        (available_height_for_bricks / (BRICK_SIZE.y + GAP_BETWEEN_BRICKS)).floor() as usize;
+    let height_occupied_by_bricks =
+        n_rows as f32 * (BRICK_SIZE.y + GAP_BETWEEN_BRICKS) - GAP_BETWEEN_BRICKS;
     let n_vertical_gaps = n_columns - 1;
 
     // Because we need to round the number of columns,
@@ -385,7 +390,9 @@ pub(crate) fn setup_breakout(mut commands: Commands, asset_server: Res<AssetServ
     // In Bevy, the `translation` of an entity describes the center point,
     // not its bottom-left corner
     let offset_x = left_edge_of_bricks + BRICK_SIZE.x / 2.;
-    let offset_y = bottom_edge_of_bricks + BRICK_SIZE.y / 2.;
+    let offset_y = bottom_edge_of_bricks
+        + BRICK_SIZE.y / 2.
+        + (available_height_for_bricks - height_occupied_by_bricks) / 2.; // Offset so that both players are at an equal distance of the bricks
 
     for row in 0..n_rows {
         for column in 0..n_columns {
