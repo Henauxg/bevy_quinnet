@@ -180,16 +180,24 @@ fn handle_client_messages(
 
 You can also use `server.broadcast_message`, which will send a message to all connected clients. "Connected" here means connected to the server plugin, which happens before your own app handshakes/verifications if you have any. Use `send_group_message` if you want to control the recipients.
 
-## Example
+## Examples
 
 Examples can be found in the [examples](examples) directory.
 ### Chat example
 
-This demo comes with an headless [server](examples/chat_server/), a [terminal client](examples/terminal_chat_client/) and a shared [protocol](examples/chat_protocol/)
+This demo comes with an headless [server](examples/chat_server/), a [terminal client](examples/terminal_chat_client/) and a shared [protocol](examples/chat_protocol/).
 
 Start the server with `cargo run --example chat_server` and as many clients as needed with `cargo run --example terminal_chat_client`. Type `quit` to disconnect with a client.
 
 ![terminal_chat_demo](https://user-images.githubusercontent.com/19689618/197757086-0643e6e7-6c69-4760-9af6-cb323529dc52.gif)
+
+### Breakout versus
+
+This demo is a modification of the classic [Bevy breakout](https://bevyengine.org/examples/games/breakout/) example to turn it into a 2 players versus game.
+
+It hosts a local server from inside a client, instead of a dedicated headless server as in the chat demo. You can find a [server module](examples/breakout/server.rs), a [client module](examples/breakout/client.rs), a shared [protocol](examples/breakout/protocol.rs) and the [bevy app schedule](examples/breakout/breakout.rs).
+
+Start two clients with `cargo run --example breakout`, "Host" one one and "Join" on the other.
 
 ## Certificates
 
