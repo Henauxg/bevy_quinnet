@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use bevy::{
     prelude::{
         default, Commands, Component, Entity, EventReader, Query, ResMut, Transform, Vec2, Vec3,
+        With,
     },
+    sprite::collide_aabb::{collide, Collision},
     transform::TransformBundle,
 };
 use bevy_quinnet::{
@@ -13,9 +15,9 @@ use bevy_quinnet::{
 
 use crate::{
     protocol::{ClientMessage, PaddleInput, ServerMessage},
-    Ball, Collider, Velocity, BALL_SIZE, BALL_SPEED, BOTTOM_WALL, GAP_BETWEEN_PADDLE_AND_FLOOR,
-    LEFT_WALL, PADDLE_PADDING, PADDLE_SIZE, PADDLE_SPEED, RIGHT_WALL, TIME_STEP, TOP_WALL,
-    WALL_THICKNESS,
+    Brick, Collider, Scoreboard, Velocity, BALL_SIZE, BALL_SPEED, BOTTOM_WALL,
+    GAP_BETWEEN_PADDLE_AND_FLOOR, LEFT_WALL, PADDLE_PADDING, PADDLE_SIZE, PADDLE_SPEED, RIGHT_WALL,
+    TIME_STEP, TOP_WALL, WALL_THICKNESS,
 };
 
 const GAP_BETWEEN_PADDLE_AND_BALL: f32 = 35.;
@@ -55,6 +57,9 @@ pub(crate) struct Players {
 pub(crate) struct Paddle {
     player_id: ClientId,
 }
+
+#[derive(Component)]
+pub(crate) struct Ball;
 
 pub(crate) fn start_listening(mut server: ResMut<Server>) {
     server
@@ -134,7 +139,7 @@ pub(crate) fn update_paddles(
                 server
                     .send_group_message(
                         players.map.keys().into_iter(),
-                        ServerMessage::PaddlePosition {
+                        ServerMessage::PaddleMoved {
                             entity: paddle_entity,
                             position: paddle_transform.translation,
                         },
@@ -142,6 +147,74 @@ pub(crate) fn update_paddles(
                     .unwrap();
             }
         }
+    }
+}
+
+pub(crate) fn check_for_collisions(
+    mut commands: Commands,
+    mut server: ResMut<Server>,
+    mut scoreboard: ResMut<Scoreboard>,
+    mut ball_query: Query<(&mut Velocity, &Transform, Entity), With<Ball>>,
+    collider_query: Query<(Entity, &Transform, Option<&Brick>), With<Collider>>,
+) {
+    for (mut ball_velocity, ball_transform, ball) in ball_query.iter_mut() {
+        let ball_size = ball_transform.scale.truncate();
+
+        // check collision with walls
+        for (collider_entity, transform, maybe_brick) in &collider_query {
+            let collision = collide(
+                ball_transform.translation,
+                ball_size,
+                transform.translation,
+                transform.scale.truncate(),
+            );
+            if let Some(collision) = collision {
+                // Bricks should be despawned and increment the scoreboard on collision
+                if maybe_brick.is_some() {
+                    scoreboard.score += 1;
+                    commands.entity(collider_entity).despawn();
+                }
+
+                // reflect the ball when it collides
+                let mut reflect_x = false;
+                let mut reflect_y = false;
+
+                // only reflect if the ball's velocity is going in the opposite direction of the
+                // collision
+                match collision {
+                    Collision::Left => reflect_x = ball_velocity.x > 0.0,
+                    Collision::Right => reflect_x = ball_velocity.x < 0.0,
+                    Collision::Top => reflect_y = ball_velocity.y < 0.0,
+                    Collision::Bottom => reflect_y = ball_velocity.y > 0.0,
+                    Collision::Inside => { /* do nothing */ }
+                }
+
+                // reflect velocity on the x-axis if we hit something on the x-axis
+                if reflect_x {
+                    ball_velocity.x = -ball_velocity.x;
+                }
+
+                // reflect velocity on the y-axis if we hit something on the y-axis
+                if reflect_y {
+                    ball_velocity.y = -ball_velocity.y;
+                }
+
+                server
+                    .broadcast_message(ServerMessage::BallCollided {
+                        entity: ball,
+                        position: ball_transform.translation,
+                        velocity: ball_velocity.0,
+                    })
+                    .unwrap();
+            }
+        }
+    }
+}
+
+pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<Ball>>) {
+    for (mut transform, velocity) in &mut query {
+        transform.translation.x += velocity.x * TIME_STEP;
+        transform.translation.y += velocity.y * TIME_STEP;
     }
 }
 

@@ -36,11 +36,12 @@ pub(crate) enum ServerMessage {
     BrickDestroyed {
         client_id: ClientId,
     },
-    BallPosition {
+    BallCollided {
         entity: Entity,
         position: Vec3,
+        velocity: Vec2,
     },
-    PaddlePosition {
+    PaddleMoved {
         entity: Entity,
         position: Vec3,
     },

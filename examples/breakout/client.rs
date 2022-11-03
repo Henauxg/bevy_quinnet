@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use bevy::{
     prelude::{
         default, AssetServer, Audio, BuildChildren, Bundle, Button, ButtonBundle, Camera2dBundle,
-        Changed, Color, Commands, Component, DespawnRecursiveExt, Entity, EventReader, Input,
-        KeyCode, Local, Query, Res, ResMut, State, TextBundle, Transform, Vec2, Vec3, With,
+        Changed, Color, Commands, Component, DespawnRecursiveExt, Entity, EventReader, EventWriter,
+        Input, KeyCode, Local, Query, Res, ResMut, State, TextBundle, Transform, Vec2, Vec3, With,
+        Without,
     },
     sprite::{Sprite, SpriteBundle},
     text::{Text, TextSection, TextStyle},
@@ -19,10 +20,10 @@ use bevy_quinnet::{
 
 use crate::{
     protocol::{ClientMessage, PaddleInput, ServerMessage},
-    Ball, Brick, Collider, CollisionEvent, CollisionSound, GameState, Score, Scoreboard, Velocity,
+    Brick, Collider, CollisionEvent, CollisionSound, GameState, Score, Scoreboard, Velocity,
     WallLocation, BALL_SIZE, BALL_SPEED, BOTTOM_WALL, BRICK_SIZE, GAP_BETWEEN_BRICKS,
     GAP_BETWEEN_BRICKS_AND_CEILING, GAP_BETWEEN_BRICKS_AND_SIDES, GAP_BETWEEN_PADDLE_AND_BRICKS,
-    GAP_BETWEEN_PADDLE_AND_FLOOR, LEFT_WALL, PADDLE_SIZE, RIGHT_WALL, TOP_WALL,
+    GAP_BETWEEN_PADDLE_AND_FLOOR, LEFT_WALL, PADDLE_SIZE, RIGHT_WALL, TIME_STEP, TOP_WALL,
 };
 
 const SCOREBOARD_FONT_SIZE: f32 = 40.0;
@@ -58,6 +59,9 @@ pub(crate) struct NetworkMapping {
 #[derive(Component)]
 pub(crate) struct Paddle;
 
+#[derive(Component)]
+pub(crate) struct Ball;
+
 /// The buttons in the main menu.
 #[derive(Clone, Copy, Component)]
 pub(crate) enum MenuItem {
@@ -87,7 +91,6 @@ pub(crate) fn start_connection(client: ResMut<Client>) {
 fn spawn_paddle(commands: &mut Commands, position: &Vec3) -> Entity {
     commands
         .spawn()
-        // .insert(Paddle)
         .insert_bundle(SpriteBundle {
             transform: Transform {
                 translation: *position,
@@ -132,6 +135,8 @@ pub(crate) fn handle_server_messages(
     mut entity_mapping: ResMut<NetworkMapping>,
     mut game_state: ResMut<State<GameState>>,
     mut paddles: Query<&mut Transform, With<Paddle>>,
+    mut balls: Query<(&mut Transform, &mut Velocity), (With<Ball>, Without<Paddle>)>,
+    mut collision_events: EventWriter<CollisionEvent>,
 ) {
     while let Ok(Some(message)) = client.receive_message::<ServerMessage>() {
         match message {
@@ -156,8 +161,22 @@ pub(crate) fn handle_server_messages(
             }
             ServerMessage::StartGame {} => game_state.set(GameState::Running).unwrap(),
             ServerMessage::BrickDestroyed { client_id } => todo!(),
-            ServerMessage::BallPosition { entity, position } => todo!(),
-            ServerMessage::PaddlePosition { entity, position } => {
+            ServerMessage::BallCollided {
+                entity,
+                position,
+                velocity,
+            } => {
+                if let Some(local_ball) = entity_mapping.map.get(&entity) {
+                    if let Ok((mut ball_transform, mut ball_velocity)) = balls.get_mut(*local_ball)
+                    {
+                        ball_transform.translation = position;
+                        ball_velocity.0 = velocity;
+                    }
+                }
+                // Sends a collision event so that other systems can react to the collision
+                collision_events.send_default();
+            }
+            ServerMessage::PaddleMoved { entity, position } => {
                 if let Some(local_paddle) = entity_mapping.map.get(&entity) {
                     if let Ok(mut paddle_transform) = paddles.get_mut(*local_paddle) {
                         paddle_transform.translation = position;
@@ -393,6 +412,13 @@ pub(crate) fn setup_breakout(mut commands: Commands, asset_server: Res<AssetServ
                 })
                 .insert(Collider);
         }
+    }
+}
+
+pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<Ball>>) {
+    for (mut transform, velocity) in &mut query {
+        transform.translation.x += velocity.x * TIME_STEP;
+        transform.translation.y += velocity.y * TIME_STEP;
     }
 }
 

@@ -1,22 +1,12 @@
 //! A simplified implementation of the classic game "Breakout".
 //! => Original example by Bevy, modified for Bevy Quinnet to add a 2 players versus mode.
 
-use bevy::{
-    ecs::schedule::ShouldRun,
-    prelude::*,
-    sprite::collide_aabb::{collide, Collision},
-    time::FixedTimestep,
-};
+use bevy::{ecs::schedule::ShouldRun, prelude::*, time::FixedTimestep};
 use bevy_quinnet::{
     client::QuinnetClientPlugin,
     server::{QuinnetServerPlugin, Server},
 };
-use client::{
-    handle_menu_buttons, handle_server_messages, move_paddle, play_collision_sound, setup_breakout,
-    setup_main_menu, start_connection, teardown_main_menu, update_scoreboard, NetworkMapping,
-    BACKGROUND_COLOR,
-};
-use server::{handle_client_messages, handle_server_events, start_listening, update_paddles};
+use client::{NetworkMapping, BACKGROUND_COLOR};
 
 mod client;
 mod protocol;
@@ -74,75 +64,80 @@ fn main() {
         .insert_resource(client::ClientData::default())
         .insert_resource(NetworkMapping::default())
         // Main menu
-        .add_system_set(SystemSet::on_enter(GameState::MainMenu).with_system(setup_main_menu))
-        .add_system_set(SystemSet::on_update(GameState::MainMenu).with_system(handle_menu_buttons))
-        .add_system_set(SystemSet::on_exit(GameState::MainMenu).with_system(teardown_main_menu))
-        // Hosting
+        .add_system_set(
+            SystemSet::on_enter(GameState::MainMenu).with_system(client::setup_main_menu),
+        )
+        .add_system_set(
+            SystemSet::on_update(GameState::MainMenu).with_system(client::handle_menu_buttons),
+        )
+        .add_system_set(
+            SystemSet::on_exit(GameState::MainMenu).with_system(client::teardown_main_menu),
+        )
+        // Hosting a server on a client
         .add_system_set(
             SystemSet::on_enter(GameState::HostingLobby)
-                .with_system(start_listening)
-                .with_system(start_connection),
+                .with_system(server::start_listening)
+                .with_system(client::start_connection),
         )
         .add_system_set(
             SystemSet::on_update(GameState::HostingLobby)
-                .with_system(handle_client_messages)
-                .with_system(handle_server_events)
-                .with_system(handle_server_messages),
+                .with_system(server::handle_client_messages)
+                .with_system(server::handle_server_events)
+                .with_system(client::handle_server_messages),
         )
-        // or just Joining
-        .add_system_set(SystemSet::on_enter(GameState::JoiningLobby).with_system(start_connection))
+        // or just Joining as a client
         .add_system_set(
-            SystemSet::on_update(GameState::JoiningLobby).with_system(handle_server_messages),
+            SystemSet::on_enter(GameState::JoiningLobby).with_system(client::start_connection),
+        )
+        .add_system_set(
+            SystemSet::on_update(GameState::JoiningLobby)
+                .with_system(client::handle_server_messages),
         )
         // Running the game.
         // Every app is a client
-        .add_system_set(SystemSet::on_enter(GameState::Running).with_system(setup_breakout))
+        .add_system_set(SystemSet::on_enter(GameState::Running).with_system(client::setup_breakout))
         .add_system_set(
             SystemSet::new()
                 // https://github.com/bevyengine/bevy/issues/1839
+                // Run on a fixed Timestep,on all clients, in GameState::Running
                 .with_run_criteria(FixedTimestep::step(TIME_STEP as f64).chain(
                     |In(input): In<ShouldRun>, state: Res<State<GameState>>| match state.current() {
                         GameState::Running => input,
                         _ => ShouldRun::No,
                     },
                 ))
-                .with_system(handle_server_messages)
-                // .with_system(check_for_collisions)
-                // .with_system(move_paddle.before(check_for_collisions))
-                .with_system(move_paddle)
-                // .with_system(apply_velocity.before(check_for_collisions))
-                // .with_system(play_collision_sound.after(check_for_collisions))
-                .with_system(update_scoreboard),
+                .with_system(client::handle_server_messages.before(client::apply_velocity))
+                .with_system(client::apply_velocity)
+                .with_system(client::move_paddle)
+                .with_system(client::update_scoreboard)
+                .with_system(client::play_collision_sound.after(client::handle_server_messages)),
         )
         // But hosting apps are also a server
         .add_system_set(
             SystemSet::new()
                 // https://github.com/bevyengine/bevy/issues/1839
-                // Run on a fixed Timestep, only for the server, in GameState::Running
+                // Run on a fixed Timestep, only for the hosting client, in GameState::Running
                 .with_run_criteria(FixedTimestep::step(TIME_STEP as f64).chain(
                     |In(input): In<ShouldRun>,
                      state: Res<State<GameState>>,
                      server: Res<Server>| match state.current() {
                         GameState::Running => match server.is_listening() {
                             true => input,
-                            false => ShouldRun::Yes,
+                            false => ShouldRun::No,
                         },
                         _ => ShouldRun::No,
                     },
                 ))
-                .with_system(handle_client_messages.before(update_paddles))
-                .with_system(update_paddles.before(check_for_collisions))
-                .with_system(check_for_collisions),
-            // .with_system(apply_velocity.before(check_for_collisions))
+                .with_system(server::handle_client_messages.before(server::update_paddles))
+                .with_system(server::update_paddles.before(server::check_for_collisions))
+                .with_system(server::apply_velocity.before(server::check_for_collisions))
+                .with_system(server::check_for_collisions),
             // .with_system(play_collision_sound.after(check_for_collisions))
             // .with_system(update_scoreboard)
         )
         .add_system(bevy::window::close_on_esc)
         .run();
 }
-
-#[derive(Component)]
-struct Ball;
 
 #[derive(Component, Deref, DerefMut)]
 struct Velocity(Vec2);
@@ -200,67 +195,4 @@ impl WallLocation {
 // This resource tracks the game's score
 struct Scoreboard {
     score: usize,
-}
-
-fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>) {
-    for (mut transform, velocity) in &mut query {
-        transform.translation.x += velocity.x * TIME_STEP;
-        transform.translation.y += velocity.y * TIME_STEP;
-    }
-}
-
-fn check_for_collisions(
-    mut commands: Commands,
-    mut scoreboard: ResMut<Scoreboard>,
-    mut ball_query: Query<(&mut Velocity, &Transform), With<Ball>>,
-    collider_query: Query<(Entity, &Transform, Option<&Brick>), With<Collider>>,
-    mut collision_events: EventWriter<CollisionEvent>,
-) {
-    for (mut ball_velocity, ball_transform) in ball_query.iter_mut() {
-        let ball_size = ball_transform.scale.truncate();
-
-        // check collision with walls
-        for (collider_entity, transform, maybe_brick) in &collider_query {
-            let collision = collide(
-                ball_transform.translation,
-                ball_size,
-                transform.translation,
-                transform.scale.truncate(),
-            );
-            if let Some(collision) = collision {
-                // Sends a collision event so that other systems can react to the collision
-                collision_events.send_default();
-
-                // Bricks should be despawned and increment the scoreboard on collision
-                if maybe_brick.is_some() {
-                    scoreboard.score += 1;
-                    commands.entity(collider_entity).despawn();
-                }
-
-                // reflect the ball when it collides
-                let mut reflect_x = false;
-                let mut reflect_y = false;
-
-                // only reflect if the ball's velocity is going in the opposite direction of the
-                // collision
-                match collision {
-                    Collision::Left => reflect_x = ball_velocity.x > 0.0,
-                    Collision::Right => reflect_x = ball_velocity.x < 0.0,
-                    Collision::Top => reflect_y = ball_velocity.y < 0.0,
-                    Collision::Bottom => reflect_y = ball_velocity.y > 0.0,
-                    Collision::Inside => { /* do nothing */ }
-                }
-
-                // reflect velocity on the x-axis if we hit something on the x-axis
-                if reflect_x {
-                    ball_velocity.x = -ball_velocity.x;
-                }
-
-                // reflect velocity on the y-axis if we hit something on the y-axis
-                if reflect_y {
-                    ball_velocity.y = -ball_velocity.y;
-                }
-            }
-        }
-    }
 }
