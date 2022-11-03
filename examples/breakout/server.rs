@@ -15,7 +15,7 @@ use bevy_quinnet::{
 
 use crate::{
     protocol::{ClientMessage, PaddleInput, ServerMessage},
-    BrickId, Scoreboard, Velocity, WallLocation, BALL_SIZE, BALL_SPEED, BOTTOM_WALL, BRICK_SIZE,
+    BrickId, Velocity, WallLocation, BALL_SIZE, BALL_SPEED, BOTTOM_WALL, BRICK_SIZE,
     GAP_BETWEEN_BRICKS, GAP_BETWEEN_BRICKS_AND_SIDES, GAP_BETWEEN_PADDLE_AND_BRICKS,
     GAP_BETWEEN_PADDLE_AND_FLOOR, LEFT_WALL, PADDLE_PADDING, PADDLE_SIZE, PADDLE_SPEED, RIGHT_WALL,
     SERVER_HOST, SERVER_PORT, TIME_STEP, TOP_WALL, WALL_THICKNESS,
@@ -46,7 +46,6 @@ const PADDLES_STARTING_POSITION: [Vec3; 2] = [
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Player {
     input: PaddleInput,
-    score: u64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -117,7 +116,6 @@ pub(crate) fn handle_server_events(
             players.map.insert(
                 client.id,
                 Player {
-                    score: 0,
                     input: PaddleInput::None,
                 },
             );
@@ -172,7 +170,6 @@ pub(crate) fn update_paddles(
 pub(crate) fn check_for_collisions(
     mut commands: Commands,
     mut server: ResMut<Server>,
-    mut scoreboard: ResMut<Scoreboard>,
     mut ball_query: Query<(&mut Velocity, &Transform, Entity, &mut Ball)>,
     collider_query: Query<(Entity, &Transform, Option<&Brick>, Option<&Paddle>), With<Collider>>,
 ) {
@@ -193,9 +190,8 @@ pub(crate) fn check_for_collisions(
                     ball.last_hit_by = paddle.player_id;
                 }
 
-                // Bricks should be despawned and increment the scoreboard on collision
+                // Bricks should be despawned on collision
                 if let Some(brick) = maybe_brick {
-                    scoreboard.score += 1;
                     commands.entity(collider_entity).despawn();
 
                     server

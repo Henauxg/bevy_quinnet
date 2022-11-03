@@ -101,11 +101,6 @@ impl WallLocation {
     }
 }
 
-// This resource tracks the game's score
-struct Scoreboard {
-    score: usize,
-}
-
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -114,9 +109,9 @@ fn main() {
         .add_event::<CollisionEvent>()
         .add_state(GameState::MainMenu)
         // Resources
-        .insert_resource(Scoreboard { score: 0 })
         .insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(server::Players::default())
+        .insert_resource(client::Scoreboard { score: 0 })
         .insert_resource(client::ClientData::default())
         .insert_resource(client::NetworkMapping::default())
         .insert_resource(client::BricksMapping::default())
@@ -189,8 +184,6 @@ fn main() {
                 .with_system(server::update_paddles.before(server::check_for_collisions))
                 .with_system(server::apply_velocity.before(server::check_for_collisions))
                 .with_system(server::check_for_collisions),
-            // .with_system(play_collision_sound.after(check_for_collisions))
-            // .with_system(update_scoreboard)
         )
         .add_system(bevy::window::close_on_esc)
         .run();

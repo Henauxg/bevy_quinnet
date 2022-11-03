@@ -20,9 +20,8 @@ use bevy_quinnet::{
 
 use crate::{
     protocol::{ClientMessage, PaddleInput, ServerMessage},
-    BrickId, CollisionEvent, CollisionSound, GameState, Score, Scoreboard, Velocity, WallLocation,
-    BALL_SIZE, BALL_SPEED, BRICK_SIZE, GAP_BETWEEN_BRICKS, PADDLE_SIZE, SERVER_HOST, SERVER_PORT,
-    TIME_STEP,
+    BrickId, CollisionEvent, CollisionSound, GameState, Score, Velocity, WallLocation, BALL_SIZE,
+    BALL_SPEED, BRICK_SIZE, GAP_BETWEEN_BRICKS, PADDLE_SIZE, SERVER_HOST, SERVER_PORT, TIME_STEP,
 };
 
 const SCOREBOARD_FONT_SIZE: f32 = 40.0;
@@ -59,6 +58,11 @@ pub(crate) struct NetworkMapping {
 #[derive(Default)]
 pub struct BricksMapping {
     map: HashMap<BrickId, Entity>,
+}
+
+// This resource tracks the game's score
+pub(crate) struct Scoreboard {
+    pub(crate) score: i32,
 }
 
 #[derive(Component)]
@@ -187,6 +191,7 @@ pub(crate) fn handle_server_messages(
     mut paddles: Query<&mut Transform, With<Paddle>>,
     mut balls: Query<(&mut Transform, &mut Velocity, &mut Sprite), (With<Ball>, Without<Paddle>)>,
     mut bricks: ResMut<BricksMapping>,
+    mut scoreboard: ResMut<Scoreboard>,
     mut collision_events: EventWriter<CollisionEvent>,
 ) {
     while let Ok(Some(message)) = client.receive_message::<ServerMessage>() {
@@ -230,6 +235,11 @@ pub(crate) fn handle_server_messages(
                 by_client_id,
                 brick_id,
             } => {
+                if by_client_id == client_data.self_id {
+                    scoreboard.score += 1;
+                } else {
+                    scoreboard.score -= 1;
+                }
                 if let Some(brick_entity) = bricks.map.get(&brick_id) {
                     commands.entity(*brick_entity).despawn();
                 }
@@ -300,6 +310,7 @@ pub(crate) fn update_scoreboard(
 ) {
     let mut text = query.single_mut();
     text.sections[1].value = scoreboard.score.to_string();
+    text.sections[1].style.color = ball_color_from_bool(scoreboard.score >= 0);
 }
 
 pub(crate) fn play_collision_sound(
