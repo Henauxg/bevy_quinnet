@@ -197,6 +197,8 @@ This demo is a modification of the classic [Bevy breakout](https://bevyengine.or
 
 It hosts a local server from inside a client, instead of a dedicated headless server as in the chat demo. You can find a [server module](examples/breakout/server.rs), a [client module](examples/breakout/client.rs), a shared [protocol](examples/breakout/protocol.rs) and the [bevy app schedule](examples/breakout/breakout.rs).
 
+![breakout_versus_demo_short](https://user-images.githubusercontent.com/19689618/199804335-17df365c-32aa-49b1-94f1-11b8c7162ae3.gif)
+
 Start two clients with `cargo run --example breakout`, "Host" one one and "Join" on the other.
 
 ## Certificates
