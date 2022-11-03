@@ -48,26 +48,3 @@ pub(crate) fn start_connection(client: ResMut<Client>) {
         )
         .unwrap();
 }
-
-pub(crate) fn handle_client_events(
-    connection_events: EventReader<ConnectionEvent>,
-    client: ResMut<Client>,
-) {
-    if !connection_events.is_empty() {
-        // We are connected
-        // let username: String = rand::thread_rng()
-        //     .sample_iter(&Alphanumeric)
-        //     .take(7)
-        //     .map(char::from)
-        //     .collect();
-
-        // println!("--- Joining with name: {}", username);
-        // println!("--- Type 'quit' to disconnect");
-
-        // client
-        //     .send_message(ClientMessage::Join { name: username })
-        //     .unwrap();
-
-        connection_events.clear();
-    }
-}
