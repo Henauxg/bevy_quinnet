@@ -32,7 +32,12 @@ pub(crate) enum ServerMessage {
         position: Vec3,
         direction: Vec2,
     },
-    StartGame {},
+    SpawnBricks {
+        offset: Vec2,
+        rows: usize,
+        columns: usize,
+    },
+    StartGame,
     BrickDestroyed {
         client_id: ClientId,
     },

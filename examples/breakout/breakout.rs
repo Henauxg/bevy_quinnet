@@ -12,6 +12,8 @@ mod client;
 mod protocol;
 mod server;
 
+const SERVER_PORT: u16 = 6000;
+
 // Defines the amount of time that should elapse between each physics step.
 const TIME_STEP: f32 = 1.0 / 60.0;
 
@@ -146,9 +148,6 @@ struct Collider;
 
 #[derive(Default)]
 struct CollisionEvent;
-
-#[derive(Component)]
-struct Brick;
 
 #[derive(Component)]
 struct Score;

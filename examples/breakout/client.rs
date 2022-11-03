@@ -20,10 +20,8 @@ use bevy_quinnet::{
 
 use crate::{
     protocol::{ClientMessage, PaddleInput, ServerMessage},
-    Brick, Collider, CollisionEvent, CollisionSound, GameState, Score, Scoreboard, Velocity,
-    WallLocation, BALL_SIZE, BALL_SPEED, BOTTOM_WALL, BRICK_SIZE, GAP_BETWEEN_BRICKS,
-    GAP_BETWEEN_BRICKS_AND_CEILING, GAP_BETWEEN_BRICKS_AND_SIDES, GAP_BETWEEN_PADDLE_AND_BRICKS,
-    GAP_BETWEEN_PADDLE_AND_FLOOR, LEFT_WALL, PADDLE_SIZE, RIGHT_WALL, TIME_STEP, TOP_WALL,
+    Collider, CollisionEvent, CollisionSound, GameState, Score, Scoreboard, Velocity, WallLocation,
+    BALL_SIZE, BALL_SPEED, BRICK_SIZE, GAP_BETWEEN_BRICKS, PADDLE_SIZE, SERVER_PORT, TIME_STEP,
 };
 
 const SCOREBOARD_FONT_SIZE: f32 = 40.0;
@@ -62,6 +60,10 @@ pub(crate) struct Paddle;
 #[derive(Component)]
 pub(crate) struct Ball;
 
+pub type BrickId = u64;
+#[derive(Component)]
+pub(crate) struct Brick(BrickId);
+
 /// The buttons in the main menu.
 #[derive(Clone, Copy, Component)]
 pub(crate) enum MenuItem {
@@ -82,7 +84,12 @@ struct WallBundle {
 pub(crate) fn start_connection(client: ResMut<Client>) {
     client
         .connect(
-            ClientConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string(), 0),
+            ClientConfigurationData::new(
+                "127.0.0.1".to_string(),
+                SERVER_PORT,
+                "0.0.0.0".to_string(),
+                0,
+            ),
             CertificateVerificationMode::SkipVerification,
         )
         .unwrap();
@@ -128,6 +135,37 @@ fn spawn_ball(commands: &mut Commands, pos: &Vec3, direction: &Vec2) -> Entity {
         .id()
 }
 
+pub(crate) fn spawn_bricks(commands: &mut Commands, offset: Vec2, rows: usize, columns: usize) {
+    let mut brick_id = 0;
+    for row in 0..rows {
+        for column in 0..columns {
+            let brick_position = Vec2::new(
+                offset.x + column as f32 * (BRICK_SIZE.x + GAP_BETWEEN_BRICKS),
+                offset.y + row as f32 * (BRICK_SIZE.y + GAP_BETWEEN_BRICKS),
+            );
+
+            // brick
+            commands
+                .spawn()
+                .insert(Brick(brick_id))
+                .insert_bundle(SpriteBundle {
+                    sprite: Sprite {
+                        color: BRICK_COLOR,
+                        ..default()
+                    },
+                    transform: Transform {
+                        translation: brick_position.extend(0.0),
+                        scale: Vec3::new(BRICK_SIZE.x, BRICK_SIZE.y, 1.0),
+                        ..default()
+                    },
+                    ..default()
+                })
+                .insert(Collider);
+            brick_id += 1;
+        }
+    }
+}
+
 pub(crate) fn handle_server_messages(
     mut commands: Commands,
     mut client: ResMut<Client>,
@@ -136,6 +174,10 @@ pub(crate) fn handle_server_messages(
     mut game_state: ResMut<State<GameState>>,
     mut paddles: Query<&mut Transform, With<Paddle>>,
     mut balls: Query<(&mut Transform, &mut Velocity), (With<Ball>, Without<Paddle>)>,
+    mut bricks: Query<
+        (&mut Transform, &mut Velocity),
+        (With<Brick>, Without<Paddle>, Without<Ball>),
+    >,
     mut collision_events: EventWriter<CollisionEvent>,
 ) {
     while let Ok(Some(message)) = client.receive_message::<ServerMessage>() {
@@ -159,6 +201,11 @@ pub(crate) fn handle_server_messages(
                 let ball = spawn_ball(&mut commands, &position, &direction);
                 entity_mapping.map.insert(entity, ball);
             }
+            ServerMessage::SpawnBricks {
+                offset,
+                rows,
+                columns,
+            } => spawn_bricks(&mut commands, offset, rows, columns),
             ServerMessage::StartGame {} => game_state.set(GameState::Running).unwrap(),
             ServerMessage::BrickDestroyed { client_id } => todo!(),
             ServerMessage::BallCollided {
@@ -311,7 +358,6 @@ pub(crate) fn teardown_main_menu(mut commands: Commands, query: Query<Entity, Wi
     }
 }
 
-// Add the game's entities to our world
 pub(crate) fn setup_breakout(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Sound
     let ball_collision_sound = asset_server.load(COLLISION_SOUND_EFFECT);
@@ -353,73 +399,6 @@ pub(crate) fn setup_breakout(mut commands: Commands, asset_server: Res<AssetServ
     commands.spawn_bundle(WallBundle::new(WallLocation::Right));
     commands.spawn_bundle(WallBundle::new(WallLocation::Bottom));
     commands.spawn_bundle(WallBundle::new(WallLocation::Top));
-
-    // Bricks
-    // Negative scales result in flipped sprites / meshes,
-    // which is definitely not what we want here
-    assert!(BRICK_SIZE.x > 0.0);
-    assert!(BRICK_SIZE.y > 0.0);
-
-    let total_width_of_bricks = (RIGHT_WALL - LEFT_WALL) - 2. * GAP_BETWEEN_BRICKS_AND_SIDES;
-    let bottom_edge_of_bricks =
-        BOTTOM_WALL + GAP_BETWEEN_PADDLE_AND_FLOOR + GAP_BETWEEN_PADDLE_AND_BRICKS;
-    let available_height_for_bricks = TOP_WALL
-        - bottom_edge_of_bricks
-        - (GAP_BETWEEN_PADDLE_AND_FLOOR + GAP_BETWEEN_PADDLE_AND_BRICKS);
-
-    assert!(total_width_of_bricks > 0.0);
-    assert!(available_height_for_bricks > 0.0);
-
-    // Given the space available, compute how many rows and columns of bricks we can fit
-    let n_columns = (total_width_of_bricks / (BRICK_SIZE.x + GAP_BETWEEN_BRICKS)).floor() as usize;
-    let n_rows =
-        (available_height_for_bricks / (BRICK_SIZE.y + GAP_BETWEEN_BRICKS)).floor() as usize;
-    let height_occupied_by_bricks =
-        n_rows as f32 * (BRICK_SIZE.y + GAP_BETWEEN_BRICKS) - GAP_BETWEEN_BRICKS;
-    let n_vertical_gaps = n_columns - 1;
-
-    // Because we need to round the number of columns,
-    // the space on the top and sides of the bricks only captures a lower bound, not an exact value
-    let center_of_bricks = (LEFT_WALL + RIGHT_WALL) / 2.0;
-    let left_edge_of_bricks = center_of_bricks
-        // Space taken up by the bricks
-        - (n_columns as f32 / 2.0 * BRICK_SIZE.x)
-        // Space taken up by the gaps
-        - n_vertical_gaps as f32 / 2.0 * GAP_BETWEEN_BRICKS;
-
-    // In Bevy, the `translation` of an entity describes the center point,
-    // not its bottom-left corner
-    let offset_x = left_edge_of_bricks + BRICK_SIZE.x / 2.;
-    let offset_y = bottom_edge_of_bricks
-        + BRICK_SIZE.y / 2.
-        + (available_height_for_bricks - height_occupied_by_bricks) / 2.; // Offset so that both players are at an equal distance of the bricks
-
-    for row in 0..n_rows {
-        for column in 0..n_columns {
-            let brick_position = Vec2::new(
-                offset_x + column as f32 * (BRICK_SIZE.x + GAP_BETWEEN_BRICKS),
-                offset_y + row as f32 * (BRICK_SIZE.y + GAP_BETWEEN_BRICKS),
-            );
-
-            // brick
-            commands
-                .spawn()
-                .insert(Brick)
-                .insert_bundle(SpriteBundle {
-                    sprite: Sprite {
-                        color: BRICK_COLOR,
-                        ..default()
-                    },
-                    transform: Transform {
-                        translation: brick_position.extend(0.0),
-                        scale: Vec3::new(BRICK_SIZE.x, BRICK_SIZE.y, 1.0),
-                        ..default()
-                    },
-                    ..default()
-                })
-                .insert(Collider);
-        }
-    }
 }
 
 pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<Ball>>) {
