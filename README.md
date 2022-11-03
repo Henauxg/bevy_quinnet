@@ -61,7 +61,7 @@ It currently features:
 - Both client & server accept custom protocol structs/enums defined by the user as the message format.
 
 Although Quinn and parts of Quinnet are asynchronous, the APIs exposed by Quinnet for the client and server are synchronous. This makes the surface API easy to work with and adapted to a Bevy usage.
-The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channelshttps://tokio.rs/tokio/tutorial/channels) to communicate with the networking async tasks.
+The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channels) to communicate with the networking async tasks.
 
 ##  Roadmap
 
