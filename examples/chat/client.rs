@@ -16,12 +16,12 @@ use bevy_quinnet::{
     },
     ClientId,
 };
-use chat_protocol::{ClientMessage, ServerMessage};
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::sync::mpsc;
 
-#[path = "../chat_protocol/lib.rs"] // Because we can't have a shared lib between Cargo examples
-mod chat_protocol;
+use protocol::{ClientMessage, ServerMessage};
+
+mod protocol;
 
 #[derive(Debug, Clone, Default)]
 struct Users {

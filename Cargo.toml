@@ -31,3 +31,11 @@ rand = "0.8.5"
 [[example]]
 name = "breakout"
 path = "examples/breakout/breakout.rs"
+
+[[example]]
+name = "chat-server"
+path = "examples/chat/server.rs"
+
+[[example]]
+name = "chat-client"
+path = "examples/chat/client.rs"
