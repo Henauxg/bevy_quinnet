@@ -85,7 +85,7 @@ pub enum CertificateVerificationMode {
         trusted_endpoints: HashMap<String, Vec<Certificate>>,
     },
     /// Client will only trust a server certificate signed by a conventional certificate authority
-    WithCertificateAuthority,
+    SignedByCertificateAuthority,
 }
 
 /// Current state of the client driver
@@ -229,7 +229,9 @@ fn configure_client(cert_mode: CertificateVerificationMode) -> ClientConfig {
         } => {
             todo!()
         }
-        CertificateVerificationMode::WithCertificateAuthority => ClientConfig::with_native_roots(),
+        CertificateVerificationMode::SignedByCertificateAuthority => {
+            ClientConfig::with_native_roots()
+        }
     }
 }
 

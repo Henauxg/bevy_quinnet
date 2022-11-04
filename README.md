@@ -216,7 +216,7 @@ Here are the current options available to the server and client plugins:
     // To accept any certificate
     client.connect(/*...*/, CertificateVerificationMode::SkipVerification);
     // To only accept certificates issued by a Certificate Authority
-    client.connect(/*...*/, CertificateVerificationMode::WithCertificateAuthority);
+    client.connect(/*...*/, CertificateVerificationMode::SignedByCertificateAuthority);
 ```
 
 - On the server:
