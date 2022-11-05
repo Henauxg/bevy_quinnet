@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 use bevy::prelude::*;
 use bytes::Bytes;
@@ -278,25 +278,34 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
     }
 }
 
+/// SHA-256 hash of the certificate data in DER form
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Fingerprint {}
+pub struct CertificateFingerprint([u8; 32]);
+
+impl From<&rustls::Certificate> for CertificateFingerprint {
+    fn from(cert: &rustls::Certificate) -> CertificateFingerprint {
+        let hash = ring::digest::digest(&ring::digest::SHA256, &cert.0);
+        let fingerprint_bytes = hash.as_ref().try_into().unwrap();
+        CertificateFingerprint(fingerprint_bytes)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum KnownHosts {
-    Store(HashMap<rustls::ServerName, Fingerprint>),
+    Store(HashMap<rustls::ServerName, CertificateFingerprint>),
     HostsFile(String),
 }
 
 /// Implementation of `ServerCertVerifier` that follows the Trust on first use authentication scheme.
 struct TofuServerVerification {
-    store: HashMap<rustls::ServerName, Fingerprint>,
+    store: HashMap<rustls::ServerName, CertificateFingerprint>,
     verifier_behaviour: HashMap<CertVerificationStatus, CertVerifierBehaviour>,
     to_sync_client: mpsc::Sender<InternalAsyncMessage>,
 }
 
 impl TofuServerVerification {
     fn new(
-        store: HashMap<rustls::ServerName, Fingerprint>,
+        store: HashMap<rustls::ServerName, CertificateFingerprint>,
         verifier_behaviour: HashMap<CertVerificationStatus, CertVerifierBehaviour>,
         to_sync_client: mpsc::Sender<InternalAsyncMessage>,
     ) -> Arc<Self> {
@@ -351,10 +360,6 @@ impl TofuServerVerification {
             }
         }
     }
-
-    fn compute_fingerprint(cert: &rustls::Certificate) -> Fingerprint {
-        todo!() // TODO Fix: Compute the fingerprint
-    }
 }
 
 impl rustls::client::ServerCertVerifier for TofuServerVerification {
@@ -369,7 +374,7 @@ impl rustls::client::ServerCertVerifier for TofuServerVerification {
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         // TODO Check additional cert info
         if let Some(known_fingerprint) = self.store.get(_server_name) {
-            let server_fingerprint = TofuServerVerification::compute_fingerprint(_end_entity);
+            let server_fingerprint = CertificateFingerprint::from(_end_entity);
             if *known_fingerprint == server_fingerprint {
                 self.apply_verifier_behaviour_for_status(CertVerificationStatus::TrustedCertificate)
             } else {
@@ -397,7 +402,7 @@ pub enum CertVerificationStatus {
 
 fn load_known_hosts_store_from_config(
     known_host_config: KnownHosts,
-) -> Result<HashMap<rustls::ServerName, Fingerprint>, QuinnetError> {
+) -> Result<HashMap<rustls::ServerName, CertificateFingerprint>, QuinnetError> {
     match known_host_config {
         KnownHosts::Store(store) => Ok(store),
         KnownHosts::HostsFile(_) => {
