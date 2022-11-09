@@ -1,4 +1,11 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fs::File,
+    io::{BufRead, BufReader},
+    net::SocketAddr,
+    sync::Arc,
+};
 
 use bevy::prelude::*;
 use bytes::Bytes;
@@ -107,10 +114,6 @@ impl Default for TrustOnFirstUseConfig {
         TrustOnFirstUseConfig {
             known_hosts: KnownHosts::HostsFile(DEFAULT_KNOWN_HOSTS_FILE.to_string()),
             verifier_behaviour: HashMap::from([
-                (
-                    CertVerificationStatus::InvalidCertificate,
-                    CertVerifierBehaviour::ImmediateAction(CertVerifierAction::AbortConnection),
-                ),
                 (
                     CertVerificationStatus::UnknownCertificate,
                     CertVerifierBehaviour::ImmediateAction(CertVerifierAction::TrustAndStore),
@@ -319,6 +322,7 @@ impl TofuServerVerification {
     fn apply_verifier_behaviour_for_status(
         &self,
         status: CertVerificationStatus,
+        fingerprint: CertificateFingerprint,
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         let behaviour = self
             .verifier_behaviour
@@ -326,7 +330,7 @@ impl TofuServerVerification {
             .unwrap_or(&DEFAULT_CERT_VERIFIER_BEHAVIOUR);
         match behaviour {
             CertVerifierBehaviour::ImmediateAction(action) => {
-                TofuServerVerification::apply_verifier_immediate_action(action)
+                TofuServerVerification::apply_verifier_immediate_action(action, fingerprint)
             }
             CertVerifierBehaviour::RequestClientAction => {
                 let (action_sender, cert_action_recv) = oneshot::channel::<CertVerifierAction>();
@@ -336,21 +340,29 @@ impl TofuServerVerification {
                         action_sender,
                     })
                     .unwrap();
-                if let Ok(action) = block_on(cert_action_recv) {
-                    return TofuServerVerification::apply_verifier_immediate_action(&action);
+                match block_on(cert_action_recv) {
+                    Ok(action) => TofuServerVerification::apply_verifier_immediate_action(
+                        &action,
+                        fingerprint,
+                    ),
+                    Err(_) => Err(rustls::Error::InvalidCertificateData(format!(
+                        "Failed to receive CertVerifierAction"
+                    ))),
                 }
-                Err(rustls::Error::InvalidCertificateData(format!("")))
             }
         }
     }
 
     fn apply_verifier_immediate_action(
         action: &CertVerifierAction,
+        fingerprint: CertificateFingerprint,
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         match action {
             CertVerifierAction::AbortConnection => {
                 // TODO Error handling: details
-                Err(rustls::Error::InvalidCertificateData(format!("")))
+                Err(rustls::Error::InvalidCertificateData(format!(
+                    "CertVerifierAction requested to abort the connection"
+                )))
             }
             CertVerifierAction::TrustOnce => Ok(rustls::client::ServerCertVerified::assertion()),
             CertVerifierAction::TrustAndStore => {
@@ -372,26 +384,29 @@ impl rustls::client::ServerCertVerifier for TofuServerVerification {
         _ocsp_response: &[u8],
         _now: std::time::SystemTime,
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
-        // TODO Check additional cert info
+        // TODO Could add some optional validity checks on the cert content.
+        let status;
+        let fingerprint = CertificateFingerprint::from(_end_entity);
         if let Some(known_fingerprint) = self.store.get(_server_name) {
-            let server_fingerprint = CertificateFingerprint::from(_end_entity);
-            if *known_fingerprint == server_fingerprint {
-                self.apply_verifier_behaviour_for_status(CertVerificationStatus::TrustedCertificate)
+            if *known_fingerprint == fingerprint {
+                status = Some(CertVerificationStatus::TrustedCertificate);
             } else {
-                self.apply_verifier_behaviour_for_status(
-                    CertVerificationStatus::UntrustedCertificate,
-                )
+                status = Some(CertVerificationStatus::UntrustedCertificate);
             }
         } else {
-            self.apply_verifier_behaviour_for_status(CertVerificationStatus::UnknownCertificate)
+            status = Some(CertVerificationStatus::UnknownCertificate);
+        }
+        match status {
+            Some(status) => self.apply_verifier_behaviour_for_status(status, fingerprint),
+            None => Err(rustls::Error::InvalidCertificateData(format!(
+                "Internal error, no CertVerificationStatus"
+            ))),
         }
     }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum CertVerificationStatus {
-    /// The certificate is invalid
-    InvalidCertificate,
     /// First time connecting to this host.
     UnknownCertificate,
     /// The certificate fingerprint does not match the one in the known hosts fingerprints store.
@@ -400,22 +415,37 @@ pub enum CertVerificationStatus {
     TrustedCertificate,
 }
 
+fn parse_known_host_line(
+    line: String,
+) -> Result<(rustls::ServerName, CertificateFingerprint), Box<dyn Error>> {
+    todo!()
+}
+
+fn load_known_hosts_from_file(
+    file_path: &String,
+) -> Result<HashMap<rustls::ServerName, CertificateFingerprint>, Box<dyn Error>> {
+    let mut store = HashMap::new();
+    for line in BufReader::new(File::open(file_path)?).lines() {
+        let entry = parse_known_host_line(line?)?;
+        store.insert(entry.0, entry.1);
+    }
+    Ok(store)
+}
+
 fn load_known_hosts_store_from_config(
     known_host_config: KnownHosts,
-) -> Result<HashMap<rustls::ServerName, CertificateFingerprint>, QuinnetError> {
+) -> Result<HashMap<rustls::ServerName, CertificateFingerprint>, Box<dyn Error>> {
     match known_host_config {
         KnownHosts::Store(store) => Ok(store),
-        KnownHosts::HostsFile(_) => {
-            // TODO Fix: Load store from file
-            todo!();
-        }
+        // TODO Fix: Create a file if none exists + raise a warning
+        KnownHosts::HostsFile(file) => load_known_hosts_from_file(&file),
     }
 }
 
 fn configure_client(
     cert_mode: CertificateVerificationMode,
     to_sync_client: mpsc::Sender<InternalAsyncMessage>,
-) -> Result<ClientConfig, QuinnetError> {
+) -> Result<ClientConfig, Box<dyn Error>> {
     match cert_mode {
         CertificateVerificationMode::SkipVerification => {
             let crypto = rustls::ClientConfig::builder()

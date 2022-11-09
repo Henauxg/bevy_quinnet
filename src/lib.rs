@@ -20,4 +20,5 @@ pub enum QuinnetError {
     /// The receive half of the channel was explicitly closed or has been
     /// dropped.
     ChannelClosed,
+    InvalidHostFile,
 }
