@@ -111,7 +111,7 @@ pub(crate) fn handle_server_events(
     for client in connection_events.iter() {
         // Refuse connection once we already have two players
         if players.map.len() >= 2 {
-            server.disconnect_client(client.id)
+            server.disconnect_client(client.id).unwrap();
         } else {
             players.map.insert(
                 client.id,
