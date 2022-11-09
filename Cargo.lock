@@ -488,6 +488,7 @@ checksum = "9960c19e582b43cebe1894b6679520a4f50802d1cc5b6fa432f8d685ed232f09"
 name = "bevy_quinnet"
 version = "0.2.0-dev"
 dependencies = [
+ "base64",
  "bevy",
  "bincode",
  "bytes",
