@@ -501,6 +501,7 @@ dependencies = [
  "rustls",
  "rustls-pemfile 1.0.1",
  "serde",
+ "thiserror",
  "tokio",
  "tokio-util",
 ]
