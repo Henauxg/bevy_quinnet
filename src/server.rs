@@ -169,20 +169,13 @@ impl Server {
         }
     }
 
-    pub fn disconnect_client(&mut self, client_id: ClientId) {
+    pub fn disconnect_client(&mut self, client_id: ClientId) -> Result<(), QuinnetError> {
         match self.clients.remove(&client_id) {
-            Some(client_connection) => {
-                if let Err(_) = client_connection.close_sender.send(()) {
-                    error!(
-                        "Failed to close client streams & resources while disconnecting client {}",
-                        client_id
-                    )
-                }
-            }
-            None => error!(
-                "Failed to disconnect client {}, client not found",
-                client_id
-            ),
+            Some(client_connection) => match client_connection.close_sender.send(()) {
+                Ok(_) => Ok(()),
+                Err(_) => Err(QuinnetError::ChannelClosed),
+            },
+            None => Err(QuinnetError::UnknownClient(client_id)),
         }
     }
 
@@ -204,7 +197,7 @@ impl Server {
         message: T,
     ) -> Result<(), QuinnetError> {
         match bincode::serialize(&message) {
-            Ok(payload) => Ok(self.send_payload(client_id, payload)),
+            Ok(payload) => Ok(self.send_payload(client_id, payload)?),
             Err(_) => Err(QuinnetError::Serialization),
         }
     }
@@ -216,9 +209,8 @@ impl Server {
     ) -> Result<(), QuinnetError> {
         match bincode::serialize(&message) {
             Ok(payload) => {
-                // TODO Fix: Error handling
                 for id in client_ids {
-                    self.send_payload(*id, payload.clone());
+                    self.send_payload(*id, payload.clone())?;
                 }
                 Ok(())
             }
@@ -231,31 +223,47 @@ impl Server {
         message: T,
     ) -> Result<(), QuinnetError> {
         match bincode::serialize(&message) {
-            Ok(payload) => Ok(self.broadcast_payload(payload)),
+            Ok(payload) => Ok(self.broadcast_payload(payload)?),
             Err(_) => Err(QuinnetError::Serialization),
         }
     }
 
-    pub fn broadcast_payload<T: Into<Bytes> + Clone>(&mut self, payload: T) {
-        // TODO Fix: Error handling
+    pub fn broadcast_payload<T: Into<Bytes> + Clone>(
+        &mut self,
+        payload: T,
+    ) -> Result<(), QuinnetError> {
         for (_, client_connection) in self.clients.iter() {
-            client_connection
-                .sender
-                .try_send(payload.clone().into())
-                .unwrap();
+            match client_connection.sender.try_send(payload.clone().into()) {
+                Ok(_) => {}
+                Err(err) => match err {
+                    mpsc::error::TrySendError::Full(_) => return Err(QuinnetError::FullQueue),
+                    mpsc::error::TrySendError::Closed(_) => {
+                        return Err(QuinnetError::ChannelClosed)
+                    }
+                },
+            };
         }
+        Ok(())
     }
 
-    pub fn send_payload<T: Into<Bytes>>(&mut self, client_id: ClientId, payload: T) {
-        // TODO Fix: Error handling
+    pub fn send_payload<T: Into<Bytes>>(
+        &mut self,
+        client_id: ClientId,
+        payload: T,
+    ) -> Result<(), QuinnetError> {
         if let Some(client) = self.clients.get(&client_id) {
-            client.sender.try_send(payload.into()).unwrap();
+            match client.sender.try_send(payload.into()) {
+                Ok(_) => Ok(()),
+                Err(err) => match err {
+                    mpsc::error::TrySendError::Full(_) => Err(QuinnetError::FullQueue),
+                    mpsc::error::TrySendError::Closed(_) => Err(QuinnetError::ChannelClosed),
+                },
+            }
         } else {
-            warn!("Failed to send payload to unknown client {}", client_id)
+            Err(QuinnetError::UnknownClient(client_id))
         }
     }
 
-    //TODO Clean: Consider receiving payloads for a specified client
     pub fn receive_payload(&mut self) -> Result<Option<ClientPayload>, QuinnetError> {
         match self.receiver.try_recv() {
             Ok(msg) => Ok(Some(msg)),

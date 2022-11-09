@@ -7,18 +7,19 @@ pub mod server;
 
 pub type ClientId = u64;
 
-/// Enum with possibles errors that can occur.
-#[derive(Debug)]
+/// Enum with possibles errors that can occur in Bevy Quinnet
+#[derive(thiserror::Error, Debug)]
 pub enum QuinnetError {
-    /// Failed serialization
+    #[error("Client with id `{0}` is unknown")]
+    UnknownClient(ClientId),
+    #[error("Failed serialization")]
     Serialization,
-    /// Failed deserialization
+    #[error("Failed deserialization")]
     Deserialization,
-    /// The data could not be sent on the channel because the channel is
-    /// currently full and sending would require blocking.
+    #[error("The data could not be sent on the channel because the channel is currently full and sending would require blocking")]
     FullQueue,
-    /// The receive half of the channel was explicitly closed or has been
-    /// dropped.
+    #[error("The receiving half of the channel was explicitly closed or has been dropped")]
     ChannelClosed,
+    #[error("The hosts file is invalid")]
     InvalidHostFile,
 }
