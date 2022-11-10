@@ -6,12 +6,12 @@ use std::{
     io::{BufRead, BufReader, Write},
     net::SocketAddr,
     path::Path,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use bevy::prelude::*;
 use bytes::Bytes;
-use futures::{channel::oneshot, executor::block_on, sink::SinkExt};
+use futures::{executor::block_on, sink::SinkExt};
 use futures_util::StreamExt;
 use quinn::{ClientConfig, Endpoint};
 use rustls::{Certificate, ServerName};
@@ -24,6 +24,7 @@ use tokio::{
             self,
             error::{TryRecvError, TrySendError},
         },
+        oneshot,
     },
     task::JoinSet,
 };
@@ -41,10 +42,26 @@ pub struct ConnectionEvent;
 /// ConnectionLost event raised when the client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
 pub struct ConnectionLostEvent;
 
-/// Event raised when a user/app action is needed for the server's cerrtificate validation.
-pub struct TofuCertificateEvent {
+/// Event raised when a user/app interaction is needed for the server's certificate validation
+pub struct CertificateInteractionEvent {
     pub status: CertVerificationStatus,
-    pub action_sender: oneshot::Sender<CertVerifierAction>,
+    /// Mutex for interior mutability
+    action_sender: Mutex<Option<oneshot::Sender<CertVerifierAction>>>,
+}
+
+impl CertificateInteractionEvent {
+    pub fn apply_cert_verifier_action(&self, action: CertVerifierAction) {
+        let mut sender = self.action_sender.lock().unwrap();
+        if let Some(sender) = sender.take() {
+            sender.send(action).unwrap()
+        }
+    }
+}
+
+/// Event raised when a new certificate is trusted
+pub struct CertificateUpdateEvent {
+    pub server_name: ServName,
+    pub fingerprint: CertificateFingerprint,
 }
 
 /// Configuration of the client, used when connecting to a server
@@ -386,6 +403,7 @@ impl TofuServerVerification {
             )),
             CertVerifierAction::TrustOnce => Ok(rustls::client::ServerCertVerified::assertion()),
             CertVerifierAction::TrustAndStore => {
+                // If we need to store them to a file
                 if let Some(file) = &self.hosts_file {
                     let mut store_clone = self.store.clone();
                     store_clone.insert(server_name.clone(), fingerprint.clone());
@@ -396,6 +414,7 @@ impl TofuServerVerification {
                         )));
                     }
                 }
+                // In all cases raise an event containing the new certificate entry
                 match self
                     .to_sync_client
                     .try_send(InternalAsyncMessage::TrustedCertificateUpdate {
@@ -717,7 +736,8 @@ fn update_sync_client(
     mut client: ResMut<Client>,
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
-    mut certificate_events: EventWriter<TofuCertificateEvent>,
+    mut certificate_interaction_events: EventWriter<CertificateInteractionEvent>,
+    mut certificate_update_events: EventWriter<CertificateUpdateEvent>,
 ) {
     while let Ok(message) = client.internal_receiver.try_recv() {
         match message {
@@ -733,20 +753,19 @@ fn update_sync_client(
                 status,
                 action_sender,
             } => {
-                certificate_events.send(TofuCertificateEvent {
+                certificate_interaction_events.send(CertificateInteractionEvent {
                     status,
-                    action_sender,
+                    action_sender: Mutex::new(Some(action_sender)),
                 });
             }
             InternalAsyncMessage::TrustedCertificateUpdate {
                 server_name,
                 fingerprint,
             } => {
-                warn!(
-                    "Todo, TrustedCertificateUpdate {:?} {}",
-                    server_name, fingerprint
-                )
-                todo!();
+                certificate_update_events.send(CertificateUpdateEvent {
+                    server_name,
+                    fingerprint,
+                });
             }
         }
     }
@@ -764,7 +783,8 @@ impl Plugin for QuinnetClientPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ConnectionEvent>()
             .add_event::<ConnectionLostEvent>()
-            .add_event::<TofuCertificateEvent>()
+            .add_event::<CertificateInteractionEvent>()
+            .add_event::<CertificateUpdateEvent>()
             // StartupStage::PreStartup so that resources created in commands are available to default startup_systems
             .add_startup_system_to_stage(StartupStage::PreStartup, start_async_client)
             .add_system(update_sync_client);
