@@ -30,7 +30,7 @@ use crate::{QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE
 use self::certificate::{
     load_known_hosts_store_from_config, CertVerificationStatus, CertVerifierAction,
     CertificateFingerprint, CertificateInteractionEvent, CertificateUpdateEvent,
-    CertificateVerificationMode, ServName, SkipServerVerification, TofuServerVerification,
+    CertificateVerificationMode, ServerName, SkipServerVerification, TofuServerVerification,
 };
 
 pub mod certificate;
@@ -103,7 +103,7 @@ pub(crate) enum InternalAsyncMessage {
         action_sender: oneshot::Sender<CertVerifierAction>,
     },
     TrustedCertificateUpdate {
-        server_name: ServName,
+        server_name: ServerName,
         fingerprint: CertificateFingerprint,
     },
 }

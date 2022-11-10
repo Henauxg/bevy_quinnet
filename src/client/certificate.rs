@@ -10,7 +10,7 @@ use std::{
 
 use bevy::prelude::warn;
 use futures::executor::block_on;
-use rustls::ServerName;
+use rustls::ServerName as RustlsServerName;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::QuinnetError;
@@ -22,6 +22,7 @@ pub const DEFAULT_CERT_VERIFIER_BEHAVIOUR: CertVerifierBehaviour =
 
 /// Event raised when a user/app interaction is needed for the server's certificate validation
 pub struct CertificateInteractionEvent {
+    /// The current status of the verification
     pub status: CertVerificationStatus,
     /// Mutex for interior mutability
     pub(crate) action_sender: Mutex<Option<oneshot::Sender<CertVerifierAction>>>,
@@ -38,7 +39,9 @@ impl CertificateInteractionEvent {
 
 /// Event raised when a new certificate is trusted
 pub struct CertificateUpdateEvent {
-    pub server_name: ServName,
+    /// Identifies the server name
+    pub server_name: ServerName,
+    /// Fingerprint of the server's certificate
     pub fingerprint: CertificateFingerprint,
 }
 
@@ -49,44 +52,32 @@ pub enum CertificateVerificationMode {
     SkipVerification,
     /// Client will only trust a server certificate signed by a conventional certificate authority
     SignedByCertificateAuthority,
-    /// The client will look up the server identifier in [`KnownHosts`].
-    /// TODO Revamp doc
-    /// - If no identifier exists yet for this server, the client will accept the given server's certificate and return it.
-    /// - If some certificate already existed for this server, and the received one is different, an error will be raised.
+    /// The client will use a Trust on first authentication scheme (<https://en.wikipedia.org/wiki/Trust_on_first_use>) configured by a [`TrustOnFirstUseConfig`].
     TrustOnFirstUse(TrustOnFirstUseConfig),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum CertVerificationStatus {
-    /// First time connecting to this host.
-    UnknownCertificate,
-    /// The certificate fingerprint does not match the one in the known hosts fingerprints store.
-    UntrustedCertificate,
-    /// Known host and certificate matching the one in the known hosts fingerprints store.
-    TrustedCertificate,
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ServName(ServerName);
-
-impl fmt::Display for ServName {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            ServerName::DnsName(dns) => fmt::Display::fmt(dns.as_ref(), f),
-            ServerName::IpAddress(ip) => fmt::Display::fmt(&ip, f),
-            _ => todo!(),
-        }
-    }
-}
-
+/// Configuration of the Trust on first authentication scheme for server certificates
+///
+/// # Example
+///
+/// ```
+/// TrustOnFirstUseConfig {
+///     known_hosts: bevy_quinnet::client::certificate::KnownHosts::HostsFile(
+///         "my_own_hosts_file".to_string(),
+///     ),
+///     ..Default::default()
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct TrustOnFirstUseConfig {
-    pub(crate) known_hosts: KnownHosts,
-    pub(crate) verifier_behaviour: HashMap<CertVerificationStatus, CertVerifierBehaviour>,
+    /// known_hosts stores all the already known and trusted endpoints
+    pub known_hosts: KnownHosts,
+    /// verifier_behaviour stores the [`CertVerifierBehaviour`] that the certificate verifier will adopt for each possible [`CertVerificationStatus`]
+    pub verifier_behaviour: HashMap<CertVerificationStatus, CertVerifierBehaviour>,
 }
 
 impl Default for TrustOnFirstUseConfig {
+    /// Returns the default [`TrustOnFirstUseConfig`]
     fn default() -> Self {
         TrustOnFirstUseConfig {
             known_hosts: KnownHosts::HostsFile(DEFAULT_KNOWN_HOSTS_FILE.to_string()),
@@ -108,6 +99,32 @@ impl Default for TrustOnFirstUseConfig {
     }
 }
 
+/// Status of the server's certificate verification.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum CertVerificationStatus {
+    /// First time connecting to this host.
+    UnknownCertificate,
+    /// The certificate fingerprint does not match the one in the known hosts fingerprints store.
+    UntrustedCertificate,
+    /// This is a known host and the certificate is matching the one in the known hosts fingerprints store.
+    TrustedCertificate,
+}
+
+/// Encodes ways a client can know the expected name of the server. See [`rustls::ServerName`]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ServerName(RustlsServerName);
+
+impl fmt::Display for ServerName {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            RustlsServerName::DnsName(dns) => fmt::Display::fmt(dns.as_ref(), f),
+            RustlsServerName::IpAddress(ip) => fmt::Display::fmt(&ip, f),
+            _ => todo!(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CertVerifierBehaviour {
     /// Raises an event to the client app (containing the cert info) and waits for an API call
@@ -120,9 +137,10 @@ pub enum CertVerifierBehaviour {
 pub enum CertVerifierAction {
     /// Abort the connection and raise an error (containing the cert info)
     AbortConnection,
-    /// Continue the connection discarding the cert info
+    /// Accept the server's certificate and continue the connection, but discard the certificate's info. They will not be stored nor available as an event.
     TrustOnce,
-    /// Continue the connection and add the cert info to the store
+    /// Accept the server's certificate and continue the connection. A [`CertificateUpdateEvent`] will be raised containing the certificate's info.
+    /// If the certificate store ([`KnownHosts`]) is a file, this action also adds the certificate's info to the store file. Else it is up to the user to update its own store with the content of [`CertificateUpdateEvent`].
     TrustAndStore,
 }
 
@@ -145,12 +163,16 @@ impl fmt::Display for CertificateFingerprint {
     }
 }
 
-pub type CertStore = HashMap<ServName, CertificateFingerprint>;
+/// Certificate fingerprint storage
+pub type CertStore = HashMap<ServerName, CertificateFingerprint>;
 
+/// Certificate fingerprint storage as a value or as a file
 #[derive(Debug, Clone)]
 pub enum KnownHosts {
+    /// Directly contains the server name to fingerprint mapping
     Store(CertStore),
-    HostsFile(String),
+    /// Path of a file caontaing the server name to fingerprint mapping.
+    HostsFile(String), // TODO More on the file format + the limitations
 }
 
 /// Implementation of `ServerCertVerifier` that verifies everything as trustworthy.
@@ -204,7 +226,7 @@ impl TofuServerVerification {
     fn apply_verifier_behaviour_for_status(
         &self,
         status: CertVerificationStatus,
-        server_name: &ServName,
+        server_name: &ServerName,
         fingerprint: CertificateFingerprint,
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         let behaviour = self
@@ -239,7 +261,7 @@ impl TofuServerVerification {
     fn apply_verifier_immediate_action(
         &self,
         action: &CertVerifierAction,
-        server_name: &ServName,
+        server_name: &ServerName,
         fingerprint: CertificateFingerprint,
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         match action {
@@ -289,7 +311,7 @@ impl rustls::client::ServerCertVerifier for TofuServerVerification {
         // TODO Could add some optional validity checks on the cert content.
         let status;
         let fingerprint = CertificateFingerprint::from(_end_entity);
-        let server_name = ServName(_server_name.clone());
+        let server_name = ServerName(_server_name.clone());
         if let Some(known_fingerprint) = self.store.get(&server_name) {
             if *known_fingerprint == fingerprint {
                 status = Some(CertVerificationStatus::TrustedCertificate);
@@ -323,11 +345,11 @@ fn store_known_hosts_to_file(file: &String, store: &CertStore) -> Result<(), Box
 
 fn parse_known_host_line(
     line: String,
-) -> Result<(ServName, CertificateFingerprint), Box<dyn Error>> {
+) -> Result<(ServerName, CertificateFingerprint), Box<dyn Error>> {
     let mut parts = line.split_whitespace();
 
     let adr_str = parts.next().ok_or(QuinnetError::InvalidHostFile)?;
-    let serv_name = ServName(ServerName::try_from(adr_str)?);
+    let serv_name = ServerName(RustlsServerName::try_from(adr_str)?);
 
     let fingerprint_b64 = parts.next().ok_or(QuinnetError::InvalidHostFile)?;
     let fingerprint_bytes = base64::decode(&fingerprint_b64)?;
