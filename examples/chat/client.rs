@@ -11,7 +11,7 @@ use bevy::{
 };
 use bevy_quinnet::{
     client::{
-        CertificateVerificationMode, Client, ClientConfigurationData, ConnectionEvent,
+        certificate::CertificateVerificationMode, Client, ClientConfigurationData, ConnectionEvent,
         QuinnetClientPlugin,
     },
     ClientId,
