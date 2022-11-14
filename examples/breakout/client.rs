@@ -15,7 +15,9 @@ use bevy::{
     },
 };
 use bevy_quinnet::{
-    client::{certificate::CertificateVerificationMode, Client, ClientConfigurationData},
+    client::{
+        certificate::CertificateVerificationMode, Client, Connection, ConnectionConfiguration,
+    },
     ClientId,
 };
 
@@ -90,18 +92,17 @@ struct WallBundle {
     sprite_bundle: SpriteBundle,
 }
 
-pub(crate) fn start_connection(client: ResMut<Client>) {
-    client
-        .connect(
-            ClientConfigurationData::new(
-                SERVER_HOST.to_string(),
-                SERVER_PORT,
-                "0.0.0.0".to_string(),
-                0,
-            ),
-            CertificateVerificationMode::SkipVerification,
-        )
-        .unwrap();
+pub(crate) fn start_connection(client: ResMut<Client>, mut commands: Commands) {
+    client.spawn_connection(
+        &mut commands,
+        ConnectionConfiguration::new(
+            SERVER_HOST.to_string(),
+            SERVER_PORT,
+            "0.0.0.0".to_string(),
+            0,
+        ),
+        CertificateVerificationMode::SkipVerification,
+    );
 }
 
 fn spawn_paddle(commands: &mut Commands, position: &Vec3, owned: bool) -> Entity {
@@ -189,7 +190,7 @@ pub(crate) fn spawn_bricks(
 
 pub(crate) fn handle_server_messages(
     mut commands: Commands,
-    mut client: ResMut<Client>,
+    mut connection: Query<&mut Connection>,
     mut client_data: ResMut<ClientData>,
     mut entity_mapping: ResMut<NetworkMapping>,
     mut game_state: ResMut<State<GameState>>,
@@ -199,7 +200,8 @@ pub(crate) fn handle_server_messages(
     mut scoreboard: ResMut<Scoreboard>,
     mut collision_events: EventWriter<CollisionEvent>,
 ) {
-    while let Ok(Some(message)) = client.receive_message::<ServerMessage>() {
+    let mut connection = connection.get_single_mut().unwrap();
+    while let Ok(Some(message)) = connection.receive_message::<ServerMessage>() {
         match message {
             ServerMessage::InitClient { client_id } => {
                 client_data.self_id = client_id;
@@ -285,7 +287,7 @@ pub(crate) struct PaddleState {
 }
 
 pub(crate) fn move_paddle(
-    client: ResMut<Client>,
+    mut connection: Query<&mut Connection>,
     keyboard_input: Res<Input<KeyCode>>,
     mut local: Local<PaddleState>,
 ) {
@@ -300,7 +302,8 @@ pub(crate) fn move_paddle(
     }
 
     if local.current_input != paddle_input {
-        client
+        let connection = connection.get_single_mut().unwrap();
+        connection
             .send_message(ClientMessage::PaddleInput {
                 input: paddle_input.clone(),
             })

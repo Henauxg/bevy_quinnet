@@ -114,7 +114,11 @@ fn start_listening(mut server: ResMut<Server>) {
     server
         .start(
             ServerConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string()),
-            CertificateRetrievalMode::GenerateSelfSigned,
+            CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
+                cert_file: "cert.pem".to_string(),
+                key_file: "key.pem".to_string(),
+                save_on_disk: true,
+            },
         )
         .unwrap();
 }
