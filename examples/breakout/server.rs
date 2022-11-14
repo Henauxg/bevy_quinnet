@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use bevy::{
     prelude::{
-        default, Bundle, Commands, Component, Entity, EventReader, Query, ResMut, Transform, Vec2,
-        Vec3, With,
+        default, Bundle, Commands, Component, Entity, EventReader, Query, ResMut, Resource,
+        Transform, Vec2, Vec3, With,
     },
     sprite::collide_aabb::{collide, Collision},
     transform::TransformBundle,
@@ -48,7 +48,7 @@ pub(crate) struct Player {
     input: PaddleInput,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Resource, Debug, Clone, Default)]
 pub(crate) struct Players {
     map: HashMap<ClientId, Player>,
 }
@@ -298,10 +298,10 @@ fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &Re
     }
 
     // Spawn walls
-    commands.spawn_bundle(WallBundle::new(WallLocation::Left));
-    commands.spawn_bundle(WallBundle::new(WallLocation::Right));
-    commands.spawn_bundle(WallBundle::new(WallLocation::Bottom));
-    commands.spawn_bundle(WallBundle::new(WallLocation::Top));
+    commands.spawn(WallBundle::new(WallLocation::Left));
+    commands.spawn(WallBundle::new(WallLocation::Right));
+    commands.spawn(WallBundle::new(WallLocation::Bottom));
+    commands.spawn(WallBundle::new(WallLocation::Top));
 
     // Spawn bricks
     // Negative scales result in flipped sprites / meshes,
@@ -352,18 +352,18 @@ fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &Re
             );
 
             // brick
-            commands
-                .spawn()
-                .insert(Brick(brick_id))
-                .insert_bundle(TransformBundle {
+            commands.spawn((
+                Brick(brick_id),
+                TransformBundle {
                     local: Transform {
                         translation: brick_position.extend(0.0),
                         scale: Vec3::new(BRICK_SIZE.x, BRICK_SIZE.y, 1.0),
                         ..default()
                     },
                     ..default()
-                })
-                .insert(Collider);
+                },
+                Collider,
+            ));
             brick_id += 1;
         }
     }
@@ -388,19 +388,20 @@ fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &Re
 
 fn spawn_paddle(commands: &mut Commands, client_id: ClientId, pos: &Vec3) -> Entity {
     commands
-        .spawn()
-        .insert(Paddle {
-            player_id: client_id,
-        })
-        .insert_bundle(TransformBundle {
-            local: Transform {
-                translation: *pos,
-                scale: PADDLE_SIZE,
+        .spawn((
+            Paddle {
+                player_id: client_id,
+            },
+            TransformBundle {
+                local: Transform {
+                    translation: *pos,
+                    scale: PADDLE_SIZE,
+                    ..default()
+                },
                 ..default()
             },
-            ..default()
-        })
-        .insert(Collider)
+            Collider,
+        ))
         .id()
 }
 
@@ -411,19 +412,20 @@ fn spawn_ball(
     direction: &Vec2,
 ) -> Entity {
     commands
-        .spawn()
-        .insert(Ball {
-            last_hit_by: client_id,
-        })
-        .insert_bundle(TransformBundle {
-            local: Transform {
-                scale: BALL_SIZE,
-                translation: *pos,
+        .spawn((
+            Ball {
+                last_hit_by: client_id,
+            },
+            TransformBundle {
+                local: Transform {
+                    scale: BALL_SIZE,
+                    translation: *pos,
+                    ..default()
+                },
                 ..default()
             },
-            ..default()
-        })
-        .insert(Velocity(direction.normalize() * BALL_SPEED))
+            Velocity(direction.normalize() * BALL_SPEED),
+        ))
         .id()
 }
 

@@ -13,7 +13,7 @@ use protocol::{ClientMessage, ServerMessage};
 
 mod protocol;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Resource, Debug, Clone, Default)]
 struct Users {
     names: HashMap<ClientId, String>,
 }
@@ -54,7 +54,7 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
             }
             ClientMessage::Disconnect {} => {
                 // We tell the server to disconnect this user
-                server.disconnect_client(client_id);
+                server.disconnect_client(client_id).unwrap();
                 handle_disconnect(&mut server, &mut users, client_id);
             }
             ClientMessage::ChatMessage { message } => {

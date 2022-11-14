@@ -61,6 +61,7 @@ struct CollisionEvent;
 #[derive(Component)]
 struct Score;
 
+#[derive(Resource)]
 struct CollisionSound(Handle<AudioSource>);
 
 pub type BrickId = u64;
@@ -152,7 +153,7 @@ fn main() {
             SystemSet::new()
                 // https://github.com/bevyengine/bevy/issues/1839
                 // Run on a fixed Timestep,on all clients, in GameState::Running
-                .with_run_criteria(FixedTimestep::step(TIME_STEP as f64).chain(
+                .with_run_criteria(FixedTimestep::step(TIME_STEP as f64).pipe(
                     |In(input): In<ShouldRun>, state: Res<State<GameState>>| match state.current() {
                         GameState::Running => input,
                         _ => ShouldRun::No,
@@ -169,7 +170,7 @@ fn main() {
             SystemSet::new()
                 // https://github.com/bevyengine/bevy/issues/1839
                 // Run on a fixed Timestep, only for the hosting client, in GameState::Running
-                .with_run_criteria(FixedTimestep::step(TIME_STEP as f64).chain(
+                .with_run_criteria(FixedTimestep::step(TIME_STEP as f64).pipe(
                     |In(input): In<ShouldRun>,
                      state: Res<State<GameState>>,
                      server: Res<Server>| match state.current() {

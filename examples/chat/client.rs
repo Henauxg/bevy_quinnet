@@ -7,7 +7,10 @@ use std::{
 use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
     log::LogPlugin,
-    prelude::{info, warn, App, Commands, CoreStage, EventReader, EventWriter, Res, ResMut},
+    prelude::{
+        info, warn, App, Commands, CoreStage, Deref, DerefMut, EventReader, EventWriter, Res,
+        ResMut, Resource,
+    },
 };
 use bevy_quinnet::{
     client::{
@@ -23,11 +26,14 @@ use protocol::{ClientMessage, ServerMessage};
 
 mod protocol;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Resource, Debug, Clone, Default)]
 struct Users {
     self_id: ClientId,
     names: HashMap<ClientId, String>,
 }
+
+#[derive(Resource, Deref, DerefMut)]
+struct TerminalReceiver(mpsc::Receiver<String>);
 
 pub fn on_app_exit(app_exit_events: EventReader<AppExit>, client: Res<Client>) {
     if !app_exit_events.is_empty() {
@@ -76,7 +82,7 @@ fn handle_server_messages(mut client: ResMut<Client>, mut users: ResMut<Users>) 
 
 fn handle_terminal_messages(
     client: ResMut<Client>,
-    mut terminal_messages: ResMut<mpsc::Receiver<String>>,
+    mut terminal_messages: ResMut<TerminalReceiver>,
     mut app_exit_events: EventWriter<AppExit>,
 ) {
     while let Ok(message) = terminal_messages.try_recv() {
@@ -101,7 +107,7 @@ fn start_terminal_listener(mut commands: Commands) {
             .unwrap();
     });
 
-    commands.insert_resource(from_terminal_receiver);
+    commands.insert_resource(TerminalReceiver(from_terminal_receiver));
 }
 
 fn start_connection(client: ResMut<Client>) {

@@ -1,3 +1,6 @@
+use bevy::prelude::{Deref, DerefMut, Resource};
+use tokio::runtime::Runtime;
+
 pub const DEFAULT_MESSAGE_QUEUE_SIZE: usize = 150;
 pub const DEFAULT_KILL_MESSAGE_QUEUE_SIZE: usize = 10;
 pub const DEFAULT_KEEP_ALIVE_INTERVAL_S: u64 = 4;
@@ -6,6 +9,9 @@ pub mod client;
 pub mod server;
 
 pub type ClientId = u64;
+
+#[derive(Resource, Deref, DerefMut)]
+pub(crate) struct AsyncRuntime(pub(crate) Runtime);
 
 /// Enum with possibles errors that can occur in Bevy Quinnet
 #[derive(thiserror::Error, Debug)]

@@ -4,13 +4,14 @@ use bevy::{
     prelude::{
         default, AssetServer, Audio, BuildChildren, Bundle, Button, ButtonBundle, Camera2dBundle,
         Changed, Color, Commands, Component, DespawnRecursiveExt, Entity, EventReader, EventWriter,
-        Input, KeyCode, Local, Query, Res, ResMut, State, TextBundle, Transform, Vec2, Vec3, With,
-        Without,
+        Input, KeyCode, Local, Query, Res, ResMut, Resource, State, TextBundle, Transform, Vec2,
+        Vec3, With, Without,
     },
     sprite::{Sprite, SpriteBundle},
     text::{Text, TextSection, TextStyle},
     ui::{
-        AlignItems, Interaction, JustifyContent, PositionType, Size, Style, UiColor, UiRect, Val,
+        AlignItems, BackgroundColor, Interaction, JustifyContent, PositionType, Size, Style,
+        UiRect, Val,
     },
 };
 use bevy_quinnet::{
@@ -45,22 +46,23 @@ const BOLD_FONT: &str = "fonts/FiraSans-Bold.ttf";
 const NORMAL_FONT: &str = "fonts/FiraMono-Medium.ttf";
 const COLLISION_SOUND_EFFECT: &str = "sounds/breakout_collision.ogg";
 
-#[derive(Debug, Clone, Default)]
+#[derive(Resource, Debug, Clone, Default)]
 pub(crate) struct ClientData {
     self_id: ClientId,
 }
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub(crate) struct NetworkMapping {
     // Network entity id to local entity id
     map: HashMap<Entity, Entity>,
 }
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct BricksMapping {
     map: HashMap<BrickId, Entity>,
 }
 
 // This resource tracks the game's score
+#[derive(Resource)]
 pub(crate) struct Scoreboard {
     pub(crate) score: i32,
 }
@@ -104,44 +106,46 @@ pub(crate) fn start_connection(client: ResMut<Client>) {
 
 fn spawn_paddle(commands: &mut Commands, position: &Vec3, owned: bool) -> Entity {
     commands
-        .spawn()
-        .insert_bundle(SpriteBundle {
-            transform: Transform {
-                translation: *position,
-                scale: PADDLE_SIZE,
-                ..default()
-            },
-            sprite: Sprite {
-                color: if owned {
-                    PADDLE_COLOR
-                } else {
-                    OPPONENT_PADDLE_COLOR
+        .spawn((
+            SpriteBundle {
+                transform: Transform {
+                    translation: *position,
+                    scale: PADDLE_SIZE,
+                    ..default()
+                },
+                sprite: Sprite {
+                    color: if owned {
+                        PADDLE_COLOR
+                    } else {
+                        OPPONENT_PADDLE_COLOR
+                    },
+                    ..default()
                 },
                 ..default()
             },
-            ..default()
-        })
-        .insert(Paddle)
+            Paddle,
+        ))
         .id()
 }
 
 fn spawn_ball(commands: &mut Commands, pos: &Vec3, direction: &Vec2, owned: bool) -> Entity {
     commands
-        .spawn()
-        .insert(Ball)
-        .insert_bundle(SpriteBundle {
-            transform: Transform {
-                scale: BALL_SIZE,
-                translation: *pos,
+        .spawn((
+            Ball,
+            SpriteBundle {
+                transform: Transform {
+                    scale: BALL_SIZE,
+                    translation: *pos,
+                    ..default()
+                },
+                sprite: Sprite {
+                    color: ball_color_from_bool(owned),
+                    ..default()
+                },
                 ..default()
             },
-            sprite: Sprite {
-                color: ball_color_from_bool(owned),
-                ..default()
-            },
-            ..default()
-        })
-        .insert(Velocity(direction.normalize() * BALL_SPEED))
+            Velocity(direction.normalize() * BALL_SPEED),
+        ))
         .id()
 }
 
@@ -161,20 +165,21 @@ pub(crate) fn spawn_bricks(
             );
 
             let brick = commands
-                .spawn()
-                .insert(Brick(brick_id))
-                .insert_bundle(SpriteBundle {
-                    sprite: Sprite {
-                        color: BRICK_COLOR,
+                .spawn((
+                    Brick(brick_id),
+                    SpriteBundle {
+                        sprite: Sprite {
+                            color: BRICK_COLOR,
+                            ..default()
+                        },
+                        transform: Transform {
+                            translation: brick_position.extend(0.0),
+                            scale: Vec3::new(BRICK_SIZE.x, BRICK_SIZE.y, 1.0),
+                            ..default()
+                        },
                         ..default()
                     },
-                    transform: Transform {
-                        translation: brick_position.extend(0.0),
-                        scale: Vec3::new(BRICK_SIZE.x, BRICK_SIZE.y, 1.0),
-                        ..default()
-                    },
-                    ..default()
-                })
+                ))
                 .id();
             bricks.map.insert(brick_id, brick);
             brick_id += 1;
@@ -328,7 +333,7 @@ pub(crate) fn play_collision_sound(
 
 pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Camera
-    commands.spawn_bundle(Camera2dBundle::default());
+    commands.spawn(Camera2dBundle::default());
 
     let button_style = Style {
         size: Size::new(Val::Px(150.0), Val::Px(65.0)),
@@ -346,30 +351,34 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
         color: BUTTON_TEXT_COLOR,
     };
     commands
-        .spawn_bundle(ButtonBundle {
-            style: button_style.clone(),
-            color: NORMAL_BUTTON_COLOR.into(),
-            ..default()
-        })
-        .insert(MenuItem::Host)
+        .spawn((
+            ButtonBundle {
+                style: button_style.clone(),
+                background_color: NORMAL_BUTTON_COLOR.into(),
+                ..default()
+            },
+            MenuItem::Host,
+        ))
         .with_children(|parent| {
-            parent.spawn_bundle(TextBundle::from_section("Host", text_style.clone()));
+            parent.spawn(TextBundle::from_section("Host", text_style.clone()));
         });
     commands
-        .spawn_bundle(ButtonBundle {
-            style: button_style,
-            color: NORMAL_BUTTON_COLOR.into(),
-            ..default()
-        })
-        .insert(MenuItem::Join)
+        .spawn((
+            ButtonBundle {
+                style: button_style,
+                background_color: NORMAL_BUTTON_COLOR.into(),
+                ..default()
+            },
+            MenuItem::Join,
+        ))
         .with_children(|parent| {
-            parent.spawn_bundle(TextBundle::from_section("Join", text_style));
+            parent.spawn(TextBundle::from_section("Join", text_style));
         });
 }
 
 pub(crate) fn handle_menu_buttons(
     mut interaction_query: Query<
-        (&Interaction, &mut UiColor, &MenuItem),
+        (&Interaction, &mut BackgroundColor, &MenuItem),
         (Changed<Interaction>, With<Button>),
     >,
     mut game_state: ResMut<State<GameState>>,
@@ -405,41 +414,39 @@ pub(crate) fn setup_breakout(mut commands: Commands, asset_server: Res<AssetServ
     commands.insert_resource(CollisionSound(ball_collision_sound));
 
     // Scoreboard
-    commands
-        .spawn()
-        .insert_bundle(
-            TextBundle::from_sections([
-                TextSection::new(
-                    "Score: ",
-                    TextStyle {
-                        font: asset_server.load(BOLD_FONT),
-                        font_size: SCOREBOARD_FONT_SIZE,
-                        color: TEXT_COLOR,
-                    },
-                ),
-                TextSection::from_style(TextStyle {
-                    font: asset_server.load(NORMAL_FONT),
+    commands.spawn((
+        TextBundle::from_sections([
+            TextSection::new(
+                "Score: ",
+                TextStyle {
+                    font: asset_server.load(BOLD_FONT),
                     font_size: SCOREBOARD_FONT_SIZE,
-                    color: SCORE_COLOR,
-                }),
-            ])
-            .with_style(Style {
-                position_type: PositionType::Absolute,
-                position: UiRect {
-                    top: SCOREBOARD_TEXT_PADDING,
-                    left: SCOREBOARD_TEXT_PADDING,
-                    ..default()
+                    color: TEXT_COLOR,
                 },
-                ..default()
+            ),
+            TextSection::from_style(TextStyle {
+                font: asset_server.load(NORMAL_FONT),
+                font_size: SCOREBOARD_FONT_SIZE,
+                color: SCORE_COLOR,
             }),
-        )
-        .insert(Score);
+        ])
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            position: UiRect {
+                top: SCOREBOARD_TEXT_PADDING,
+                left: SCOREBOARD_TEXT_PADDING,
+                ..default()
+            },
+            ..default()
+        }),
+        Score,
+    ));
 
     // Walls
-    commands.spawn_bundle(WallBundle::new(WallLocation::Left));
-    commands.spawn_bundle(WallBundle::new(WallLocation::Right));
-    commands.spawn_bundle(WallBundle::new(WallLocation::Bottom));
-    commands.spawn_bundle(WallBundle::new(WallLocation::Top));
+    commands.spawn(WallBundle::new(WallLocation::Left));
+    commands.spawn(WallBundle::new(WallLocation::Right));
+    commands.spawn(WallBundle::new(WallLocation::Bottom));
+    commands.spawn(WallBundle::new(WallLocation::Top));
 }
 
 pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<Ball>>) {
