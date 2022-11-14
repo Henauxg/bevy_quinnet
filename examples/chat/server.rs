@@ -54,7 +54,7 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
             }
             ClientMessage::Disconnect {} => {
                 // We tell the server to disconnect this user
-                server.disconnect_client(client_id);
+                server.disconnect_client(client_id).unwrap();
                 handle_disconnect(&mut server, &mut users, client_id);
             }
             ClientMessage::ChatMessage { message } => {
@@ -114,7 +114,11 @@ fn start_listening(mut server: ResMut<Server>) {
     server
         .start(
             ServerConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string()),
-            CertificateRetrievalMode::GenerateSelfSigned,
+            CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
+                cert_file: "cert.pem".to_string(),
+                key_file: "key.pem".to_string(),
+                save_on_disk: true,
+            },
         )
         .unwrap();
 }
