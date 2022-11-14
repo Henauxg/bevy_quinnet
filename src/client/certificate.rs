@@ -29,10 +29,18 @@ pub struct CertificateInteractionEvent {
 }
 
 impl CertificateInteractionEvent {
-    pub fn apply_cert_verifier_action(&self, action: CertVerifierAction) {
-        let mut sender = self.action_sender.lock().unwrap();
+    pub fn apply_cert_verifier_action(
+        &self,
+        action: CertVerifierAction,
+    ) -> Result<(), QuinnetError> {
+        let mut sender = self.action_sender.lock()?;
         if let Some(sender) = sender.take() {
-            sender.send(action).unwrap()
+            match sender.send(action) {
+                Ok(_) => Ok(()),
+                Err(_) => Err(QuinnetError::ChannelClosed),
+            }
+        } else {
+            Err(QuinnetError::CertificateActionAlreadyApplied)
         }
     }
 }

@@ -1,3 +1,5 @@
+use std::sync::PoisonError;
+
 use bevy::prelude::{Deref, DerefMut, Resource};
 use tokio::runtime::Runtime;
 
@@ -28,4 +30,14 @@ pub enum QuinnetError {
     ChannelClosed,
     #[error("The hosts file is invalid")]
     InvalidHostFile,
+    #[error("Lock acquisition failure")]
+    LockAcquisitionFailure,
+    #[error("A Certificate action was already sent for a CertificateInteractionEvent")]
+    CertificateActionAlreadyApplied,
+}
+
+impl<T> From<PoisonError<T>> for QuinnetError {
+    fn from(_: PoisonError<T>) -> Self {
+        Self::LockAcquisitionFailure
+    }
 }
