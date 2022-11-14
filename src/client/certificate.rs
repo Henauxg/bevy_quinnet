@@ -15,13 +15,14 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::QuinnetError;
 
-use super::{InternalAsyncMessage, DEFAULT_KNOWN_HOSTS_FILE};
+use super::{ConnectionId, InternalAsyncMessage, DEFAULT_KNOWN_HOSTS_FILE};
 
 pub const DEFAULT_CERT_VERIFIER_BEHAVIOUR: CertVerifierBehaviour =
     CertVerifierBehaviour::ImmediateAction(CertVerifierAction::AbortConnection);
 
 /// Event raised when a user/app interaction is needed for the server's certificate validation
 pub struct CertificateInteractionEvent {
+    pub connection_id: ConnectionId,
     /// The current status of the verification
     pub status: CertVerificationStatus,
     /// Mutex for interior mutability
@@ -39,6 +40,7 @@ impl CertificateInteractionEvent {
 
 /// Event raised when a new certificate is trusted
 pub struct CertificateUpdateEvent {
+    pub connection_id: ConnectionId,
     /// Identifies the server name
     pub server_name: ServerName,
     /// Fingerprint of the server's certificate
