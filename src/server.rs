@@ -16,7 +16,6 @@ use futures_util::StreamExt;
 use quinn::{Endpoint, NewConnection, ServerConfig};
 use serde::Deserialize;
 use tokio::{
-    runtime::Runtime,
     sync::{
         broadcast::{self},
         mpsc::{self, error::TryRecvError},
@@ -26,8 +25,8 @@ use tokio::{
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::{
-    ClientId, QuinnetError, DEFAULT_KEEP_ALIVE_INTERVAL_S, DEFAULT_KILL_MESSAGE_QUEUE_SIZE,
-    DEFAULT_MESSAGE_QUEUE_SIZE,
+    AsyncRuntime, ClientId, QuinnetError, DEFAULT_KEEP_ALIVE_INTERVAL_S,
+    DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
 pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
@@ -133,6 +132,7 @@ pub(crate) struct ClientConnection {
     close_sender: broadcast::Sender<()>,
 }
 
+#[derive(Resource)]
 pub struct Server {
     clients: HashMap<ClientId, ClientConnection>,
     receiver: mpsc::Receiver<ClientPayload>,
@@ -536,7 +536,7 @@ async fn connections_listening_task(
     }
 }
 
-fn start_async_server(mut commands: Commands, runtime: Res<Runtime>) {
+fn start_async_server(mut commands: Commands, runtime: Res<AsyncRuntime>) {
     // TODO Clean: Configure size
     let (from_clients_sender, from_clients_receiver) =
         mpsc::channel::<ClientPayload>(DEFAULT_MESSAGE_QUEUE_SIZE);
@@ -615,13 +615,13 @@ impl Plugin for QuinnetServerPlugin {
             .add_startup_system_to_stage(StartupStage::PreStartup, start_async_server)
             .add_system_to_stage(CoreStage::PreUpdate, update_sync_server);
 
-        if app.world.get_resource_mut::<Runtime>().is_none() {
-            app.insert_resource(
+        if app.world.get_resource_mut::<AsyncRuntime>().is_none() {
+            app.insert_resource(AsyncRuntime(
                 tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
                     .build()
                     .unwrap(),
-            );
+            ));
         }
     }
 }

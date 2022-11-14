@@ -12,7 +12,6 @@ use quinn::{ClientConfig, Endpoint};
 use rustls::Certificate;
 use serde::Deserialize;
 use tokio::{
-    runtime::Runtime,
     sync::{
         broadcast,
         mpsc::{
@@ -25,7 +24,9 @@ use tokio::{
 };
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
-use crate::{QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE};
+use crate::{
+    AsyncRuntime, QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+};
 
 use self::certificate::{
     load_known_hosts_store_from_config, CertVerificationStatus, CertVerifierAction,
@@ -116,6 +117,7 @@ pub(crate) enum InternalSyncMessage {
     },
 }
 
+#[derive(Resource)]
 pub struct Client {
     state: ClientState,
     // TODO Perf: multiple channels
@@ -335,7 +337,7 @@ async fn connection_task(
     }
 }
 
-fn start_async_client(mut commands: Commands, runtime: Res<Runtime>) {
+fn start_async_client(mut commands: Commands, runtime: Res<AsyncRuntime>) {
     let (from_server_sender, from_server_receiver) =
         mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
     let (to_server_sender, to_server_receiver) = mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
@@ -440,13 +442,13 @@ impl Plugin for QuinnetClientPlugin {
             .add_startup_system_to_stage(StartupStage::PreStartup, start_async_client)
             .add_system(update_sync_client);
 
-        if app.world.get_resource_mut::<Runtime>().is_none() {
-            app.insert_resource(
+        if app.world.get_resource_mut::<AsyncRuntime>().is_none() {
+            app.insert_resource(AsyncRuntime(
                 tokio::runtime::Builder::new_multi_thread()
                     .enable_all()
                     .build()
                     .unwrap(),
-            );
+            ));
         }
     }
 }
