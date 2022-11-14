@@ -268,7 +268,8 @@ Compatibility of `bevy_quinnet` versions:
 
 | `bevy_quinnet` | `bevy` |
 | :------------- | :----- |
-| `0.1` - `0.2`  | `0.8`  |
+| `0.1`          | `0.8`  |
+| `0.2`          | `0.9`  |
 
 ## Limitations
 
