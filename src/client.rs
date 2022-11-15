@@ -9,7 +9,6 @@ use bytes::Bytes;
 use futures::sink::SinkExt;
 use futures_util::StreamExt;
 use quinn::{ClientConfig, Endpoint};
-use rustls::Certificate;
 use serde::Deserialize;
 use tokio::{
     sync::{
@@ -97,7 +96,7 @@ enum ClientState {
 
 #[derive(Debug)]
 pub(crate) enum InternalAsyncMessage {
-    Connected(Option<Vec<Certificate>>),
+    Connected,
     LostConnection,
     CertificateActionRequest {
         status: CertVerificationStatus,
@@ -269,7 +268,7 @@ async fn connection_task(
             );
 
             to_sync_client
-                .send(InternalAsyncMessage::Connected(None))
+                .send(InternalAsyncMessage::Connected)
                 .await
                 .expect("Failed to signal connection to sync client");
 
@@ -392,7 +391,7 @@ fn update_sync_client(
 ) {
     while let Ok(message) = client.internal_receiver.try_recv() {
         match message {
-            InternalAsyncMessage::Connected(_) => {
+            InternalAsyncMessage::Connected => {
                 client.state = ClientState::Connected;
                 connection_events.send(ConnectionEvent);
             }
