@@ -12,7 +12,7 @@ A Client/Server game networking plugin using [QUIC](https://www.chromium.org/qui
   - [Quickstart](#quickstart)
     - [Client](#client)
     - [Server](#server)
-  - [Certificates](#certificates)
+  - [Certificates and server authentication](#certificates-and-server-authentication)
   - [Logs](#logs)
   - [Examples](#examples)
     - [Chat example](#chat-example)
@@ -67,7 +67,7 @@ The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channel
 
 Those are the features/tasks that will probably come next (in no particular order):
 
-- [ ] Security: More certificates support, see [certificates](#certificates)
+- [x] Security: More certificates support, see [certificates](#certificates)
 - [x] Feature: Send messages from the server to a specific client
 - [x] Feature: Send messages from the server to a selected group of clients
 - [x] Feature: Raise connection/disconnection events from the plugins
@@ -77,7 +77,8 @@ Those are the features/tasks that will probably come next (in no particular orde
 - [ ] Performance: Messages aggregation before sending
 - [ ] Clean: Rework the error handling
 - [x] Clean: Rework the configuration input for the client & server plugins
-- [ ] Documentation: Document the API
+- [ ] Documentation: Fully document the API
+- [ ] Tests: Add tests
 
 ## Quickstart
 
@@ -108,14 +109,8 @@ fn start_connection(client: ResMut<Client>) {
             CertificateVerificationMode::SkipVerification,
         )
         .unwrap();
-
-    // You can already send message(s) even before being connected, they will be buffered.
-    // To be trully connected, you should wait for a ConnectionEvent
-    // or check client.is_connected()
-    client
-        .send_message(...)
-        .unwrap();
-}
+    
+    // When trully connected, you will receive a ConnectionEvent
 ```
 
 - To process server messages, you can use a bevy system such as the one below. The function `receive_message` is generic, here `ServerMessage` is a user provided enum deriving `Serialize` and `Deserialize`.
@@ -197,29 +192,37 @@ fn handle_client_messages(
 
 You can also use `server.broadcast_message`, which will send a message to all connected clients. "Connected" here means connected to the server plugin, which happens before your own app handshakes/verifications if you have any. Use `send_group_message` if you want to control the recipients.
 
-## Certificates
+## Certificates and server authentication
 
 Bevy Quinnet (through Quinn & QUIC) uses TLS 1.3 for authentication, the server needs to provide the client with a certificate confirming its identity, and the client must be configured to trust the certificates it receives from the server.
 
-Here are the current options available to the server and client plugins:
+Here are the current options available to the server and client plugins for the server authentication:
 - Client : 
-    - [x] Skip certificate verification
-    - [ ] "Trust on first use" certificates
-    - [x] Accept certificates issued by a Certificate Authority
+    - [x] Skip certificate verification (messages are still encrypted, but the server is not authentified)
+    - [x] Accept certificates issued by a Certificate Authority (implemented in [Quinn](https://github.com/quinn-rs/quinn), using [rustls](https://github.com/rustls/rustls))
+    - [x] [Trust on first use](https://en.wikipedia.org/wiki/Trust_on_first_use) certificates (implemented in Quinnet, using [rustls](https://github.com/rustls/rustls))
 - Server:
     - [x] Generate and issue a self-signed certificate
     - [x] Issue an already existing certificate (CA or self-signed)
 
-- On the client:
+On the client:
 
 ```rust
     // To accept any certificate
     client.connect(/*...*/, CertificateVerificationMode::SkipVerification);
     // To only accept certificates issued by a Certificate Authority
     client.connect(/*...*/, CertificateVerificationMode::SignedByCertificateAuthority);
+    // To use the default configuration of the Trust on first use authentication scheme
+    client.connect(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
+            // You can configure TrustOnFirstUse through the TrustOnFirstUseConfig:
+            // Provide your own fingerprint store variable/file,
+            // or configure the actions to apply for each possible certificate verification status.
+            ..Default::default()
+        }),
+    );
 ```
 
-- On the server:
+On the server:
 
 ```rust
     // To generate a new self-signed certificate on each startup 
@@ -236,6 +239,8 @@ Here are the current options available to the server and client plugins:
         save_on_disk: true, // To persist on disk if generated
     });
 ```
+
+See more about certificates in the [certificates readme](docs/Certificates.md)
 
 ## Logs
 
