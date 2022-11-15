@@ -67,7 +67,7 @@ The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channel
 
 Those are the features/tasks that will probably come next (in no particular order):
 
-- [x] Security: More certificates support, see [certificates](#certificates)
+- [x] Security: More certificates support, see [certificates-and-server-authentication](#certificates-and-server-authentication)
 - [x] Feature: Send messages from the server to a specific client
 - [x] Feature: Send messages from the server to a selected group of clients
 - [x] Feature: Raise connection/disconnection events from the plugins
