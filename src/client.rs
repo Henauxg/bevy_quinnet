@@ -29,9 +29,9 @@ use crate::{
 };
 
 use self::certificate::{
-    load_known_hosts_store_from_config, CertVerificationStatus, CertVerifierAction,
-    CertificateFingerprint, CertificateInteractionEvent, CertificateUpdateEvent,
-    CertificateVerificationMode, ServerName, SkipServerVerification, TofuServerVerification,
+    load_known_hosts_store_from_config, CertVerificationInfo, CertVerificationStatus,
+    CertVerifierAction, CertificateInteractionEvent, CertificateUpdateEvent,
+    CertificateVerificationMode, SkipServerVerification, TofuServerVerification,
 };
 
 pub mod certificate;
@@ -101,12 +101,10 @@ pub(crate) enum InternalAsyncMessage {
     LostConnection,
     CertificateActionRequest {
         status: CertVerificationStatus,
+        info: CertVerificationInfo,
         action_sender: oneshot::Sender<CertVerifierAction>,
     },
-    TrustedCertificateUpdate {
-        server_name: ServerName,
-        fingerprint: CertificateFingerprint,
-    },
+    TrustedCertificateUpdate(CertVerificationInfo),
 }
 
 #[derive(Debug, Clone)]
@@ -404,21 +402,17 @@ fn update_sync_client(
             }
             InternalAsyncMessage::CertificateActionRequest {
                 status,
+                info,
                 action_sender,
             } => {
                 certificate_interaction_events.send(CertificateInteractionEvent {
                     status,
+                    info,
                     action_sender: Mutex::new(Some(action_sender)),
                 });
             }
-            InternalAsyncMessage::TrustedCertificateUpdate {
-                server_name,
-                fingerprint,
-            } => {
-                certificate_update_events.send(CertificateUpdateEvent {
-                    server_name,
-                    fingerprint,
-                });
+            InternalAsyncMessage::TrustedCertificateUpdate(info) => {
+                certificate_update_events.send(CertificateUpdateEvent(info));
             }
         }
     }

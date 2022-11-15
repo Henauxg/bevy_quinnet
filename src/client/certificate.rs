@@ -24,6 +24,8 @@ pub const DEFAULT_CERT_VERIFIER_BEHAVIOUR: CertVerifierBehaviour =
 pub struct CertificateInteractionEvent {
     /// The current status of the verification
     pub status: CertVerificationStatus,
+    /// Server & Certificate info
+    pub info: CertVerificationInfo,
     /// Mutex for interior mutability
     pub(crate) action_sender: Mutex<Option<oneshot::Sender<CertVerifierAction>>>,
 }
@@ -46,12 +48,7 @@ impl CertificateInteractionEvent {
 }
 
 /// Event raised when a new certificate is trusted
-pub struct CertificateUpdateEvent {
-    /// Identifies the server name
-    pub server_name: ServerName,
-    /// Fingerprint of the server's certificate
-    pub fingerprint: CertificateFingerprint,
-}
+pub struct CertificateUpdateEvent(pub CertVerificationInfo);
 
 /// How the client should handle the server certificate.
 #[derive(Debug, Clone)]
@@ -116,6 +113,17 @@ pub enum CertVerificationStatus {
     UntrustedCertificate,
     /// This is a known host and the certificate is matching the one in the known hosts fingerprints store.
     TrustedCertificate,
+}
+
+/// Info onthe server's certificate.
+#[derive(Debug, Clone)]
+pub struct CertVerificationInfo {
+    /// Name of the server
+    pub server_name: ServerName,
+    /// Fingerprint of the received certificate
+    pub fingerprint: CertificateFingerprint,
+    /// If any, previously knwon fingerprint for this server
+    pub known_fingerprint: Option<CertificateFingerprint>,
 }
 
 /// Encodes ways a client can know the expected name of the server. See [`rustls::ServerName`]
@@ -234,8 +242,7 @@ impl TofuServerVerification {
     fn apply_verifier_behaviour_for_status(
         &self,
         status: CertVerificationStatus,
-        server_name: &ServerName,
-        fingerprint: CertificateFingerprint,
+        cert_info: CertVerificationInfo,
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         let behaviour = self
             .verifier_behaviour
@@ -243,20 +250,19 @@ impl TofuServerVerification {
             .unwrap_or(&DEFAULT_CERT_VERIFIER_BEHAVIOUR);
         match behaviour {
             CertVerifierBehaviour::ImmediateAction(action) => {
-                self.apply_verifier_immediate_action(action, server_name, fingerprint)
+                self.apply_verifier_immediate_action(action, cert_info)
             }
             CertVerifierBehaviour::RequestClientAction => {
                 let (action_sender, cert_action_recv) = oneshot::channel::<CertVerifierAction>();
                 self.to_sync_client
                     .try_send(InternalAsyncMessage::CertificateActionRequest {
                         status,
+                        info: cert_info.clone(),
                         action_sender,
                     })
                     .unwrap();
                 match block_on(cert_action_recv) {
-                    Ok(action) => {
-                        self.apply_verifier_immediate_action(&action, server_name, fingerprint)
-                    }
+                    Ok(action) => self.apply_verifier_immediate_action(&action, cert_info),
                     Err(err) => Err(rustls::Error::InvalidCertificateData(format!(
                         "Failed to receive CertVerifierAction: {}",
                         err
@@ -269,8 +275,7 @@ impl TofuServerVerification {
     fn apply_verifier_immediate_action(
         &self,
         action: &CertVerifierAction,
-        server_name: &ServerName,
-        fingerprint: CertificateFingerprint,
+        cert_info: CertVerificationInfo,
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         match action {
             CertVerifierAction::AbortConnection => Err(rustls::Error::InvalidCertificateData(
@@ -281,7 +286,8 @@ impl TofuServerVerification {
                 // If we need to store them to a file
                 if let Some(file) = &self.hosts_file {
                     let mut store_clone = self.store.clone();
-                    store_clone.insert(server_name.clone(), fingerprint.clone());
+                    store_clone
+                        .insert(cert_info.server_name.clone(), cert_info.fingerprint.clone());
                     if let Err(store_error) = store_known_hosts_to_file(&file, &store_clone) {
                         return Err(rustls::Error::General(format!(
                             "Failed to store new certificate entry: {}",
@@ -292,10 +298,8 @@ impl TofuServerVerification {
                 // In all cases raise an event containing the new certificate entry
                 match self
                     .to_sync_client
-                    .try_send(InternalAsyncMessage::TrustedCertificateUpdate {
-                        server_name: server_name.clone(),
-                        fingerprint,
-                    }) {
+                    .try_send(InternalAsyncMessage::TrustedCertificateUpdate(cert_info))
+                {
                     Ok(_) => Ok(rustls::client::ServerCertVerified::assertion()),
                     Err(_) => Err(rustls::Error::General(format!(
                         "Failed to signal new trusted certificate entry"
@@ -318,10 +322,14 @@ impl rustls::client::ServerCertVerifier for TofuServerVerification {
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         // TODO Could add some optional validity checks on the cert content.
         let status;
-        let fingerprint = CertificateFingerprint::from(_end_entity);
         let server_name = ServerName(_server_name.clone());
-        if let Some(known_fingerprint) = self.store.get(&server_name) {
-            if *known_fingerprint == fingerprint {
+        let cert_info = CertVerificationInfo {
+            server_name: server_name.clone(),
+            fingerprint: CertificateFingerprint::from(_end_entity),
+            known_fingerprint: self.store.get(&server_name).cloned(),
+        };
+        if let Some(ref known_fingerprint) = cert_info.known_fingerprint {
+            if *known_fingerprint == cert_info.fingerprint {
                 status = Some(CertVerificationStatus::TrustedCertificate);
             } else {
                 status = Some(CertVerificationStatus::UntrustedCertificate);
@@ -330,9 +338,7 @@ impl rustls::client::ServerCertVerifier for TofuServerVerification {
             status = Some(CertVerificationStatus::UnknownCertificate);
         }
         match status {
-            Some(status) => {
-                self.apply_verifier_behaviour_for_status(status, &server_name, fingerprint)
-            }
+            Some(status) => self.apply_verifier_behaviour_for_status(status, cert_info),
             None => Err(rustls::Error::InvalidCertificateData(format!(
                 "Internal error, no CertVerificationStatus"
             ))),
