@@ -28,8 +28,8 @@ use crate::{
 };
 
 use self::certificate::{
-    load_known_hosts_store_from_config, CertVerificationInfo, CertVerificationStatus,
-    CertVerifierAction, CertificateInteractionEvent, CertificateUpdateEvent,
+    load_known_hosts_store_from_config, CertConnectionAbortEvent, CertInteractionEvent,
+    CertTrustUpdateEvent, CertVerificationInfo, CertVerificationStatus, CertVerifierAction,
     CertificateVerificationMode, SkipServerVerification, TofuServerVerification,
 };
 
@@ -98,12 +98,16 @@ enum ClientState {
 pub(crate) enum InternalAsyncMessage {
     Connected,
     LostConnection,
-    CertificateActionRequest {
+    CertificateInteractionRequest {
         status: CertVerificationStatus,
         info: CertVerificationInfo,
         action_sender: oneshot::Sender<CertVerifierAction>,
     },
-    TrustedCertificateUpdate(CertVerificationInfo),
+    CertificateTrustUpdate(CertVerificationInfo),
+    CertificateConnectionAbort {
+        status: CertVerificationStatus,
+        cert_info: CertVerificationInfo,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -386,8 +390,9 @@ fn update_sync_client(
     mut client: ResMut<Client>,
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
-    mut certificate_interaction_events: EventWriter<CertificateInteractionEvent>,
-    mut certificate_update_events: EventWriter<CertificateUpdateEvent>,
+    mut certificate_interaction_events: EventWriter<CertInteractionEvent>,
+    mut cert_trust_update_events: EventWriter<CertTrustUpdateEvent>,
+    mut cert_connection_abort_events: EventWriter<CertConnectionAbortEvent>,
 ) {
     while let Ok(message) = client.internal_receiver.try_recv() {
         match message {
@@ -399,19 +404,22 @@ fn update_sync_client(
                 client.state = ClientState::Disconnected;
                 connection_lost_events.send(ConnectionLostEvent);
             }
-            InternalAsyncMessage::CertificateActionRequest {
+            InternalAsyncMessage::CertificateInteractionRequest {
                 status,
                 info,
                 action_sender,
             } => {
-                certificate_interaction_events.send(CertificateInteractionEvent {
+                certificate_interaction_events.send(CertInteractionEvent {
                     status,
                     info,
                     action_sender: Mutex::new(Some(action_sender)),
                 });
             }
-            InternalAsyncMessage::TrustedCertificateUpdate(info) => {
-                certificate_update_events.send(CertificateUpdateEvent(info));
+            InternalAsyncMessage::CertificateTrustUpdate(info) => {
+                cert_trust_update_events.send(CertTrustUpdateEvent(info));
+            }
+            InternalAsyncMessage::CertificateConnectionAbort { status, cert_info } => {
+                cert_connection_abort_events.send(CertConnectionAbortEvent { status, cert_info });
             }
         }
     }
@@ -429,8 +437,9 @@ impl Plugin for QuinnetClientPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ConnectionEvent>()
             .add_event::<ConnectionLostEvent>()
-            .add_event::<CertificateInteractionEvent>()
-            .add_event::<CertificateUpdateEvent>()
+            .add_event::<CertInteractionEvent>()
+            .add_event::<CertTrustUpdateEvent>()
+            .add_event::<CertConnectionAbortEvent>()
             // StartupStage::PreStartup so that resources created in commands are available to default startup_systems
             .add_startup_system_to_stage(StartupStage::PreStartup, start_async_client)
             .add_system(update_sync_client);

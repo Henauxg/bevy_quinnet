@@ -21,7 +21,7 @@ pub const DEFAULT_CERT_VERIFIER_BEHAVIOUR: CertVerifierBehaviour =
     CertVerifierBehaviour::ImmediateAction(CertVerifierAction::AbortConnection);
 
 /// Event raised when a user/app interaction is needed for the server's certificate validation
-pub struct CertificateInteractionEvent {
+pub struct CertInteractionEvent {
     /// The current status of the verification
     pub status: CertVerificationStatus,
     /// Server & Certificate info
@@ -30,7 +30,7 @@ pub struct CertificateInteractionEvent {
     pub(crate) action_sender: Mutex<Option<oneshot::Sender<CertVerifierAction>>>,
 }
 
-impl CertificateInteractionEvent {
+impl CertInteractionEvent {
     pub fn apply_cert_verifier_action(
         &self,
         action: CertVerifierAction,
@@ -48,7 +48,13 @@ impl CertificateInteractionEvent {
 }
 
 /// Event raised when a new certificate is trusted
-pub struct CertificateUpdateEvent(pub CertVerificationInfo);
+pub struct CertTrustUpdateEvent(pub CertVerificationInfo);
+
+/// Event raised when a connection is aborted during the certificate verification
+pub struct CertConnectionAbortEvent {
+    pub status: CertVerificationStatus,
+    pub cert_info: CertVerificationInfo,
+}
 
 /// How the client should handle the server certificate.
 #[derive(Debug, Clone)]
@@ -250,19 +256,19 @@ impl TofuServerVerification {
             .unwrap_or(&DEFAULT_CERT_VERIFIER_BEHAVIOUR);
         match behaviour {
             CertVerifierBehaviour::ImmediateAction(action) => {
-                self.apply_verifier_immediate_action(action, cert_info)
+                self.apply_verifier_immediate_action(action, status, cert_info)
             }
             CertVerifierBehaviour::RequestClientAction => {
                 let (action_sender, cert_action_recv) = oneshot::channel::<CertVerifierAction>();
                 self.to_sync_client
-                    .try_send(InternalAsyncMessage::CertificateActionRequest {
-                        status,
+                    .try_send(InternalAsyncMessage::CertificateInteractionRequest {
+                        status: status.clone(),
                         info: cert_info.clone(),
                         action_sender,
                     })
                     .unwrap();
                 match block_on(cert_action_recv) {
-                    Ok(action) => self.apply_verifier_immediate_action(&action, cert_info),
+                    Ok(action) => self.apply_verifier_immediate_action(&action, status, cert_info),
                     Err(err) => Err(rustls::Error::InvalidCertificateData(format!(
                         "Failed to receive CertVerifierAction: {}",
                         err
@@ -275,12 +281,25 @@ impl TofuServerVerification {
     fn apply_verifier_immediate_action(
         &self,
         action: &CertVerifierAction,
+        status: CertVerificationStatus,
         cert_info: CertVerificationInfo,
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         match action {
-            CertVerifierAction::AbortConnection => Err(rustls::Error::InvalidCertificateData(
-                format!("CertVerifierAction requested to abort the connection"),
-            )),
+            CertVerifierAction::AbortConnection => {
+                match self.to_sync_client.try_send(
+                    InternalAsyncMessage::CertificateConnectionAbort {
+                        status: status,
+                        cert_info,
+                    },
+                ) {
+                    Ok(_) => Err(rustls::Error::InvalidCertificateData(format!(
+                        "CertVerifierAction requested to abort the connection"
+                    ))),
+                    Err(_) => Err(rustls::Error::General(format!(
+                        "Failed to signal CertificateConnectionAbort"
+                    ))),
+                }
+            }
             CertVerifierAction::TrustOnce => Ok(rustls::client::ServerCertVerified::assertion()),
             CertVerifierAction::TrustAndStore => {
                 // If we need to store them to a file
@@ -298,7 +317,7 @@ impl TofuServerVerification {
                 // In all cases raise an event containing the new certificate entry
                 match self
                     .to_sync_client
-                    .try_send(InternalAsyncMessage::TrustedCertificateUpdate(cert_info))
+                    .try_send(InternalAsyncMessage::CertificateTrustUpdate(cert_info))
                 {
                     Ok(_) => Ok(rustls::client::ServerCertVerified::assertion()),
                     Err(_) => Err(rustls::Error::General(format!(
