@@ -4,7 +4,7 @@
 
 ### Default configuration
 
-Use it like this:
+Use the default configuration like this:
 ```rust
 client.connect(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
         ..Default::default()
@@ -15,7 +15,7 @@ client.connect(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirs
 With the default configuration, known hosts and their fingerprints are stored in a file, which defaults to `quinnet/known_hosts`.
 
 The defaults verifier behaviours are:
-- For an `unknwon` certificate (first time this server is encountered) => the client trusts this certificate, stores its fingerprint and continue the connection;
+- For an `unknown` certificate (first time this server is encountered) => the client trusts this certificate, stores its fingerprint and continue the connection;
 - For a `trusted` certificate (the fingerprint matches the one stored for this server) => the client trusts this certificate and continue the connection;
 - For an `untrusted` certificate (the certificate's fingerprint does not match the one in the store) => the client raises an event to the Bevy app and waits for an action to apply.
  
