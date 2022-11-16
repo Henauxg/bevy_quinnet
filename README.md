@@ -51,7 +51,7 @@ Quinnet does not have many features, I made it mostly to satisfy my own needs fo
 It currently features:
 
 - A Client plugin which can:
-    - Connect/disconnect to/from a server
+    - Connect/disconnect to/from one or more server
     - Send ordered reliable messages (same as messages over TCP) to the server
     - Receive (ordered or unordered) reliable messages from the server
 - A Server plugin which can:
@@ -59,6 +59,7 @@ It currently features:
     - Send ordered reliable messages to the clients
     - Receive (ordered or unordered) reliable messages from any client
 - Both client & server accept custom protocol structs/enums defined by the user as the message format.
+- Communications are encrypted, and the client can [authenticate the server](#certificates-and-server-authentication).
 
 Although Quinn and parts of Quinnet are asynchronous, the APIs exposed by Quinnet for the client and server are synchronous. This makes the surface API easy to work with and adapted to a Bevy usage.
 The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channels) to communicate with the networking async tasks.
@@ -73,7 +74,7 @@ Those are the features/tasks that will probably come next (in no particular orde
 - [x] Feature: Raise connection/disconnection events from the plugins
 - [ ] Feature: Send unordered reliable messages from the server
 - [x] Feature: Implementing a way to launch a local server from a client
-- [ ] Feature: Client should be capable to connect to another server after disconnecting
+- [x] Feature: Client should be capable to connect to another server after disconnecting
 - [ ] Performance: Messages aggregation before sending
 - [ ] Clean: Rework the error handling
 - [x] Clean: Rework the configuration input for the client & server plugins
