@@ -15,8 +15,6 @@ A Client/Server game networking plugin using [QUIC](https://www.chromium.org/qui
   - [Certificates and server authentication](#certificates-and-server-authentication)
   - [Logs](#logs)
   - [Examples](#examples)
-    - [Chat example](#chat-example)
-    - [Breakout versus](#breakout-versus)
   - [Compatible Bevy versions](#compatible-bevy-versions)
   - [Limitations](#limitations)
   - [Credits](#credits)
@@ -248,8 +246,8 @@ For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatboo
 
 ## Examples
 
-Examples can be found in the [examples](examples) directory.
-### Chat example
+<details>
+  <summary>Chat example</summary>
 
 This demo comes with an headless [server](examples/chat/server.rs), a [terminal client](examples/chat/client.rs) and a shared [protocol](examples/chat/protocol.rs).
 
@@ -257,7 +255,10 @@ Start the server with `cargo run --example chat-server` and as many clients as n
 
 ![terminal_chat_demo](https://user-images.githubusercontent.com/19689618/197757086-0643e6e7-6c69-4760-9af6-cb323529dc52.gif)
 
-### Breakout versus
+</details>
+
+<details>
+  <summary>Breakout versus example</summary>
 
 This demo is a modification of the classic [Bevy breakout](https://bevyengine.org/examples/games/breakout/) example to turn it into a 2 players versus game.
 
@@ -266,7 +267,9 @@ It hosts a local server from inside a client, instead of a dedicated headless se
 Start two clients with `cargo run --example breakout`, "Host" on one and "Join" on the other.
 
 ![breakout_versus_demo_short](https://user-images.githubusercontent.com/19689618/199804335-17df365c-32aa-49b1-94f1-11b8c7162ae3.gif)
+</details>
 
+Examples can be found in the [examples](examples) directory.
 ## Compatible Bevy versions
 
 Compatibility of `bevy_quinnet` versions:
