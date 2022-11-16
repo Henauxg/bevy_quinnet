@@ -99,7 +99,7 @@ Those are the features/tasks that will probably come next (in no particular orde
 ```rust
 fn start_connection(client: ResMut<Client>) {
     client
-        .connect(
+        .open_connection(
             ClientConfigurationData::new(
                 "127.0.0.1".to_string(),
                 6000,
@@ -107,8 +107,7 @@ fn start_connection(client: ResMut<Client>) {
                 0,
             ),
             CertificateVerificationMode::SkipVerification,
-        )
-        .unwrap();
+        );
     
     // When trully connected, you will receive a ConnectionEvent
 ```
@@ -120,7 +119,7 @@ fn handle_server_messages(
     mut client: ResMut<Client>,
     /*...*/
 ) {
-    while let Ok(Some(message)) = client.receive_message::<ServerMessage>() {
+    while let Ok(Some(message)) = client.connection().receive_message::<ServerMessage>() {
         match message {
             // Match on your own message types ...
             ServerMessage::ClientConnected { client_id, username} => {/*...*/}
@@ -209,11 +208,11 @@ On the client:
 
 ```rust
     // To accept any certificate
-    client.connect(/*...*/, CertificateVerificationMode::SkipVerification);
+    client.open_connection(/*...*/, CertificateVerificationMode::SkipVerification);
     // To only accept certificates issued by a Certificate Authority
-    client.connect(/*...*/, CertificateVerificationMode::SignedByCertificateAuthority);
+    client.open_connection(/*...*/, CertificateVerificationMode::SignedByCertificateAuthority);
     // To use the default configuration of the Trust on first use authentication scheme
-    client.connect(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
+    client.open_connection(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
             // You can configure TrustOnFirstUse through the TrustOnFirstUseConfig:
             // Provide your own fingerprint store variable/file,
             // or configure the actions to apply for each possible certificate verification status.

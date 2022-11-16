@@ -6,7 +6,7 @@
 
 Use the default configuration like this:
 ```rust
-client.connect(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
+client.open_connection(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
         ..Default::default()
     }),
 );
@@ -23,7 +23,7 @@ The defaults verifier behaviours are:
 
 Default verifier behaviours with a custom store file:
 ```rust
-client.connect(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
+client.open_connection(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
         known_hosts: KnownHosts::HostsFile("MyCustomFile".to_string()),
         ..Default::default()
     }),
@@ -32,7 +32,7 @@ client.connect(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirs
 
 Custom verifier behaviours with a custom store:
 ```rust
-client.connect(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
+client.open_connection(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
         known_hosts: KnownHosts::Store(my_cert_store),
         verifier_behaviour: HashMap::from([
                 (
