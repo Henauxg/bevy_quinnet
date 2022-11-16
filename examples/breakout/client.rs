@@ -200,7 +200,7 @@ pub(crate) fn handle_server_messages(
     mut scoreboard: ResMut<Scoreboard>,
     mut collision_events: EventWriter<CollisionEvent>,
 ) {
-    let mut connection = connection.get_single_mut().unwrap();
+    let mut connection = connection.single_mut();
     while let Ok(Some(message)) = connection.receive_message::<ServerMessage>() {
         match message {
             ServerMessage::InitClient { client_id } => {
@@ -302,7 +302,7 @@ pub(crate) fn move_paddle(
     }
 
     if local.current_input != paddle_input {
-        let connection = connection.get_single_mut().unwrap();
+        let connection = connection.single_mut();
         connection
             .send_message(ClientMessage::PaddleInput {
                 input: paddle_input.clone(),
