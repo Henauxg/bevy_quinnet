@@ -1,6 +1,7 @@
 use std::sync::PoisonError;
 
 use bevy::prelude::{Deref, DerefMut, Resource};
+use client::ConnectionId;
 use tokio::runtime::Runtime;
 
 pub const DEFAULT_MESSAGE_QUEUE_SIZE: usize = 150;
@@ -20,6 +21,8 @@ pub(crate) struct AsyncRuntime(pub(crate) Runtime);
 pub enum QuinnetError {
     #[error("Client with id `{0}` is unknown")]
     UnknownClient(ClientId),
+    #[error("Connection with id `{0}` is unknown")]
+    UnknownConnection(ConnectionId),
     #[error("Failed serialization")]
     Serialization,
     #[error("Failed deserialization")]
