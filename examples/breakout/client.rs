@@ -15,9 +15,7 @@ use bevy::{
     },
 };
 use bevy_quinnet::{
-    client::{
-        certificate::CertificateVerificationMode, Client, Connection, ConnectionConfiguration,
-    },
+    client::{certificate::CertificateVerificationMode, Client, ConnectionConfiguration},
     ClientId,
 };
 
@@ -92,9 +90,8 @@ struct WallBundle {
     sprite_bundle: SpriteBundle,
 }
 
-pub(crate) fn start_connection(client: ResMut<Client>, mut commands: Commands) {
-    client.spawn_connection(
-        &mut commands,
+pub(crate) fn start_connection(mut client: ResMut<Client>) {
+    client.open_connection(
         ConnectionConfiguration::new(
             SERVER_HOST.to_string(),
             SERVER_PORT,
@@ -190,7 +187,7 @@ pub(crate) fn spawn_bricks(
 
 pub(crate) fn handle_server_messages(
     mut commands: Commands,
-    mut connection: Query<&mut Connection>,
+    mut client: ResMut<Client>,
     mut client_data: ResMut<ClientData>,
     mut entity_mapping: ResMut<NetworkMapping>,
     mut game_state: ResMut<State<GameState>>,
@@ -200,8 +197,7 @@ pub(crate) fn handle_server_messages(
     mut scoreboard: ResMut<Scoreboard>,
     mut collision_events: EventWriter<CollisionEvent>,
 ) {
-    let mut connection = connection.single_mut();
-    while let Ok(Some(message)) = connection.receive_message::<ServerMessage>() {
+    while let Ok(Some(message)) = client.connection_mut().receive_message::<ServerMessage>() {
         match message {
             ServerMessage::InitClient { client_id } => {
                 client_data.self_id = client_id;
@@ -287,7 +283,7 @@ pub(crate) struct PaddleState {
 }
 
 pub(crate) fn move_paddle(
-    mut connection: Query<&mut Connection>,
+    client: Res<Client>,
     keyboard_input: Res<Input<KeyCode>>,
     mut local: Local<PaddleState>,
 ) {
@@ -302,8 +298,8 @@ pub(crate) fn move_paddle(
     }
 
     if local.current_input != paddle_input {
-        let connection = connection.single_mut();
-        connection
+        client
+            .connection()
             .send_message(ClientMessage::PaddleInput {
                 input: paddle_input.clone(),
             })

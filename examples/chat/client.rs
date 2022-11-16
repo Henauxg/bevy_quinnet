@@ -8,14 +8,14 @@ use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
     log::LogPlugin,
     prelude::{
-        info, warn, App, Commands, CoreStage, Deref, DerefMut, EventReader, EventWriter, Query,
+        info, warn, App, Commands, CoreStage, Deref, DerefMut, EventReader, EventWriter, Res,
         ResMut, Resource,
     },
 };
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, Client, Connection, ConnectionConfiguration,
-        ConnectionEvent, QuinnetClientPlugin,
+        certificate::CertificateVerificationMode, Client, ConnectionConfiguration, ConnectionEvent,
+        QuinnetClientPlugin,
     },
     ClientId,
 };
@@ -35,10 +35,10 @@ struct Users {
 #[derive(Resource, Deref, DerefMut)]
 struct TerminalReceiver(mpsc::Receiver<String>);
 
-pub fn on_app_exit(app_exit_events: EventReader<AppExit>, mut connection: Query<&Connection>) {
+pub fn on_app_exit(app_exit_events: EventReader<AppExit>, client: Res<Client>) {
     if !app_exit_events.is_empty() {
-        let connection = connection.single_mut();
-        connection
+        client
+            .connection()
             .send_message(ClientMessage::Disconnect {})
             .unwrap();
         // TODO Clean: event to let the async client send his last messages.
@@ -46,9 +46,8 @@ pub fn on_app_exit(app_exit_events: EventReader<AppExit>, mut connection: Query<
     }
 }
 
-fn handle_server_messages(mut users: ResMut<Users>, mut connection: Query<&mut Connection>) {
-    let mut connection = connection.single_mut();
-    while let Ok(Some(message)) = connection.receive_message::<ServerMessage>() {
+fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<Client>) {
+    while let Ok(Some(message)) = client.connection_mut().receive_message::<ServerMessage>() {
         match message {
             ServerMessage::ClientConnected {
                 client_id,
@@ -87,14 +86,14 @@ fn handle_server_messages(mut users: ResMut<Users>, mut connection: Query<&mut C
 fn handle_terminal_messages(
     mut terminal_messages: ResMut<TerminalReceiver>,
     mut app_exit_events: EventWriter<AppExit>,
-    mut connection: Query<&Connection>,
+    client: Res<Client>,
 ) {
-    let connection = connection.single_mut();
     while let Ok(message) = terminal_messages.try_recv() {
         if message == "quit" {
             app_exit_events.send(AppExit);
         } else {
-            connection
+            client
+                .connection()
                 .send_message(ClientMessage::ChatMessage { message: message })
                 .expect("Failed to send chat message");
         }
@@ -115,9 +114,8 @@ fn start_terminal_listener(mut commands: Commands) {
     commands.insert_resource(TerminalReceiver(from_terminal_receiver));
 }
 
-fn start_connection(mut commands: Commands, client: ResMut<Client>) {
-    client.spawn_connection(
-        &mut commands,
+fn start_connection(mut client: ResMut<Client>) {
+    client.open_connection(
         ConnectionConfiguration::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string(), 0),
         CertificateVerificationMode::SkipVerification,
     );
@@ -125,10 +123,7 @@ fn start_connection(mut commands: Commands, client: ResMut<Client>) {
     // You can already send message(s) even before being connected, they will be buffered. In this example we will wait for a ConnectionEvent.
 }
 
-fn handle_client_events(
-    connection_events: EventReader<ConnectionEvent>,
-    mut connection: Query<&Connection>,
-) {
+fn handle_client_events(connection_events: EventReader<ConnectionEvent>, client: ResMut<Client>) {
     if !connection_events.is_empty() {
         // We are connected
         let username: String = rand::thread_rng()
@@ -140,8 +135,8 @@ fn handle_client_events(
         println!("--- Joining with name: {}", username);
         println!("--- Type 'quit' to disconnect");
 
-        let connection = connection.single_mut();
-        connection
+        client
+            .connection()
             .send_message(ClientMessage::Join { name: username })
             .unwrap();
 
