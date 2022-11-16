@@ -132,11 +132,10 @@ pub struct Connection {
     receiver: mpsc::Receiver<Bytes>,
     close_sender: broadcast::Sender<()>,
     pub(crate) internal_receiver: mpsc::Receiver<InternalAsyncMessage>,
-    // pub(crate) internal_sender: mpsc::Sender<InternalSyncMessage>,
 }
 
 impl Connection {
-    /// Disconnect the client. This does not send any message to the server, and simply closes all the connection tasks locally.
+    /// Closes this connection. This does not send any message to the server, and simply closes all the connection's tasks locally.
     pub fn disconnect(&mut self) -> Result<(), QuinnetError> {
         if self.is_connected() {
             if let Err(_) = self.close_sender.send(()) {
@@ -193,12 +192,11 @@ impl Connection {
 
 #[derive(Resource)]
 pub struct Client {
-    // connections: HashMap<ConnectionId, Connection>,
     runtime: runtime::Handle,
 }
 
 impl Client {
-    /// Connect to a server with the given [ClientConfigurationData] and [CertificateVerificationMode]
+    /// Sapwn a connection to a server with the given [ConnectionConfiguration] and [CertificateVerificationMode]
     pub fn spawn_connection(
         &self,
         commands: &mut Commands,
@@ -226,7 +224,6 @@ impl Client {
                 receiver: from_server_receiver,
                 close_sender: close_sender.clone(),
                 internal_receiver: from_async_client,
-                // internal_sender: to_async_client,
             })
             .id();
 
@@ -378,12 +375,6 @@ async fn connection_task(mut spawn_config: ConnectionSpawnConfig) {
     }
 }
 
-fn create_client(mut commands: Commands, runtime: Res<AsyncRuntime>) {
-    commands.insert_resource(Client {
-        runtime: runtime.handle().clone(),
-    });
-}
-
 // Receive messages from the async client tasks and update the sync client.
 fn update_sync_client(
     mut connection_events: EventWriter<ConnectionEvent>,
@@ -432,6 +423,12 @@ fn update_sync_client(
             }
         }
     }
+}
+
+fn create_client(mut commands: Commands, runtime: Res<AsyncRuntime>) {
+    commands.insert_resource(Client {
+        runtime: runtime.handle().clone(),
+    });
 }
 
 pub struct QuinnetClientPlugin {}
