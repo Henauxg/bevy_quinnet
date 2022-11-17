@@ -22,10 +22,11 @@ mod tests {
             QuinnetClientPlugin,
         },
         server::{
-            self, certificate::CertificateRetrievalMode, QuinnetServerPlugin, Server,
-            ServerConfigurationData,
+            self,
+            certificate::{CertificateRetrievalMode, CertificateRetrievedEvent},
+            QuinnetServerPlugin, Server, ServerConfigurationData,
         },
-        shared::ClientId,
+        shared::{CertificateFingerprint, ClientId},
     };
     use bevy::{
         app::ScheduleRunnerPlugin,
@@ -44,7 +45,9 @@ mod tests {
     #[derive(Resource, Debug, Clone, Default)]
     struct ServerTestData {
         connection_events_received: u64,
-        last_connected_client_id: ClientId,
+        last_connected_client_id: Option<ClientId>,
+        cert_events_received: u64,
+        last_cert_fingeprint: Option<CertificateFingerprint>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -109,7 +112,12 @@ mod tests {
                 .expect("Failed to receive client message")
                 .expect("There should be a client message");
             let server_test_data = server_app.world.resource::<ServerTestData>();
-            assert_eq!(client_id, server_test_data.last_connected_client_id);
+            assert_eq!(
+                client_id,
+                server_test_data
+                    .last_connected_client_id
+                    .expect("A client should have connected")
+            );
             assert_eq!(client_message, sent_client_message);
         }
 
@@ -198,11 +206,16 @@ mod tests {
 
     fn handle_server_events(
         mut connection_events: EventReader<server::ConnectionEvent>,
+        mut cert_events: EventReader<CertificateRetrievedEvent>,
         mut test_data: ResMut<ServerTestData>,
     ) {
         for connected_event in connection_events.iter() {
             test_data.connection_events_received += 1;
-            test_data.last_connected_client_id = connected_event.id;
+            test_data.last_connected_client_id = Some(connected_event.id);
+        }
+        for cert_event in cert_events.iter() {
+            test_data.cert_events_received += 1;
+            test_data.last_cert_fingeprint = Some(cert_event.fingerprint.clone());
         }
     }
 }

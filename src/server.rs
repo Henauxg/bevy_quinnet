@@ -23,7 +23,7 @@ use crate::{
     },
 };
 
-use self::certificate::CertificateRetrievalMode;
+use self::certificate::{CertificateRetrievalMode, CertificateRetrievedEvent};
 
 pub mod certificate;
 
@@ -96,6 +96,7 @@ enum ServerState {
 pub(crate) enum InternalAsyncMessage {
     ClientConnected(ClientConnection),
     ClientLostConnection(ClientId),
+    CertificateRetrieved(CertificateRetrievedEvent),
 }
 
 #[derive(Debug, Clone)]
@@ -270,8 +271,17 @@ async fn connections_listening_task(
         .expect("Failed to parse server address");
 
     // Endpoint configuration
-    let (cert_chain, priv_key) =
+    let (cert_chain, priv_key, cert_fingerprint) =
         retrieve_certificate(&config.host, cert_mode).expect("Failed to retrieve certificate");
+    to_sync_server
+        .send(InternalAsyncMessage::CertificateRetrieved(
+            CertificateRetrievedEvent {
+                fingerprint: cert_fingerprint,
+            },
+        ))
+        .await
+        .expect("Failed to signal certificate retrieval to sync server");
+
     let mut server_config = ServerConfig::with_single_cert(cert_chain, priv_key).unwrap();
     Arc::get_mut(&mut server_config.transport)
         .unwrap()
@@ -456,6 +466,7 @@ fn update_sync_server(
     mut server: ResMut<Server>,
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
+    mut certificate_retrieved_events: EventWriter<CertificateRetrievedEvent>,
 ) {
     while let Ok(message) = server.internal_receiver.try_recv() {
         match message {
@@ -471,6 +482,9 @@ fn update_sync_server(
             InternalAsyncMessage::ClientLostConnection(client_id) => {
                 server.clients.remove(&client_id);
                 connection_lost_events.send(ConnectionLostEvent { id: client_id });
+            }
+            InternalAsyncMessage::CertificateRetrieved(event) => {
+                certificate_retrieved_events.send(event)
             }
         }
     }

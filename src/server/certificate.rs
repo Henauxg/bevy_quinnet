@@ -7,6 +7,20 @@ use std::{
 
 use bevy::prelude::{trace, warn};
 
+use crate::shared::CertificateFingerprint;
+
+/// Event raised when a certificate is retrieved on the server
+#[derive(Debug, Clone)]
+pub struct CertificateRetrievedEvent {
+    pub fingerprint: CertificateFingerprint,
+}
+
+#[derive(Debug, Clone)]
+pub enum CertOrigin {
+    Generated { server_host: String },
+    Loaded,
+}
+
 /// How the server should retrieve its certificate.
 #[derive(Debug, Clone)]
 pub enum CertificateRetrievalMode {
@@ -26,9 +40,16 @@ pub enum CertificateRetrievalMode {
 fn read_certs_from_files(
     cert_file: &String,
     key_file: &String,
-) -> Result<(Vec<rustls::Certificate>, rustls::PrivateKey), Box<dyn Error>> {
+) -> Result<
+    (
+        Vec<rustls::Certificate>,
+        rustls::PrivateKey,
+        CertificateFingerprint,
+    ),
+    Box<dyn Error>,
+> {
     let mut cert_chain_reader = BufReader::new(File::open(cert_file)?);
-    let certs = rustls_pemfile::certs(&mut cert_chain_reader)?
+    let certs: Vec<rustls::Certificate> = rustls_pemfile::certs(&mut cert_chain_reader)?
         .into_iter()
         .map(rustls::Certificate)
         .collect();
@@ -39,7 +60,10 @@ fn read_certs_from_files(
     assert_eq!(keys.len(), 1);
     let key = rustls::PrivateKey(keys.remove(0));
 
-    Ok((certs, key))
+    assert!(certs.len() >= 1);
+    let fingerprint = CertificateFingerprint::from(&certs[0]);
+
+    Ok((certs, key, fingerprint))
 }
 
 fn write_certs_to_files(
@@ -63,26 +87,38 @@ fn generate_self_signed_certificate(
         Vec<rustls::Certificate>,
         rustls::PrivateKey,
         rcgen::Certificate,
+        CertificateFingerprint,
     ),
     Box<dyn Error>,
 > {
     let cert = rcgen::generate_simple_self_signed(vec![server_host.into()]).unwrap();
     let cert_der = cert.serialize_der().unwrap();
     let priv_key = rustls::PrivateKey(cert.serialize_private_key_der());
-    let cert_chain = vec![rustls::Certificate(cert_der.clone())];
+    let rustls_cert = rustls::Certificate(cert_der.clone());
+    let fingerprint = CertificateFingerprint::from(&rustls_cert);
+    let cert_chain = vec![rustls_cert];
 
-    Ok((cert_chain, priv_key, cert))
+    Ok((cert_chain, priv_key, cert, fingerprint))
 }
 
 pub(crate) fn retrieve_certificate(
     server_host: &String,
     cert_mode: CertificateRetrievalMode,
-) -> Result<(Vec<rustls::Certificate>, rustls::PrivateKey), Box<dyn Error>> {
+) -> Result<
+    (
+        Vec<rustls::Certificate>,
+        rustls::PrivateKey,
+        CertificateFingerprint,
+    ),
+    Box<dyn Error>,
+> {
     match cert_mode {
         CertificateRetrievalMode::GenerateSelfSigned => {
             trace!("Generating a new self-signed certificate");
             match generate_self_signed_certificate(server_host) {
-                Ok((cert_chain, priv_key, _rcgen_cert)) => Ok((cert_chain, priv_key)),
+                Ok((cert_chain, priv_key, _rcgen_cert, fingerprint)) => {
+                    Ok((cert_chain, priv_key, fingerprint))
+                }
                 Err(e) => Err(e),
             }
         }
@@ -90,9 +126,9 @@ pub(crate) fn retrieve_certificate(
             cert_file,
             key_file,
         } => match read_certs_from_files(&cert_file, &key_file) {
-            Ok((cert_chain, priv_key)) => {
+            Ok((cert_chain, priv_key, fingerprint)) => {
                 trace!("Successfuly loaded cert and key from files");
-                Ok((cert_chain, priv_key))
+                Ok((cert_chain, priv_key, fingerprint))
             }
             Err(e) => Err(e),
         },
@@ -103,21 +139,21 @@ pub(crate) fn retrieve_certificate(
         } => {
             if Path::new(&cert_file).exists() && Path::new(&key_file).exists() {
                 match read_certs_from_files(&cert_file, &key_file) {
-                    Ok((cert_chain, priv_key)) => {
+                    Ok((cert_chain, priv_key, fingerprint)) => {
                         trace!("Successfuly loaded cert and key from files");
-                        Ok((cert_chain, priv_key))
+                        Ok((cert_chain, priv_key, fingerprint))
                     }
                     Err(e) => Err(e),
                 }
             } else {
                 warn!("{} and/or {} do not exist, could not load existing certificate. Generating a self-signed one.", cert_file, key_file);
                 match generate_self_signed_certificate(server_host) {
-                    Ok((cert_chain, priv_key, rcgen_cert)) => {
+                    Ok((cert_chain, priv_key, rcgen_cert, fingerprint)) => {
                         if save_on_disk {
                             write_certs_to_files(&rcgen_cert, &cert_file, &key_file)?;
                             trace!("Successfuly saved cert and key to files");
                         }
-                        Ok((cert_chain, priv_key))
+                        Ok((cert_chain, priv_key, fingerprint))
                     }
                     Err(e) => Err(e),
                 }
