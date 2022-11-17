@@ -127,7 +127,7 @@ pub enum CertVerificationStatus {
 }
 
 /// Info onthe server's certificate.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CertVerificationInfo {
     /// Name of the server
     pub server_name: ServerName,
