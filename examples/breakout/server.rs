@@ -9,7 +9,9 @@ use bevy::{
     transform::TransformBundle,
 };
 use bevy_quinnet::{
-    server::{CertificateRetrievalMode, ConnectionEvent, Server, ServerConfigurationData},
+    server::{
+        certificate::CertificateRetrievalMode, ConnectionEvent, Server, ServerConfigurationData,
+    },
     ClientId,
 };
 
@@ -169,7 +171,7 @@ pub(crate) fn update_paddles(
 
 pub(crate) fn check_for_collisions(
     mut commands: Commands,
-    mut server: ResMut<Server>,
+    server: ResMut<Server>,
     mut ball_query: Query<(&mut Velocity, &Transform, Entity, &mut Ball)>,
     collider_query: Query<(Entity, &Transform, Option<&Brick>, Option<&Paddle>), With<Collider>>,
 ) {

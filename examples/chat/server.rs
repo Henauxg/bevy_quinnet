@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use bevy_quinnet::{
     server::{
-        CertificateRetrievalMode, ConnectionLostEvent, QuinnetServerPlugin, Server,
+        certificate::CertificateRetrievalMode, ConnectionLostEvent, QuinnetServerPlugin, Server,
         ServerConfigurationData,
     },
     ClientId,
