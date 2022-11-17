@@ -502,6 +502,7 @@ impl Plugin for QuinnetServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ConnectionEvent>()
             .add_event::<ConnectionLostEvent>()
+            .add_event::<CertificateRetrievedEvent>()
             .add_startup_system_to_stage(StartupStage::PreStartup, start_async_server)
             .add_system_to_stage(CoreStage::PreUpdate, update_sync_server);
 
