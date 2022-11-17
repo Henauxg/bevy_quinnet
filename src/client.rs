@@ -128,6 +128,7 @@ pub(crate) struct ConnectionSpawnConfig {
     from_server_sender: mpsc::Sender<Bytes>,
 }
 
+#[derive(Debug)]
 pub struct Connection {
     state: ConnectionState,
     // TODO Perf: multiple channels
@@ -542,7 +543,7 @@ impl Plugin for QuinnetClientPlugin {
             .add_event::<CertConnectionAbortEvent>()
             // StartupStage::PreStartup so that resources created in commands are available to default startup_systems
             .add_startup_system_to_stage(StartupStage::PreStartup, create_client)
-            .add_system(update_sync_client);
+            .add_system_to_stage(CoreStage::PreUpdate, update_sync_client);
 
         if app.world.get_resource_mut::<AsyncRuntime>().is_none() {
             app.insert_resource(AsyncRuntime(
