@@ -13,7 +13,7 @@ use futures::executor::block_on;
 use rustls::ServerName as RustlsServerName;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::QuinnetError;
+use crate::shared::{CertificateFingerprint, QuinnetError};
 
 use super::{ConnectionId, InternalAsyncMessage, DEFAULT_KNOWN_HOSTS_FILE};
 
@@ -169,25 +169,6 @@ pub enum CertVerifierAction {
     /// Accept the server's certificate and continue the connection. A [`CertificateUpdateEvent`] will be raised containing the certificate's info.
     /// If the certificate store ([`KnownHosts`]) is a file, this action also adds the certificate's info to the store file. Else it is up to the user to update its own store with the content of [`CertificateUpdateEvent`].
     TrustAndStore,
-}
-
-/// SHA-256 hash of the certificate data in DER form
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct CertificateFingerprint([u8; 32]);
-
-impl From<&rustls::Certificate> for CertificateFingerprint {
-    fn from(cert: &rustls::Certificate) -> CertificateFingerprint {
-        let hash = ring::digest::digest(&ring::digest::SHA256, &cert.0);
-        let fingerprint_bytes = hash.as_ref().try_into().unwrap();
-        CertificateFingerprint(fingerprint_bytes)
-    }
-}
-
-impl fmt::Display for CertificateFingerprint {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&base64::encode(&self.0), f)
-    }
 }
 
 /// Certificate fingerprint storage
@@ -393,7 +374,7 @@ fn parse_known_host_line(
     let fingerprint_bytes = base64::decode(&fingerprint_b64)?;
 
     match fingerprint_bytes.try_into() {
-        Ok(buf) => Ok((serv_name, CertificateFingerprint(buf))),
+        Ok(buf) => Ok((serv_name, CertificateFingerprint::new(buf))),
         Err(_) => Err(Box::new(QuinnetError::InvalidHostFile)),
     }
 }
