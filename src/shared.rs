@@ -50,6 +50,10 @@ impl CertificateFingerprint {
     pub fn new(buf: [u8; 32]) -> Self {
         CertificateFingerprint(buf)
     }
+
+    pub fn to_base64(&self) -> String {
+        base64::encode(&self.0)
+    }
 }
 
 impl From<&rustls::Certificate> for CertificateFingerprint {
@@ -63,6 +67,6 @@ impl From<&rustls::Certificate> for CertificateFingerprint {
 impl fmt::Display for CertificateFingerprint {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&base64::encode(&self.0), f)
+        fmt::Display::fmt(&self.to_base64(), f)
     }
 }
