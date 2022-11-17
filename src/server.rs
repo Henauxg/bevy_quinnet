@@ -13,7 +13,7 @@ use bevy::prelude::*;
 use bytes::Bytes;
 use futures::sink::SinkExt;
 use futures_util::StreamExt;
-use quinn::{Endpoint, NewConnection, ServerConfig};
+use quinn::{Endpoint, ServerConfig};
 use serde::Deserialize;
 use tokio::{
     sync::{
@@ -404,14 +404,14 @@ async fn connections_listening_task(
     let mut client_gen_id: ClientId = 0;
     let mut client_id_mappings = HashMap::new();
 
-    let (_endpoint, mut incoming) =
+    let endpoint =
         Endpoint::server(server_config, server_addr).expect("Failed to create server endpoint");
 
     // Start iterating over incoming connections/clients.
-    while let Some(conn) = incoming.next().await {
-        let mut new_connection: NewConnection =
-            conn.await.expect("Failed to handle incoming connection");
-        let connection = new_connection.connection;
+    while let Some(connecting) = endpoint.accept().await {
+        let connection = connecting
+            .await
+            .expect("Failed to handle incoming connection");
 
         // Attribute an id to this client
         client_gen_id += 1; // TODO Fix: Better id generation/check
@@ -505,7 +505,7 @@ async fn connections_listening_task(
                 }
                 _ = async {
                     // For each new stream opened by the client
-                    while let Some(Ok(recv)) = new_connection.uni_streams.next().await {
+                    while let Ok(recv) = connection.accept_uni().await {
                         let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
 
                         // Spawn a task to receive data on this stream.

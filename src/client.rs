@@ -390,17 +390,14 @@ async fn connection_task(mut spawn_config: ConnectionSpawnConfig) {
         .expect("Failed to create client endpoint");
     endpoint.set_default_client_config(client_cfg);
 
-    let new_connection = endpoint
+    let connection = endpoint
         .connect(server_addr, &srv_host) // TODO Clean: error handling
         .expect("Failed to connect: configuration error")
         .await;
-    match new_connection {
+    match connection {
         Err(e) => error!("Error while connecting: {}", e),
-        Ok(mut new_connection) => {
-            info!(
-                "Connected to {}",
-                new_connection.connection.remote_address()
-            );
+        Ok(connection) => {
+            info!("Connected to {}", connection.remote_address());
 
             spawn_config
                 .to_sync_client
@@ -408,8 +405,7 @@ async fn connection_task(mut spawn_config: ConnectionSpawnConfig) {
                 .await
                 .expect("Failed to signal connection to sync client");
 
-            let send = new_connection
-                .connection
+            let send = connection
                 .open_uni()
                 .await
                 .expect("Failed to open send stream");
@@ -449,7 +445,7 @@ async fn connection_task(mut spawn_config: ConnectionSpawnConfig) {
                         trace!("New Stream listener forced to disconnected")
                     }
                     _ = async {
-                        while let Some(Ok(recv)) = new_connection.uni_streams.next().await {
+                        while let Ok(recv)= connection.accept_uni().await {
                             let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
                             let from_server_sender = spawn_config.from_server_sender.clone();
 
