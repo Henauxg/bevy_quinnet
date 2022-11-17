@@ -6,7 +6,7 @@ use bevy_quinnet::{
         certificate::CertificateRetrievalMode, ConnectionLostEvent, QuinnetServerPlugin, Server,
         ServerConfigurationData,
     },
-    ClientId,
+    shared::ClientId,
 };
 
 use protocol::{ClientMessage, ServerMessage};

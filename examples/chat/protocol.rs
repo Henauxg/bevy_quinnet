@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bevy_quinnet::ClientId;
+use bevy_quinnet::shared::ClientId;
 use serde::{Deserialize, Serialize};
 
 // Messages from clients

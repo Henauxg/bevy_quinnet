@@ -16,7 +16,7 @@ use bevy::{
 };
 use bevy_quinnet::{
     client::{certificate::CertificateVerificationMode, Client, ConnectionConfiguration},
-    ClientId,
+    shared::ClientId,
 };
 
 use crate::{

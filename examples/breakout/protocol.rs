@@ -1,5 +1,5 @@
 use bevy::prelude::{Entity, Vec2, Vec3};
-use bevy_quinnet::ClientId;
+use bevy_quinnet::shared::ClientId;
 use serde::{Deserialize, Serialize};
 
 use crate::BrickId;

@@ -12,7 +12,7 @@ use bevy_quinnet::{
     server::{
         certificate::CertificateRetrievalMode, ConnectionEvent, Server, ServerConfigurationData,
     },
-    ClientId,
+    shared::ClientId,
 };
 
 use crate::{
