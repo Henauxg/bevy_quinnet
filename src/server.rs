@@ -218,10 +218,7 @@ impl Server {
         }
     }
 
-    pub fn broadcast_message<T: serde::Serialize>(
-        &mut self,
-        message: T,
-    ) -> Result<(), QuinnetError> {
+    pub fn broadcast_message<T: serde::Serialize>(&self, message: T) -> Result<(), QuinnetError> {
         match bincode::serialize(&message) {
             Ok(payload) => Ok(self.broadcast_payload(payload)?),
             Err(_) => Err(QuinnetError::Serialization),
@@ -229,7 +226,7 @@ impl Server {
     }
 
     pub fn broadcast_payload<T: Into<Bytes> + Clone>(
-        &mut self,
+        &self,
         payload: T,
     ) -> Result<(), QuinnetError> {
         for (_, client_connection) in self.clients.iter() {
