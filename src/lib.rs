@@ -61,7 +61,8 @@ mod tests {
             QuinnetClientPlugin,
         },
         server::{
-            self, CertificateRetrievalMode, QuinnetServerPlugin, Server, ServerConfigurationData,
+            self, certificate::CertificateRetrievalMode, QuinnetServerPlugin, Server,
+            ServerConfigurationData,
         },
         ClientId,
     };

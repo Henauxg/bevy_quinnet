@@ -1,13 +1,4 @@
-use std::{
-    collections::HashMap,
-    error::Error,
-    fs::{self, File},
-    io::BufReader,
-    net::SocketAddr,
-    path::Path,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use bevy::prelude::*;
 use bytes::Bytes;
@@ -25,9 +16,13 @@ use tokio::{
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::{
-    AsyncRuntime, ClientId, QuinnetError, DEFAULT_KEEP_ALIVE_INTERVAL_S,
-    DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+    server::certificate::retrieve_certificate, AsyncRuntime, ClientId, QuinnetError,
+    DEFAULT_KEEP_ALIVE_INTERVAL_S, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
+
+use self::certificate::CertificateRetrievalMode;
+
+pub mod certificate;
 
 pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 
@@ -85,22 +80,6 @@ pub struct ClientPayload {
     client_id: ClientId,
     /// Content of the message as bytes
     msg: Bytes,
-}
-
-/// How the server should retrieve its certificate.
-#[derive(Debug, Clone)]
-pub enum CertificateRetrievalMode {
-    /// The server will always generate a new self-signed certificate when starting up
-    GenerateSelfSigned,
-    /// Try to load cert & key from files.
-    LoadFromFile { cert_file: String, key_file: String },
-    /// Try to load cert & key from files.
-    /// If the files do not exist, generate a self-signed certificate, and optionally save it to disk.
-    LoadFromFileOrGenerateSelfSigned {
-        cert_file: String,
-        key_file: String,
-        save_on_disk: bool,
-    },
 }
 
 /// Current state of the client driver
@@ -268,109 +247,6 @@ impl Server {
                 TryRecvError::Empty => Ok(None),
                 TryRecvError::Disconnected => Err(QuinnetError::ChannelClosed),
             },
-        }
-    }
-}
-
-fn read_certs_from_files(
-    cert_file: &String,
-    key_file: &String,
-) -> Result<(Vec<rustls::Certificate>, rustls::PrivateKey), Box<dyn Error>> {
-    let mut cert_chain_reader = BufReader::new(File::open(cert_file)?);
-    let certs = rustls_pemfile::certs(&mut cert_chain_reader)?
-        .into_iter()
-        .map(rustls::Certificate)
-        .collect();
-
-    let mut key_reader = BufReader::new(File::open(key_file)?);
-    let mut keys = rustls_pemfile::pkcs8_private_keys(&mut key_reader)?;
-
-    assert_eq!(keys.len(), 1);
-    let key = rustls::PrivateKey(keys.remove(0));
-
-    Ok((certs, key))
-}
-
-fn write_certs_to_files(
-    cert: &rcgen::Certificate,
-    cert_file: &String,
-    key_file: &String,
-) -> Result<(), Box<dyn Error>> {
-    let pem_cert = cert.serialize_pem()?;
-    let pem_key = cert.serialize_private_key_pem();
-
-    fs::write(cert_file, pem_cert)?;
-    fs::write(key_file, pem_key)?;
-
-    Ok(())
-}
-
-fn generate_self_signed_certificate(
-    server_host: &String,
-) -> Result<
-    (
-        Vec<rustls::Certificate>,
-        rustls::PrivateKey,
-        rcgen::Certificate,
-    ),
-    Box<dyn Error>,
-> {
-    let cert = rcgen::generate_simple_self_signed(vec![server_host.into()]).unwrap();
-    let cert_der = cert.serialize_der().unwrap();
-    let priv_key = rustls::PrivateKey(cert.serialize_private_key_der());
-    let cert_chain = vec![rustls::Certificate(cert_der.clone())];
-
-    Ok((cert_chain, priv_key, cert))
-}
-
-fn retrieve_certificate(
-    server_host: &String,
-    cert_mode: CertificateRetrievalMode,
-) -> Result<(Vec<rustls::Certificate>, rustls::PrivateKey), Box<dyn Error>> {
-    match cert_mode {
-        CertificateRetrievalMode::GenerateSelfSigned => {
-            trace!("Generating a new self-signed certificate");
-            match generate_self_signed_certificate(server_host) {
-                Ok((cert_chain, priv_key, _rcgen_cert)) => Ok((cert_chain, priv_key)),
-                Err(e) => Err(e),
-            }
-        }
-        CertificateRetrievalMode::LoadFromFile {
-            cert_file,
-            key_file,
-        } => match read_certs_from_files(&cert_file, &key_file) {
-            Ok((cert_chain, priv_key)) => {
-                trace!("Successfuly loaded cert and key from files");
-                Ok((cert_chain, priv_key))
-            }
-            Err(e) => Err(e),
-        },
-        CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
-            save_on_disk,
-            cert_file,
-            key_file,
-        } => {
-            if Path::new(&cert_file).exists() && Path::new(&key_file).exists() {
-                match read_certs_from_files(&cert_file, &key_file) {
-                    Ok((cert_chain, priv_key)) => {
-                        trace!("Successfuly loaded cert and key from files");
-                        Ok((cert_chain, priv_key))
-                    }
-                    Err(e) => Err(e),
-                }
-            } else {
-                warn!("{} and/or {} do not exist, could not load existing certificate. Generating a self-signed one.", cert_file, key_file);
-                match generate_self_signed_certificate(server_host) {
-                    Ok((cert_chain, priv_key, rcgen_cert)) => {
-                        if save_on_disk {
-                            write_certs_to_files(&rcgen_cert, &cert_file, &key_file)?;
-                            trace!("Successfuly saved cert and key to files");
-                        }
-                        Ok((cert_chain, priv_key))
-                    }
-                    Err(e) => Err(e),
-                }
-            }
         }
     }
 }
