@@ -151,10 +151,29 @@ impl Connection {
         }
     }
 
+    /// Same as [Connection::receive_message] but will log the error instead of returning it
+    pub fn try_receive_message<T: serde::de::DeserializeOwned>(&mut self) -> Option<T> {
+        match self.receive_message() {
+            Ok(message) => message,
+            Err(err) => {
+                error!("try_receive_message: {}", err);
+                None
+            }
+        }
+    }
+
     pub fn send_message<T: serde::Serialize>(&self, message: T) -> Result<(), QuinnetError> {
         match bincode::serialize(&message) {
             Ok(payload) => self.send_payload(payload),
             Err(_) => Err(QuinnetError::Serialization),
+        }
+    }
+
+    /// Same as [Connection::send_message] but will log the error instead of returning it
+    pub fn try_send_message<T: serde::Serialize>(&self, message: T) {
+        match self.send_message(message) {
+            Ok(_) => {}
+            Err(err) => error!("try_send_message: {}", err),
         }
     }
 
@@ -168,6 +187,14 @@ impl Connection {
         }
     }
 
+    /// Same as [Connection::send_payload] but will log the error instead of returning it
+    pub fn try_send_payload<T: Into<Bytes>>(&self, payload: T) {
+        match self.send_payload(payload) {
+            Ok(_) => {}
+            Err(err) => error!("try_send_payload: {}", err),
+        }
+    }
+
     pub fn receive_payload(&mut self) -> Result<Option<Bytes>, QuinnetError> {
         match self.receiver.try_recv() {
             Ok(msg_payload) => Ok(Some(msg_payload)),
@@ -178,8 +205,15 @@ impl Connection {
         }
     }
 
-    pub fn is_connected(&self) -> bool {
-        return self.state == ConnectionState::Connected;
+    /// Same as [Connection::receive_payload] but will log the error instead of returning it
+    pub fn try_receive_payload(&mut self) -> Option<Bytes> {
+        match self.receive_payload() {
+            Ok(payload) => payload,
+            Err(err) => {
+                error!("try_receive_payload: {}", err);
+                None
+            }
+        }
     }
 
     /// Disconnect from the server on this connection. This does not send any message to the server, and simply closes all the connection's tasks locally.
@@ -191,6 +225,10 @@ impl Connection {
         }
         self.state = ConnectionState::Disconnected;
         Ok(())
+    }
+
+    pub fn is_connected(&self) -> bool {
+        return self.state == ConnectionState::Connected;
     }
 }
 
@@ -308,6 +346,11 @@ impl Client {
     /// Set the default connection
     pub fn set_default_connection(&mut self, connection_id: ConnectionId) {
         self.default_connection_id = Some(connection_id);
+    }
+
+    /// Get the default Connection Id
+    pub fn get_default_connection(&self) -> Option<ConnectionId> {
+        self.default_connection_id
     }
 
     /// Close a specific connection. This will call disconnect on the connection and remove it from the client. This may fail if the [Connection] fails to disconnect or if no [Connection] if found for connection_id

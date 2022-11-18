@@ -126,6 +126,16 @@ impl Endpoint {
         }
     }
 
+    pub fn try_receive_message<T: serde::de::DeserializeOwned>(&mut self) -> Option<(T, ClientId)> {
+        match self.receive_message() {
+            Ok(message) => message,
+            Err(err) => {
+                error!("try_receive_message: {}", err);
+                None
+            }
+        }
+    }
+
     pub fn send_message<T: serde::Serialize>(
         &mut self,
         client_id: ClientId,
@@ -134,6 +144,13 @@ impl Endpoint {
         match bincode::serialize(&message) {
             Ok(payload) => Ok(self.send_payload(client_id, payload)?),
             Err(_) => Err(QuinnetError::Serialization),
+        }
+    }
+
+    pub fn try_send_message<T: serde::Serialize>(&mut self, client_id: ClientId, message: T) {
+        match self.send_message(client_id, message) {
+            Ok(_) => {}
+            Err(err) => error!("try_send_message: {}", err),
         }
     }
 
@@ -153,10 +170,28 @@ impl Endpoint {
         }
     }
 
+    pub fn try_send_group_message<'a, I: Iterator<Item = &'a ClientId>, T: serde::Serialize>(
+        &self,
+        client_ids: I,
+        message: T,
+    ) {
+        match self.send_group_message(client_ids, message) {
+            Ok(_) => {}
+            Err(err) => error!("try_send_group_message: {}", err),
+        }
+    }
+
     pub fn broadcast_message<T: serde::Serialize>(&self, message: T) -> Result<(), QuinnetError> {
         match bincode::serialize(&message) {
             Ok(payload) => Ok(self.broadcast_payload(payload)?),
             Err(_) => Err(QuinnetError::Serialization),
+        }
+    }
+
+    pub fn try_broadcast_message<T: serde::Serialize>(&self, message: T) {
+        match self.broadcast_message(message) {
+            Ok(_) => {}
+            Err(err) => error!("try_broadcast_message: {}", err),
         }
     }
 
@@ -178,6 +213,13 @@ impl Endpoint {
         Ok(())
     }
 
+    pub fn try_broadcast_payload<T: Into<Bytes> + Clone>(&self, payload: T) {
+        match self.broadcast_payload(payload) {
+            Ok(_) => {}
+            Err(err) => error!("try_broadcast_payload: {}", err),
+        }
+    }
+
     pub fn send_payload<T: Into<Bytes>>(
         &self,
         client_id: ClientId,
@@ -196,6 +238,13 @@ impl Endpoint {
         }
     }
 
+    pub fn try_send_payload<T: Into<Bytes>>(&self, client_id: ClientId, payload: T) {
+        match self.send_payload(client_id, payload) {
+            Ok(_) => {}
+            Err(err) => error!("try_send_payload: {}", err),
+        }
+    }
+
     pub fn receive_payload(&mut self) -> Result<Option<ClientPayload>, QuinnetError> {
         match self.payloads_receiver.try_recv() {
             Ok(msg) => Ok(Some(msg)),
@@ -203,6 +252,16 @@ impl Endpoint {
                 TryRecvError::Empty => Ok(None),
                 TryRecvError::Disconnected => Err(QuinnetError::ChannelClosed),
             },
+        }
+    }
+
+    pub fn try_receive_payload(&mut self) -> Option<ClientPayload> {
+        match self.receive_payload() {
+            Ok(payload) => payload,
+            Err(err) => {
+                error!("try_receive_payload: {}", err);
+                None
+            }
         }
     }
 
