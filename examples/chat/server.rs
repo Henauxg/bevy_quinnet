@@ -114,7 +114,7 @@ fn handle_disconnect(endpoint: &mut Endpoint, users: &mut ResMut<Users>, client_
 
 fn start_listening(mut server: ResMut<Server>) {
     server
-        .open_endpoint(
+        .start_endpoint(
             ServerConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string()),
             CertificateRetrievalMode::GenerateSelfSigned,
         )

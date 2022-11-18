@@ -146,7 +146,7 @@ fn handle_server_messages(
 ```rust
 fn start_listening(mut server: ResMut<Server>) {
     server
-        .start(
+        .start_endpoint(
             ServerConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string()),
             CertificateRetrievalMode::GenerateSelfSigned,
         )
@@ -161,22 +161,23 @@ fn handle_client_messages(
     mut server: ResMut<Server>,
     /*...*/
 ) {
-    while let Ok(Some((message, client_id))) = server.receive_message::<ClientMessage>() {
+    let mut endpoint = server.endpoint_mut();
+    while let Ok(Some((message, client_id))) = endpoint.receive_message::<ClientMessage>() {
         match message {
             // Match on your own message types ...
             ClientMessage::Join { username} => {
                 // Send a messsage to 1 client
-                server.send_message(client_id, ServerMessage::InitClient {/*...*/}).unwrap();
+                endpoint.send_message(client_id, ServerMessage::InitClient {/*...*/}).unwrap();
                 /*...*/
             }
             ClientMessage::Disconnect { } => {
                 // Disconnect a client
-                server.disconnect_client(client_id);
+                endpoint.disconnect_client(client_id);
                 /*...*/
             }
             ClientMessage::ChatMessage { message } => {
                 // Send a message to a group of clients
-                server.send_group_message(
+                endpoint.send_group_message(
                         client_group, // Iterator of ClientId
                         ServerMessage::ChatMessage {/*...*/}
                     )
@@ -188,7 +189,7 @@ fn handle_client_messages(
 }
 ```
 
-You can also use `server.broadcast_message`, which will send a message to all connected clients. "Connected" here means connected to the server plugin, which happens before your own app handshakes/verifications if you have any. Use `send_group_message` if you want to control the recipients.
+You can also use `endpoint.broadcast_message`, which will send a message to all connected clients. "Connected" here means connected to the server plugin, which happens before your own app handshakes/verifications if you have any. Use `send_group_message` if you want to control the recipients.
 
 ## Certificates and server authentication
 
@@ -224,14 +225,14 @@ On the server:
 
 ```rust
     // To generate a new self-signed certificate on each startup 
-    server.start(/*...*/, CertificateRetrievalMode::GenerateSelfSigned);
+    server.start_endpoint(/*...*/, CertificateRetrievalMode::GenerateSelfSigned);
     // To load a pre-existing one from files
-    server.start(/*...*/, CertificateRetrievalMode::LoadFromFile {
+    server.start_endpoint(/*...*/, CertificateRetrievalMode::LoadFromFile {
         cert_file: "./certificates.pem".into(),
         key_file: "./privkey.pem".into(),
     });
     // To load one from files, or to generate a new self-signed one if the files do not exist.
-    server.start(/*...*/, CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
+    server.start_endpoint(/*...*/, CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
         cert_file: "./certificates.pem".into(),
         key_file: "./privkey.pem".into(),
         save_on_disk: true, // To persist on disk if generated

@@ -80,7 +80,7 @@ struct WallBundle {
 
 pub(crate) fn start_listening(mut server: ResMut<Server>) {
     server
-        .open_endpoint(
+        .start_endpoint(
             ServerConfigurationData::new(
                 SERVER_HOST.to_string(),
                 SERVER_PORT,
