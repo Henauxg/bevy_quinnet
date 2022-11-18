@@ -4,8 +4,8 @@ use bevy::{
     prelude::{
         default, AssetServer, Audio, BuildChildren, Bundle, Button, ButtonBundle, Camera2dBundle,
         Changed, Color, Commands, Component, DespawnRecursiveExt, Entity, EventReader, EventWriter,
-        Input, KeyCode, Local, Query, Res, ResMut, Resource, State, TextBundle, Transform, Vec2,
-        Vec3, With, Without,
+        Input, KeyCode, Local, PlaybackSettings, Query, Res, ResMut, Resource, State, TextBundle,
+        Transform, Vec2, Vec3, With, Without,
     },
     sprite::{Sprite, SpriteBundle},
     text::{Text, TextSection, TextStyle},
@@ -328,7 +328,13 @@ pub(crate) fn play_collision_sound(
     if !collision_events.is_empty() {
         // This prevents events staying active on the next frame.
         collision_events.clear();
-        audio.play(sound.0.clone());
+        audio.play_with_settings(
+            sound.0.clone(),
+            PlaybackSettings {
+                volume: 0.1,
+                ..Default::default()
+            },
+        );
     }
 }
 
