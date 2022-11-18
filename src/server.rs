@@ -106,23 +106,14 @@ pub(crate) struct ClientConnection {
 
 pub struct Endpoint {
     clients: HashMap<ClientId, ClientConnection>,
-    receiver: mpsc::Receiver<ClientPayload>,
+    payloads_receiver: mpsc::Receiver<ClientPayload>,
+    close_sender: broadcast::Sender<()>,
 
     pub(crate) internal_receiver: mpsc::Receiver<InternalAsyncMessage>,
     pub(crate) internal_sender: broadcast::Sender<InternalSyncMessage>,
 }
 
 impl Endpoint {
-    pub fn disconnect_client(&mut self, client_id: ClientId) -> Result<(), QuinnetError> {
-        match self.clients.remove(&client_id) {
-            Some(client_connection) => match client_connection.close_sender.send(()) {
-                Ok(_) => Ok(()),
-                Err(_) => Err(QuinnetError::ChannelClosed),
-            },
-            None => Err(QuinnetError::UnknownClient(client_id)),
-        }
-    }
-
     pub fn receive_message<T: serde::de::DeserializeOwned>(
         &mut self,
     ) -> Result<Option<(T, ClientId)>, QuinnetError> {
@@ -206,12 +197,36 @@ impl Endpoint {
     }
 
     pub fn receive_payload(&mut self) -> Result<Option<ClientPayload>, QuinnetError> {
-        match self.receiver.try_recv() {
+        match self.payloads_receiver.try_recv() {
             Ok(msg) => Ok(Some(msg)),
             Err(err) => match err {
                 TryRecvError::Empty => Ok(None),
                 TryRecvError::Disconnected => Err(QuinnetError::ChannelClosed),
             },
+        }
+    }
+
+    pub fn disconnect_client(&mut self, client_id: ClientId) -> Result<(), QuinnetError> {
+        match self.clients.remove(&client_id) {
+            Some(client_connection) => match client_connection.close_sender.send(()) {
+                Ok(_) => Ok(()),
+                Err(_) => Err(QuinnetError::ChannelClosed),
+            },
+            None => Err(QuinnetError::UnknownClient(client_id)),
+        }
+    }
+
+    pub fn disconnect_all_clients(&mut self) -> Result<(), QuinnetError> {
+        for client_id in self.clients.keys().cloned().collect::<Vec<ClientId>>() {
+            self.disconnect_client(client_id)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn close_incoming_connections_handler(&mut self) -> Result<(), QuinnetError> {
+        match self.close_sender.send(()) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(QuinnetError::ChannelClosed),
         }
     }
 }
@@ -264,6 +279,9 @@ impl Server {
             mpsc::channel::<InternalAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
         let (to_async_server, from_sync_server) =
             broadcast::channel::<InternalSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+        // Create a close channel for this endpoint
+        let (endpoint_close_sender, endpoint_close_receiver) =
+            broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
         info!("Starting endpoint on: {} ...", server_adr_str);
 
@@ -272,6 +290,7 @@ impl Server {
                 server_config,
                 server_addr,
                 to_sync_server.clone(),
+                endpoint_close_receiver,
                 from_sync_server,
                 from_clients_sender.clone(),
             )
@@ -280,7 +299,8 @@ impl Server {
 
         self.endpoint = Some(Endpoint {
             clients: HashMap::new(),
-            receiver: from_clients_receiver,
+            payloads_receiver: from_clients_receiver,
+            close_sender: endpoint_close_sender,
             internal_receiver: from_async_server,
             internal_sender: to_async_server.clone(),
         });
@@ -288,8 +308,14 @@ impl Server {
         Ok(server_cert)
     }
 
-    pub fn stop_endpoint(&mut self) {
-        self.endpoint = None;
+    pub fn stop_endpoint(&mut self) -> Result<(), QuinnetError> {
+        match self.endpoint.take() {
+            Some(mut endpoint) => {
+                endpoint.close_incoming_connections_handler()?;
+                endpoint.disconnect_all_clients()
+            }
+            None => Err(QuinnetError::EndpointAlreadyClosed),
+        }
     }
 
     /// Returns true if the server is currently listening for messages and connections.
@@ -305,6 +331,7 @@ async fn endpoint_task(
     endpoint_config: ServerConfig,
     endpoint_adr: SocketAddr,
     to_sync_server: mpsc::Sender<InternalAsyncMessage>,
+    mut close_receiver: broadcast::Receiver<()>,
     mut from_sync_server: broadcast::Receiver<InternalSyncMessage>,
     from_clients_sender: mpsc::Sender<ClientPayload>,
 ) {
@@ -314,77 +341,99 @@ async fn endpoint_task(
     let endpoint = QuinnEndpoint::server(endpoint_config, endpoint_adr)
         .expect("Failed to create the endpoint");
 
-    // Start iterating over incoming connections/clients.
-    while let Some(connecting) = endpoint.accept().await {
-        let connection = connecting
-            .await
-            .expect("Failed to handle incoming connection");
-
-        // Attribute an id to this client
-        client_gen_id += 1; // TODO Fix: Better id generation/check
-        let client_id = client_gen_id;
-        client_id_mappings.insert(connection.stable_id(), client_id);
-
-        info!(
-            "New connection from {}, client_id: {}, stable_id : {}",
-            connection.remote_address(),
-            client_id,
-            connection.stable_id()
-        );
-
-        // Create a close channel for this client
-        let (close_sender, close_receiver): (
-            tokio::sync::broadcast::Sender<()>,
-            tokio::sync::broadcast::Receiver<()>,
-        ) = broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
-
-        // Create an ordered reliable send channel for this client
-        let (to_client_sender, to_client_receiver) =
-            mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
-
-        let to_sync_server_clone = to_sync_server.clone();
-        let close_sender_clone = close_sender.clone();
-        let connection_clone = connection.clone();
-        tokio::spawn(async move {
-            client_sender_task(
-                client_id,
-                connection_clone,
-                to_client_receiver,
-                close_receiver,
-                close_sender_clone,
-                to_sync_server_clone,
-            )
-            .await
-        });
-
-        // Signal the sync server of this new connection
-        to_sync_server
-            .send(InternalAsyncMessage::ClientConnected(ClientConnection {
-                client_id: client_id,
-                sender: to_client_sender,
-                close_sender: close_sender.clone(),
-            }))
-            .await
-            .expect("Failed to signal connection to sync client");
-        // Wait for the sync server to acknowledge the connection before spawning reception tasks.
-        while let Ok(InternalSyncMessage::ClientConnectedAck(id)) = from_sync_server.recv().await {
-            if id == client_id {
-                break;
-            }
+    // Handle incoming connections/clients.
+    tokio::select! {
+        _ = close_receiver.recv() => {
+            trace!("Endpoint incoming connection handler received a requets to close")
         }
+        _ = async {
+            while let Some(connecting) = endpoint.accept().await {
+                match connecting.await {
+                    Err(err) => error!("An incoming connection failed: {}", err),
+                    Ok(connection) => {
+                        client_gen_id += 1; // TODO Fix: Better id generation/check
+                        let client_id = client_gen_id;
+                        client_id_mappings.insert(connection.stable_id(), client_id);
 
-        // Spawn a task to listen for streams opened by this client
-        let from_client_sender_clone = from_clients_sender.clone();
-        let _client_receiver = tokio::spawn(async move {
-            client_receiver_task(
-                client_id,
-                connection,
-                close_sender.subscribe(),
-                from_client_sender_clone,
-            )
-            .await
-        });
+                        handle_client_connection(
+                            connection,
+                            client_id,
+                            &to_sync_server,
+                            &mut from_sync_server,
+                            from_clients_sender.clone(),
+                        )
+                        .await;
+                    },
+                }
+
+            }
+        } => {}
     }
+}
+
+async fn handle_client_connection(
+    connection: quinn::Connection,
+    client_id: ClientId,
+    to_sync_server: &mpsc::Sender<InternalAsyncMessage>,
+    from_sync_server: &mut broadcast::Receiver<InternalSyncMessage>,
+    from_clients_sender: mpsc::Sender<ClientPayload>,
+) {
+    info!(
+        "New connection from {}, client_id: {}, stable_id : {}",
+        connection.remote_address(),
+        client_id,
+        connection.stable_id()
+    );
+
+    // Create a close channel for this client
+    let (client_close_sender, client_close_receiver) =
+        broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
+
+    // Create an ordered reliable send channel for this client
+    let (to_client_sender, to_client_receiver) = mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
+
+    let to_sync_server_clone = to_sync_server.clone();
+    let close_sender_clone = client_close_sender.clone();
+    let connection_clone = connection.clone();
+    tokio::spawn(async move {
+        client_sender_task(
+            client_id,
+            connection_clone,
+            to_client_receiver,
+            client_close_receiver,
+            close_sender_clone,
+            to_sync_server_clone,
+        )
+        .await
+    });
+
+    // Signal the sync server of this new connection
+    to_sync_server
+        .send(InternalAsyncMessage::ClientConnected(ClientConnection {
+            client_id: client_id,
+            sender: to_client_sender,
+            close_sender: client_close_sender.clone(),
+        }))
+        .await
+        .expect("Failed to signal connection to sync client");
+
+    // Wait for the sync server to acknowledge the connection before spawning reception tasks.
+    while let Ok(InternalSyncMessage::ClientConnectedAck(id)) = from_sync_server.recv().await {
+        if id == client_id {
+            break;
+        }
+    }
+
+    // Spawn a task to listen for streams opened by this client
+    let _client_receiver = tokio::spawn(async move {
+        client_receiver_task(
+            client_id,
+            connection,
+            client_close_sender.subscribe(),
+            from_clients_sender,
+        )
+        .await
+    });
 }
 
 async fn client_sender_task(

@@ -25,6 +25,8 @@ pub enum QuinnetError {
     UnknownClient(ClientId),
     #[error("Connection with id `{0}` is unknown")]
     UnknownConnection(ConnectionId),
+    #[error("Endpoint is already closed")]
+    EndpointAlreadyClosed,
     #[error("Failed serialization")]
     Serialization,
     #[error("Failed deserialization")]
