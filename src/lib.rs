@@ -10,7 +10,7 @@ pub mod shared;
 
 #[cfg(test)]
 mod tests {
-    use std::{thread::sleep, time::Duration};
+    use std::{fs, thread::sleep, time::Duration};
 
     use crate::{
         client::{
@@ -20,7 +20,7 @@ mod tests {
                 CertVerificationInfo, CertVerificationStatus, CertVerifierAction,
                 CertificateVerificationMode,
             },
-            Client, ConnectionConfiguration, QuinnetClientPlugin,
+            Client, ConnectionConfiguration, QuinnetClientPlugin, DEFAULT_KNOWN_HOSTS_FILE,
         },
         server::{
             self, certificate::CertificateRetrievalMode, QuinnetServerPlugin, Server,
@@ -30,12 +30,11 @@ mod tests {
     };
     use bevy::{
         app::ScheduleRunnerPlugin,
-        prelude::{App, EventReader, ResMut, Resource},
+        prelude::{App, EventReader, Res, ResMut, Resource},
     };
     use serde::{Deserialize, Serialize};
 
     const SERVER_HOST: &str = "127.0.0.1";
-    const SERVER_PORT: u16 = 6000;
     const TEST_CERT_FILE: &str = "assets/tests/test_cert.pem";
     const TEST_KEY_FILE: &str = "assets/tests/test_key.pem";
     const TEST_CERT_FINGERPRINT_B64: &str = "sieQJ9J6DIrQP37HAlUFk2hYhLZDY9G5OZQpqzkWlKo=";
@@ -62,6 +61,9 @@ mod tests {
         last_connected_client_id: Option<ClientId>,
     }
 
+    #[derive(Resource, Debug, Clone, Default)]
+    struct Port(u16);
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
     pub enum SharedMessage {
         ChatMessage(String),
@@ -69,8 +71,12 @@ mod tests {
 
     #[test]
     fn connection_with_two_apps() {
+        let port = 6000; // TODO Use port 0 and retrieve the port used by the server.
+
         let mut client_app = build_client_app();
+        client_app.insert_resource(Port(port));
         let mut server_app = build_server_app();
+        server_app.insert_resource(Port(port));
 
         // Startup
         client_app.update();
@@ -173,6 +179,11 @@ mod tests {
         // -> The server's certificate is treatead as Untrusted by the client, which requests a client action
         // We receive the client action request and ask to abort the connection
 
+        let port = 6001; // TODO Use port 0 and retrieve the port used by the server.
+
+        fs::remove_file(DEFAULT_KNOWN_HOSTS_FILE)
+            .expect("Failed to remove default known hosts file");
+
         let mut client_app = App::new();
         client_app
             .add_plugin(ScheduleRunnerPlugin::default())
@@ -198,7 +209,7 @@ mod tests {
                 .start_endpoint(
                     ServerConfigurationData::new(
                         SERVER_HOST.to_string(),
-                        SERVER_PORT,
+                        port,
                         "0.0.0.0".to_string(),
                     ),
                     CertificateRetrievalMode::LoadFromFile {
@@ -209,7 +220,8 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 TEST_CERT_FINGERPRINT_B64.to_string(),
-                server_cert.fingerprint.to_base64()
+                server_cert.fingerprint.to_base64(),
+                "The loaded cert fingerprint should match the known test fingerprint"
             );
         }
 
@@ -217,7 +229,7 @@ mod tests {
         {
             let mut client = client_app.world.resource_mut::<Client>();
             client.open_connection(
-                default_client_configuration(),
+                default_client_configuration(port),
                 CertificateVerificationMode::TrustOnFirstUse(
                     client::certificate::TrustOnFirstUseConfig {
                         ..Default::default()
@@ -236,17 +248,28 @@ mod tests {
         // The server's certificate is treatead as Unknown by the client, which stores it and continues the connection
         {
             let mut client_test_data = client_app.world.resource_mut::<ClientTestData>();
-            assert_eq!(client_test_data.cert_trust_update_events_received, 1);
+            assert_eq!(
+                client_test_data.cert_trust_update_events_received, 1,
+                "The client should have received exactly 1 certificate trust update event"
+            );
             let cert_info = client_test_data
                 .last_trusted_cert_info
                 .as_mut()
                 .expect("A certificate trust update should have happened");
             assert_eq!(
                 cert_info.fingerprint.to_base64(),
-                TEST_CERT_FINGERPRINT_B64.to_string()
+                TEST_CERT_FINGERPRINT_B64.to_string(),
+                "The certificate rceived by the client should match the known test certificate"
             );
-            assert!(cert_info.known_fingerprint.is_none());
-            assert_eq!(cert_info.server_name.to_string(), SERVER_HOST.to_string());
+            assert!(
+                cert_info.known_fingerprint.is_none(),
+                "The client should not have any previous certificate fingerprint for this server"
+            );
+            assert_eq!(
+                cert_info.server_name.to_string(),
+                SERVER_HOST.to_string(),
+                "The server name should match the one we configured"
+            );
 
             let mut client = client_app.world.resource_mut::<Client>();
             assert!(
@@ -261,7 +284,7 @@ mod tests {
                 .expect("Failed to close connections on the client");
 
             client.open_connection(
-                default_client_configuration(),
+                default_client_configuration(port),
                 CertificateVerificationMode::TrustOnFirstUse(
                     client::certificate::TrustOnFirstUseConfig {
                         ..Default::default()
@@ -278,45 +301,50 @@ mod tests {
         client_app.update();
 
         {
-            let client_test_data = client_app.world.resource::<ClientTestData>();
-            assert_eq!(client_test_data.cert_trust_update_events_received, 1);
-
-            let mut client = client_app.world.resource_mut::<Client>();
             assert!(
-                client.connection().is_connected(),
+                client_app
+                    .world
+                    .resource_mut::<Client>()
+                    .connection()
+                    .is_connected(),
                 "The default connection should be connected to the server"
             );
 
+            let client_test_data = client_app.world.resource::<ClientTestData>();
+            assert_eq!(client_test_data.cert_trust_update_events_received, 1, "The client should still have only 1 certificate trust update event after his reconnection");
+
             // Clients disconnects
-            client
+            client_app
+                .world
+                .resource_mut::<Client>()
                 .close_all_connections()
                 .expect("Failed to close connections on the client");
         }
 
         // Server reboots, and generates a new self-signed certificate
-        server_app.world.resource_mut::<Server>().stop_endpoint();
+        server_app
+            .world
+            .resource_mut::<Server>()
+            .stop_endpoint()
+            .unwrap();
+
+        // Let the endpoint fully stop.
+        sleep(Duration::from_secs_f32(0.1));
+
         let server_cert = server_app
             .world
             .resource_mut::<Server>()
             .start_endpoint(
-                ServerConfigurationData::new(
-                    SERVER_HOST.to_string(),
-                    SERVER_PORT,
-                    "0.0.0.0".to_string(),
-                ),
+                ServerConfigurationData::new(SERVER_HOST.to_string(), port, "0.0.0.0".to_string()),
                 CertificateRetrievalMode::GenerateSelfSigned,
             )
             .unwrap();
 
-        // Client reconnects with its cert store
+        // Client reconnects with its cert store containing the previously store certificate fingerprint
         {
             let mut client = client_app.world.resource_mut::<Client>();
-            assert!(
-                client.connection().is_connected() == false,
-                "The default connection should be disconnected from the server"
-            );
             client.open_connection(
-                default_client_configuration(),
+                default_client_configuration(port),
                 CertificateVerificationMode::TrustOnFirstUse(
                     client::certificate::TrustOnFirstUseConfig {
                         ..Default::default()
@@ -328,18 +356,27 @@ mod tests {
         // Let the async runtime connection connect.
         sleep(Duration::from_secs_f32(0.1));
 
-        // Connection & event propagation
+        // Connection & event propagation: certificate interaction event
         server_app.update();
+        client_app.update();
+
+        // Let the async runtime process the certificate action & connection.
+        sleep(Duration::from_secs_f32(0.1));
+
+        // Connectino abort event
         client_app.update();
 
         // The server's certificate is treatead as Untrusted by the client, which requests a client action
         // We received the client action request and asked to abort the connection
         {
             let mut client_test_data = client_app.world.resource_mut::<ClientTestData>();
-            assert_eq!(client_test_data.cert_interactions_received, 1);
             assert_eq!(
-                client_test_data.cert_verif_connection_abort_events_received,
-                1
+                client_test_data.cert_interactions_received, 1,
+                "The client should have received exactly 1 certificate interaction event"
+            );
+            assert_eq!(
+                client_test_data.cert_verif_connection_abort_events_received, 1,
+                "The client should have received exactly 1 certificate connection abort event"
             );
 
             // Verify the cert info in the certificate interaction event
@@ -347,10 +384,10 @@ mod tests {
                 .last_cert_interactions_info
                 .as_mut()
                 .expect("A certificate interaction event should have happened during certificate verification");
-            // Verify that the cert we received is the one generated by the server
             assert_eq!(
                 interaction_cert_info.fingerprint.to_base64(),
-                server_cert.fingerprint.to_base64()
+                server_cert.fingerprint.to_base64(),
+                "The fingerprint received by the client should match the one generated by the server"
             );
             // Verify the known fingerprint
             assert_eq!(
@@ -359,25 +396,30 @@ mod tests {
                     .as_mut()
                     .expect("There should be a known fingerprint in the store")
                     .to_base64(),
-                TEST_CERT_FINGERPRINT_B64.to_string()
+                TEST_CERT_FINGERPRINT_B64.to_string(),
+                "The previously known fingeprint for this server should be the test fingerprint"
             );
             assert_eq!(
                 interaction_cert_info.server_name.to_string(),
-                SERVER_HOST.to_string()
+                SERVER_HOST.to_string(),
+                "The server name in the certificate interaction event should be the server we want to connect to"
             );
             assert_eq!(
                 client_test_data.last_cert_interactions_status,
-                Some(CertVerificationStatus::UntrustedCertificate)
+                Some(CertVerificationStatus::UntrustedCertificate),
+                "The certificate verification status in the certificate interaction event should be `Untrusted`"
             );
 
             // Verify the cert info in the connection abort event
             assert_eq!(
                 client_test_data.last_abort_cert_info,
-                client_test_data.last_cert_interactions_info
+                client_test_data.last_cert_interactions_info,
+                "The certificate info in the connection abort event should match those of the certificate interaction event"
             );
             assert_eq!(
                 client_test_data.last_abort_cert_status,
-                Some(CertVerificationStatus::UntrustedCertificate)
+                Some(CertVerificationStatus::UntrustedCertificate),
+                "The certificate verification status in the connection abort event should be `Untrusted`"
             );
 
             let client = client_app.world.resource::<Client>();
@@ -386,6 +428,10 @@ mod tests {
                 "The default connection should not be connected to the server"
             );
         }
+
+        // Leave the workspace clean
+        fs::remove_file(DEFAULT_KNOWN_HOSTS_FILE)
+            .expect("Failed to remove default known hosts file");
     }
 
     fn build_client_app() -> App {
@@ -410,28 +456,23 @@ mod tests {
         server_app
     }
 
-    fn default_client_configuration() -> ConnectionConfiguration {
-        ConnectionConfiguration::new(
-            SERVER_HOST.to_string(),
-            SERVER_PORT,
-            "0.0.0.0".to_string(),
-            0,
-        )
+    fn default_client_configuration(port: u16) -> ConnectionConfiguration {
+        ConnectionConfiguration::new(SERVER_HOST.to_string(), port, "0.0.0.0".to_string(), 0)
     }
 
-    fn start_simple_connection(mut client: ResMut<Client>) {
+    fn start_simple_connection(mut client: ResMut<Client>, port: Res<Port>) {
         client.open_connection(
-            default_client_configuration(),
+            default_client_configuration(port.0),
             CertificateVerificationMode::SkipVerification,
         );
     }
 
-    fn start_listening(mut server: ResMut<Server>) {
+    fn start_listening(mut server: ResMut<Server>, port: Res<Port>) {
         server
             .start_endpoint(
                 ServerConfigurationData::new(
                     SERVER_HOST.to_string(),
-                    SERVER_PORT,
+                    port.0,
                     "0.0.0.0".to_string(),
                 ),
                 CertificateRetrievalMode::GenerateSelfSigned,
@@ -463,7 +504,7 @@ mod tests {
                 CertVerificationStatus::UntrustedCertificate => {
                     cert_interaction
                         .apply_cert_verifier_action(CertVerifierAction::AbortConnection)
-                        .expect("Failed to apply vert verification action");
+                        .expect("Failed to apply cert verification action");
                 }
                 CertVerificationStatus::TrustedCertificate => todo!(),
             }
