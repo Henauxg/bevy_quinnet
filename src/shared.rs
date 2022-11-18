@@ -1,7 +1,8 @@
-use std::{fmt, sync::PoisonError};
+use std::{fmt, io, net::AddrParseError, sync::PoisonError};
 
 use crate::client::ConnectionId;
 use bevy::prelude::{Deref, DerefMut, Resource};
+use rcgen::RcgenError;
 use tokio::runtime::Runtime;
 
 pub const DEFAULT_MESSAGE_QUEUE_SIZE: usize = 150;
@@ -16,6 +17,10 @@ pub(crate) struct AsyncRuntime(pub(crate) Runtime);
 /// Enum with possibles errors that can occur in Bevy Quinnet
 #[derive(thiserror::Error, Debug)]
 pub enum QuinnetError {
+    #[error("IP/Socket address is invalid")]
+    InvalidAddress(#[from] AddrParseError),
+    #[error("Failed to generate a self-signed certificate")]
+    CertificateGenerationFailed(#[from] RcgenError),
     #[error("Client with id `{0}` is unknown")]
     UnknownClient(ClientId),
     #[error("Connection with id `{0}` is unknown")]
@@ -34,6 +39,10 @@ pub enum QuinnetError {
     LockAcquisitionFailure,
     #[error("A Certificate action was already sent for a CertificateInteractionEvent")]
     CertificateActionAlreadyApplied,
+    #[error("Failed to read/write file(s)")]
+    IoError(#[from] io::Error),
+    #[error("Rustls protocol error")]
+    RustlsError(#[from] rustls::Error),
 }
 
 impl<T> From<PoisonError<T>> for QuinnetError {
