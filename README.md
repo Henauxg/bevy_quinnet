@@ -77,7 +77,7 @@ Those are the features/tasks that will probably come next (in no particular orde
 - [ ] Clean: Rework the error handling
 - [x] Clean: Rework the configuration input for the client & server plugins
 - [ ] Documentation: Fully document the API
-- [ ] Tests: Add tests
+- [x] Tests: Add tests
 
 ## Quickstart
 
