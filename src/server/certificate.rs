@@ -8,12 +8,6 @@ use bevy::prelude::{trace, warn};
 
 use crate::shared::{CertificateFingerprint, QuinnetError};
 
-/// Event raised when a certificate is retrieved on the server
-#[derive(Debug, Clone)]
-pub struct CertificateRetrievedEvent {
-    pub fingerprint: CertificateFingerprint,
-}
-
 #[derive(Debug, Clone)]
 pub enum CertOrigin {
     Generated { server_host: String },

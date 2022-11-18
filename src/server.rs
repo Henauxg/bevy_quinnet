@@ -24,7 +24,7 @@ use crate::{
     },
 };
 
-use self::certificate::{CertificateRetrievalMode, CertificateRetrievedEvent, ServerCertificate};
+use self::certificate::{CertificateRetrievalMode, ServerCertificate};
 
 pub mod certificate;
 
@@ -90,7 +90,6 @@ pub struct ClientPayload {
 pub(crate) enum InternalAsyncMessage {
     ClientConnected(ClientConnection),
     ClientLostConnection(ClientId),
-    CertificateRetrieved(CertificateRetrievedEvent),
 }
 
 #[derive(Debug, Clone)]
@@ -241,7 +240,7 @@ impl Server {
     }
 
     /// Run the server with the given [ServerConfigurationData] and [CertificateRetrievalMode]
-    pub fn open_endpoint(
+    pub fn start_endpoint(
         &mut self,
         config: ServerConfigurationData,
         cert_mode: CertificateRetrievalMode,
@@ -289,7 +288,7 @@ impl Server {
         Ok(server_cert)
     }
 
-    pub fn close_endpoint(&mut self) {
+    pub fn stop_endpoint(&mut self) {
         self.endpoint = None;
     }
 
@@ -484,7 +483,6 @@ fn update_sync_server(
     mut server: ResMut<Server>,
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
-    mut certificate_retrieved_events: EventWriter<CertificateRetrievedEvent>,
 ) {
     if let Some(endpoint) = server.get_endpoint_mut() {
         while let Ok(message) = endpoint.internal_receiver.try_recv() {
@@ -501,9 +499,6 @@ fn update_sync_server(
                 InternalAsyncMessage::ClientLostConnection(client_id) => {
                     endpoint.clients.remove(&client_id);
                     connection_lost_events.send(ConnectionLostEvent { id: client_id });
-                }
-                InternalAsyncMessage::CertificateRetrieved(event) => {
-                    certificate_retrieved_events.send(event)
                 }
             }
         }
@@ -522,7 +517,6 @@ impl Plugin for QuinnetServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ConnectionEvent>()
             .add_event::<ConnectionLostEvent>()
-            .add_event::<CertificateRetrievedEvent>()
             .add_startup_system_to_stage(StartupStage::PreStartup, create_server)
             .add_system_to_stage(CoreStage::PreUpdate, update_sync_server);
 
