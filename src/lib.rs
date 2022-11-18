@@ -1,7 +1,3 @@
-// pub const DEFAULT_MESSAGE_QUEUE_SIZE: usize = 150;
-// pub const DEFAULT_KILL_MESSAGE_QUEUE_SIZE: usize = 10;
-// pub const DEFAULT_KEEP_ALIVE_INTERVAL_S: u64 = 4;
-
 pub mod client;
 pub mod server;
 pub mod shared;
@@ -127,6 +123,7 @@ mod tests {
             let (client_message, client_id) = server_app
                 .world
                 .resource_mut::<Server>()
+                .endpoint_mut()
                 .receive_message::<SharedMessage>()
                 .expect("Failed to receive client message")
                 .expect("There should be a client message");
@@ -144,6 +141,7 @@ mod tests {
         {
             let server = server_app.world.resource::<Server>();
             server
+                .endpoint()
                 .broadcast_message(sent_server_message.clone())
                 .unwrap();
         }
@@ -200,7 +198,7 @@ mod tests {
         {
             let mut server = server_app.world.resource_mut::<Server>();
             server
-                .start(
+                .open_endpoint(
                     ServerConfigurationData::new(
                         SERVER_HOST.to_string(),
                         SERVER_PORT,
@@ -308,12 +306,11 @@ mod tests {
         }
 
         // Server reboots, and generates a new self-signed certificate
-        // TODO Close server endpoint here
-
         {
             let mut server = server_app.world.resource_mut::<Server>();
+            server.close_endpoint();
             server
-                .start(
+                .open_endpoint(
                     ServerConfigurationData::new(
                         SERVER_HOST.to_string(),
                         SERVER_PORT,
@@ -451,7 +448,7 @@ mod tests {
 
     fn start_listening(mut server: ResMut<Server>) {
         server
-            .start(
+            .open_endpoint(
                 ServerConfigurationData::new(
                     SERVER_HOST.to_string(),
                     SERVER_PORT,
