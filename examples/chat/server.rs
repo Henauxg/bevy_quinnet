@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use bevy_quinnet::{
     server::{
-        certificate::CertificateRetrievalMode, ConnectionLostEvent, QuinnetServerPlugin, Server,
-        ServerConfigurationData,
+        certificate::CertificateRetrievalMode, ConnectionLostEvent, Endpoint, QuinnetServerPlugin,
+        Server, ServerConfigurationData,
     },
     shared::ClientId,
 };
@@ -19,7 +19,8 @@ struct Users {
 }
 
 fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) {
-    while let Ok(Some((message, client_id))) = server.receive_message::<ClientMessage>() {
+    let endpoint = server.endpoint_mut();
+    while let Ok(Some((message, client_id))) = endpoint.receive_message::<ClientMessage>() {
         match message {
             ClientMessage::Join { name } => {
                 if users.names.contains_key(&client_id) {
@@ -31,7 +32,7 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
                     info!("{} connected", name);
                     users.names.insert(client_id, name.clone());
                     // Initialize this client with existing state
-                    server
+                    endpoint
                         .send_message(
                             client_id,
                             ServerMessage::InitClient {
@@ -41,7 +42,7 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
                         )
                         .unwrap();
                     // Broadcast the connection event
-                    server
+                    endpoint
                         .send_group_message(
                             users.names.keys().into_iter(),
                             ServerMessage::ClientConnected {
@@ -54,8 +55,8 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
             }
             ClientMessage::Disconnect {} => {
                 // We tell the server to disconnect this user
-                server.disconnect_client(client_id).unwrap();
-                handle_disconnect(&mut server, &mut users, client_id);
+                endpoint.disconnect_client(client_id).unwrap();
+                handle_disconnect(endpoint, &mut users, client_id);
             }
             ClientMessage::ChatMessage { message } => {
                 info!(
@@ -63,7 +64,7 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
                     users.names.get(&client_id),
                     message
                 );
-                server
+                endpoint
                     .send_group_message(
                         users.names.keys().into_iter(),
                         ServerMessage::ChatMessage {
@@ -84,16 +85,17 @@ fn handle_server_events(
 ) {
     // The server signals us about users that lost connection
     for client in connection_lost_events.iter() {
-        handle_disconnect(&mut server, &mut users, client.id);
+        handle_disconnect(server.endpoint_mut(), &mut users, client.id);
     }
 }
 
 /// Shared disconnection behaviour, whether the client lost connection or asked to disconnect
-fn handle_disconnect(server: &mut ResMut<Server>, users: &mut ResMut<Users>, client_id: ClientId) {
+fn handle_disconnect(endpoint: &mut Endpoint, users: &mut ResMut<Users>, client_id: ClientId) {
     // Remove this user
     if let Some(username) = users.names.remove(&client_id) {
         // Broadcast its deconnection
-        server
+
+        endpoint
             .send_group_message(
                 users.names.keys().into_iter(),
                 ServerMessage::ClientDisconnected {
@@ -112,7 +114,7 @@ fn handle_disconnect(server: &mut ResMut<Server>, users: &mut ResMut<Users>, cli
 
 fn start_listening(mut server: ResMut<Server>) {
     server
-        .start(
+        .open_endpoint(
             ServerConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string()),
             CertificateRetrievalMode::GenerateSelfSigned,
         )

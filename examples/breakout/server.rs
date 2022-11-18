@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bevy::{
     prelude::{
-        default, Bundle, Commands, Component, Entity, EventReader, Query, ResMut, Resource,
+        default, Bundle, Commands, Component, Entity, EventReader, Query, Res, ResMut, Resource,
         Transform, Vec2, Vec3, With,
     },
     sprite::collide_aabb::{collide, Collision},
@@ -80,7 +80,7 @@ struct WallBundle {
 
 pub(crate) fn start_listening(mut server: ResMut<Server>) {
     server
-        .start(
+        .open_endpoint(
             ServerConfigurationData::new(
                 SERVER_HOST.to_string(),
                 SERVER_PORT,
@@ -92,7 +92,9 @@ pub(crate) fn start_listening(mut server: ResMut<Server>) {
 }
 
 pub(crate) fn handle_client_messages(mut server: ResMut<Server>, mut players: ResMut<Players>) {
-    while let Ok(Some((message, client_id))) = server.receive_message::<ClientMessage>() {
+    while let Ok(Some((message, client_id))) =
+        server.endpoint_mut().receive_message::<ClientMessage>()
+    {
         match message {
             ClientMessage::PaddleInput { input } => {
                 if let Some(player) = players.map.get_mut(&client_id) {
@@ -113,7 +115,7 @@ pub(crate) fn handle_server_events(
     for client in connection_events.iter() {
         // Refuse connection once we already have two players
         if players.map.len() >= 2 {
-            server.disconnect_client(client.id).unwrap();
+            server.endpoint_mut().disconnect_client(client.id).unwrap();
         } else {
             players.map.insert(
                 client.id,
@@ -129,7 +131,7 @@ pub(crate) fn handle_server_events(
 }
 
 pub(crate) fn update_paddles(
-    mut server: ResMut<Server>,
+    server: Res<Server>,
     players: ResMut<Players>,
     mut paddles: Query<(&mut Transform, &Paddle, Entity)>,
 ) {
@@ -156,6 +158,7 @@ pub(crate) fn update_paddles(
                 paddle_transform.translation.x = new_paddle_position.clamp(left_bound, right_bound);
 
                 server
+                    .endpoint()
                     .send_group_message(
                         players.map.keys().into_iter(),
                         ServerMessage::PaddleMoved {
@@ -192,11 +195,12 @@ pub(crate) fn check_for_collisions(
                     ball.last_hit_by = paddle.player_id;
                 }
 
+                let endpoint = server.endpoint();
                 // Bricks should be despawned on collision
                 if let Some(brick) = maybe_brick {
                     commands.entity(collider_entity).despawn();
 
-                    server
+                    endpoint
                         .broadcast_message(ServerMessage::BrickDestroyed {
                             by_client_id: ball.last_hit_by,
                             brick_id: brick.0,
@@ -228,7 +232,7 @@ pub(crate) fn check_for_collisions(
                     ball_velocity.y = -ball_velocity.y;
                 }
 
-                server
+                endpoint
                     .broadcast_message(ServerMessage::BallCollided {
                         owner_client_id: ball.last_hit_by,
                         entity: ball_entity,
@@ -249,9 +253,10 @@ pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<
 }
 
 fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &ResMut<Players>) {
+    let endpoint = server.endpoint_mut();
     // Assign ids
     for client_id in players.map.keys().into_iter() {
-        server
+        endpoint
             .send_message(
                 *client_id,
                 ServerMessage::InitClient {
@@ -267,7 +272,7 @@ fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &Re
         .zip(players.map.keys().into_iter())
     {
         let paddle = spawn_paddle(commands, *client_id, &position);
-        server
+        endpoint
             .send_group_message(
                 players.map.keys().into_iter(),
                 ServerMessage::SpawnPaddle {
@@ -286,7 +291,7 @@ fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &Re
         .zip(players.map.keys().into_iter())
     {
         let ball = spawn_ball(commands, *client_id, position, direction);
-        server
+        endpoint
             .send_group_message(
                 players.map.keys().into_iter(),
                 ServerMessage::SpawnBall {
@@ -369,7 +374,7 @@ fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &Re
             brick_id += 1;
         }
     }
-    server
+    endpoint
         .send_group_message(
             players.map.keys().into_iter(),
             ServerMessage::SpawnBricks {
@@ -383,7 +388,7 @@ fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &Re
         )
         .unwrap();
 
-    server
+    endpoint
         .send_group_message(players.map.keys().into_iter(), ServerMessage::StartGame {})
         .unwrap();
 }
