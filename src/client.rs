@@ -139,17 +139,6 @@ pub struct Connection {
 }
 
 impl Connection {
-    /// Disconnect from the server on this connection. This does not send any message to the server, and simply closes all the connection's tasks locally.
-    pub fn disconnect(&mut self) -> Result<(), QuinnetError> {
-        if self.is_connected() {
-            if let Err(_) = self.close_sender.send(()) {
-                return Err(QuinnetError::ChannelClosed);
-            }
-        }
-        self.state = ConnectionState::Disconnected;
-        Ok(())
-    }
-
     pub fn receive_message<T: serde::de::DeserializeOwned>(
         &mut self,
     ) -> Result<Option<T>, QuinnetError> {
@@ -191,6 +180,17 @@ impl Connection {
 
     pub fn is_connected(&self) -> bool {
         return self.state == ConnectionState::Connected;
+    }
+
+    /// Disconnect from the server on this connection. This does not send any message to the server, and simply closes all the connection's tasks locally.
+    fn disconnect(&mut self) -> Result<(), QuinnetError> {
+        if self.is_connected() {
+            if let Err(_) = self.close_sender.send(()) {
+                return Err(QuinnetError::ChannelClosed);
+            }
+        }
+        self.state = ConnectionState::Disconnected;
+        Ok(())
     }
 }
 
