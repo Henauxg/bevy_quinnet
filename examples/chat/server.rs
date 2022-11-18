@@ -64,15 +64,13 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
                     users.names.get(&client_id),
                     message
                 );
-                endpoint
-                    .send_group_message(
-                        users.names.keys().into_iter(),
-                        ServerMessage::ChatMessage {
-                            client_id: client_id,
-                            message: message,
-                        },
-                    )
-                    .unwrap();
+                endpoint.try_send_group_message(
+                    users.names.keys().into_iter(),
+                    ServerMessage::ChatMessage {
+                        client_id: client_id,
+                        message: message,
+                    },
+                );
             }
         }
     }

@@ -92,8 +92,8 @@ pub(crate) fn start_listening(mut server: ResMut<Server>) {
 }
 
 pub(crate) fn handle_client_messages(mut server: ResMut<Server>, mut players: ResMut<Players>) {
-    while let Ok(Some((message, client_id))) =
-        server.endpoint_mut().receive_message::<ClientMessage>()
+    while let Some((message, client_id)) =
+        server.endpoint_mut().try_receive_message::<ClientMessage>()
     {
         match message {
             ClientMessage::PaddleInput { input } => {
@@ -157,16 +157,13 @@ pub(crate) fn update_paddles(
 
                 paddle_transform.translation.x = new_paddle_position.clamp(left_bound, right_bound);
 
-                server
-                    .endpoint()
-                    .send_group_message(
-                        players.map.keys().into_iter(),
-                        ServerMessage::PaddleMoved {
-                            entity: paddle_entity,
-                            position: paddle_transform.translation,
-                        },
-                    )
-                    .unwrap();
+                server.endpoint().try_send_group_message(
+                    players.map.keys().into_iter(),
+                    ServerMessage::PaddleMoved {
+                        entity: paddle_entity,
+                        position: paddle_transform.translation,
+                    },
+                );
             }
         }
     }
@@ -200,12 +197,10 @@ pub(crate) fn check_for_collisions(
                 if let Some(brick) = maybe_brick {
                     commands.entity(collider_entity).despawn();
 
-                    endpoint
-                        .broadcast_message(ServerMessage::BrickDestroyed {
-                            by_client_id: ball.last_hit_by,
-                            brick_id: brick.0,
-                        })
-                        .unwrap();
+                    endpoint.try_broadcast_message(ServerMessage::BrickDestroyed {
+                        by_client_id: ball.last_hit_by,
+                        brick_id: brick.0,
+                    });
                 }
 
                 // reflect the ball when it collides
@@ -232,14 +227,12 @@ pub(crate) fn check_for_collisions(
                     ball_velocity.y = -ball_velocity.y;
                 }
 
-                endpoint
-                    .broadcast_message(ServerMessage::BallCollided {
-                        owner_client_id: ball.last_hit_by,
-                        entity: ball_entity,
-                        position: ball_transform.translation,
-                        velocity: ball_velocity.0,
-                    })
-                    .unwrap();
+                endpoint.try_broadcast_message(ServerMessage::BallCollided {
+                    owner_client_id: ball.last_hit_by,
+                    entity: ball_entity,
+                    position: ball_transform.translation,
+                    velocity: ball_velocity.0,
+                });
             }
         }
     }

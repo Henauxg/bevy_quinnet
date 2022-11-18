@@ -47,7 +47,10 @@ pub fn on_app_exit(app_exit_events: EventReader<AppExit>, client: Res<Client>) {
 }
 
 fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<Client>) {
-    while let Ok(Some(message)) = client.connection_mut().receive_message::<ServerMessage>() {
+    while let Some(message) = client
+        .connection_mut()
+        .try_receive_message::<ServerMessage>()
+    {
         match message {
             ServerMessage::ClientConnected {
                 client_id,
@@ -94,8 +97,7 @@ fn handle_terminal_messages(
         } else {
             client
                 .connection()
-                .send_message(ClientMessage::ChatMessage { message: message })
-                .expect("Failed to send chat message");
+                .try_send_message(ClientMessage::ChatMessage { message: message });
         }
     }
 }
