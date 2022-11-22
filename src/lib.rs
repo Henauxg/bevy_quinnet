@@ -35,8 +35,8 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     const SERVER_HOST: &str = "127.0.0.1";
-    const TEST_CERT_FILE: &str = "assets/tests/test_cert.pem";
-    const TEST_KEY_FILE: &str = "assets/tests/test_key.pem";
+    const TEST_CERT_FILE: &str = "assets/tests/cert.pem.test";
+    const TEST_KEY_FILE: &str = "assets/tests/key.pem.test";
     const TEST_CERT_FINGERPRINT_B64: &str = "sieQJ9J6DIrQP37HAlUFk2hYhLZDY9G5OZQpqzkWlKo=";
 
     #[derive(Resource, Debug, Clone, Default)]
