@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.3.0-dev
+
+- [client] Do not fail in store_known_hosts_to_file if the path has no prefix
+
 ## Version 0.2.0 (2022-11-18)
 
 ### Added

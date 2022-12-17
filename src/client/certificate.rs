@@ -353,8 +353,9 @@ impl rustls::client::ServerCertVerifier for TofuServerVerification {
 
 fn store_known_hosts_to_file(file: &String, store: &CertStore) -> Result<(), Box<dyn Error>> {
     let path = std::path::Path::new(file);
-    let prefix = path.parent().unwrap();
-    std::fs::create_dir_all(prefix)?;
+    if let Some(prefix) = path.parent() {
+        std::fs::create_dir_all(prefix)?;
+    }
     let mut store_file = File::create(path)?;
     for entry in store {
         writeln!(store_file, "{} {}", entry.0, entry.1)?;
