@@ -3,6 +3,7 @@
 ## Version 0.3.0-dev
 
 - [client] Do not fail in store_known_hosts_to_file if the path has no prefix
+- [server] Do not fail in write_certs_to_files if the cert and key files have non-existing parent directories, create them instead
 
 ## Version 0.2.0 (2022-11-18)
 

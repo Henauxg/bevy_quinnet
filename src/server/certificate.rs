@@ -70,6 +70,13 @@ fn write_certs_to_files(
     let pem_cert = cert.serialize_pem()?;
     let pem_key = cert.serialize_private_key_pem();
 
+    for file in vec![cert_file, key_file] {
+        let path = std::path::Path::new(file);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+
     fs::write(cert_file, pem_cert)?;
     fs::write(key_file, pem_key)?;
 
