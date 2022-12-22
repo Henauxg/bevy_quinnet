@@ -6,13 +6,14 @@ use std::{
     error::Error,
     net::SocketAddr,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use bevy::prelude::*;
 use bytes::Bytes;
 use futures::sink::SinkExt;
 use futures_util::StreamExt;
-use quinn::{ClientConfig, Endpoint};
+use quinn::{ClientConfig, Connection as QuinnConnection, Endpoint};
 use serde::Deserialize;
 use tokio::{
     runtime::{self},
@@ -42,6 +43,8 @@ pub mod certificate;
 
 pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 pub const DEFAULT_KNOWN_HOSTS_FILE: &str = "quinnet/known_hosts";
+
+type InternalConnectionRef = QuinnConnection;
 
 pub type ConnectionId = u64;
 
@@ -101,9 +104,34 @@ enum ConnectionState {
     Connected,
 }
 
+/// Statistics about UDP datagrams transmitted or received on a connection
+#[derive(Debug)]
+pub struct UdpStats {
+    /// The amount of UDP datagrams observed
+    pub datagrams: u64,
+    /// The total amount of byte swhich have been transferred inside UDP datagrams
+    pub bytes: u64,
+}
+
+#[derive(Debug)]
+pub struct ConnectionStats {
+    /// Statistics about UDP datagrams transmittedj on this connection
+    pub udp_tx: UdpStats,
+    /// Statistics about UDP datagrams received on this connection
+    pub udp_rx: UdpStats,
+    /// Current best estimate of this connection's latency (round-trip-time)
+    pub rtt: Duration,
+    /// The amount of packets lost on this connection
+    pub lost_packets: u64,
+    /// The amount of bytes lost on this connection
+    pub lost_bytes: u64,
+    /// The amount of packets sent on this connection
+    pub sent_packets: u64,
+}
+
 #[derive(Debug)]
 pub(crate) enum InternalAsyncMessage {
-    Connected,
+    Connected(InternalConnectionRef),
     LostConnection,
     CertificateInteractionRequest {
         status: CertVerificationStatus,
@@ -131,6 +159,7 @@ pub(crate) struct ConnectionSpawnConfig {
 #[derive(Debug)]
 pub struct Connection {
     state: ConnectionState,
+    internal_connection: Option<InternalConnectionRef>,
     // TODO Perf: multiple channels
     sender: mpsc::Sender<Bytes>,
     receiver: mpsc::Receiver<Bytes>,
@@ -224,11 +253,41 @@ impl Connection {
             }
         }
         self.state = ConnectionState::Disconnected;
+        self.internal_connection = None;
         Ok(())
     }
 
     pub fn is_connected(&self) -> bool {
         return self.state == ConnectionState::Connected;
+    }
+
+    /// Returns statistics about the current connection if connected.
+    pub fn stats(&self) -> Option<ConnectionStats> {
+        if !self.is_connected() {
+            return None;
+        }
+
+        match &self.internal_connection {
+            Some(conn) => {
+                let stats = conn.stats();
+
+                Some(ConnectionStats {
+                    udp_tx: UdpStats {
+                        datagrams: stats.udp_tx.datagrams,
+                        bytes: stats.udp_tx.bytes,
+                    },
+                    udp_rx: UdpStats {
+                        datagrams: stats.udp_rx.datagrams,
+                        bytes: stats.udp_rx.bytes,
+                    },
+                    rtt: stats.path.rtt,
+                    lost_packets: stats.path.lost_packets,
+                    lost_bytes: stats.path.lost_bytes,
+                    sent_packets: stats.path.sent_packets,
+                })
+            }
+            None => None,
+        }
     }
 }
 
@@ -316,6 +375,7 @@ impl Client {
             sender: to_server_sender,
             receiver: from_server_receiver,
             close_sender: close_sender.clone(),
+            internal_connection: None,
             internal_receiver: from_async_client,
         };
 
@@ -445,7 +505,7 @@ async fn connection_task(mut spawn_config: ConnectionSpawnConfig) {
 
             spawn_config
                 .to_sync_client
-                .send(InternalAsyncMessage::Connected)
+                .send(InternalAsyncMessage::Connected(connection.clone()))
                 .await
                 .expect("Failed to signal connection to sync client");
 
@@ -522,8 +582,9 @@ fn update_sync_client(
     for (connection_id, mut connection) in &mut client.connections {
         while let Ok(message) = connection.internal_receiver.try_recv() {
             match message {
-                InternalAsyncMessage::Connected => {
+                InternalAsyncMessage::Connected(internal_connection) => {
                     connection.state = ConnectionState::Connected;
+                    connection.internal_connection = Some(internal_connection);
                     connection_events.send(ConnectionEvent(*connection_id));
                 }
                 InternalAsyncMessage::LostConnection => {
