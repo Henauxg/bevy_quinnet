@@ -10,7 +10,7 @@ pub mod shared;
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, thread::sleep, time::Duration};
+    use std::{fs, path::Path, thread::sleep, time::Duration};
 
     use crate::{
         client::{
@@ -181,8 +181,10 @@ mod tests {
 
         let port = 6001; // TODO Use port 0 and retrieve the port used by the server.
 
-        fs::remove_file(DEFAULT_KNOWN_HOSTS_FILE)
-            .expect("Failed to remove default known hosts file");
+        if Path::new(DEFAULT_KNOWN_HOSTS_FILE).exists() {
+            fs::remove_file(DEFAULT_KNOWN_HOSTS_FILE)
+                .expect("Failed to remove default known hosts file");
+        }
 
         let mut client_app = App::new();
         client_app
@@ -363,7 +365,7 @@ mod tests {
         // Let the async runtime process the certificate action & connection.
         sleep(Duration::from_secs_f32(0.1));
 
-        // Connectino abort event
+        // Connection abort event
         client_app.update();
 
         // The server's certificate is treatead as Untrusted by the client, which requests a client action
