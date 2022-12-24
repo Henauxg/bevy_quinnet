@@ -522,6 +522,7 @@ dependencies = [
  "futures",
  "futures-util",
  "quinn",
+ "quinn-proto",
  "rand",
  "rcgen",
  "ring",

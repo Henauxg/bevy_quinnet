@@ -12,7 +12,8 @@ use bevy::prelude::*;
 use bytes::Bytes;
 use futures::sink::SinkExt;
 use futures_util::StreamExt;
-use quinn::{ClientConfig, Endpoint};
+use quinn::{ClientConfig, Connection as QuinnConnection, Endpoint};
+use quinn_proto::ConnectionStats;
 use serde::Deserialize;
 use tokio::{
     runtime::{self},
@@ -95,16 +96,18 @@ impl ConnectionConfiguration {
     }
 }
 
-/// Current state of the client driver
-#[derive(Debug, PartialEq, Eq)]
+type InternalConnectionRef = QuinnConnection;
+
+/// Current state of a client connection
+#[derive(Debug)]
 enum ConnectionState {
     Disconnected,
-    Connected,
+    Connected(InternalConnectionRef),
 }
 
 #[derive(Debug)]
 pub(crate) enum InternalAsyncMessage {
-    Connected,
+    Connected(InternalConnectionRef),
     LostConnection,
     CertificateInteractionRequest {
         status: CertVerificationStatus,
@@ -229,7 +232,18 @@ impl Connection {
     }
 
     pub fn is_connected(&self) -> bool {
-        return self.state == ConnectionState::Connected;
+        match self.state {
+            ConnectionState::Disconnected => false,
+            ConnectionState::Connected(_) => true,
+        }
+    }
+
+    /// Returns statistics about the current connection if connected.
+    pub fn stats(&self) -> Option<ConnectionStats> {
+        match &self.state {
+            ConnectionState::Disconnected => None,
+            ConnectionState::Connected(connection) => Some(connection.stats()),
+        }
     }
 }
 
@@ -446,7 +460,7 @@ async fn connection_task(mut spawn_config: ConnectionSpawnConfig) {
 
             spawn_config
                 .to_sync_client
-                .send(InternalAsyncMessage::Connected)
+                .send(InternalAsyncMessage::Connected(connection.clone()))
                 .await
                 .expect("Failed to signal connection to sync client");
 
@@ -523,8 +537,8 @@ fn update_sync_client(
     for (connection_id, mut connection) in &mut client.connections {
         while let Ok(message) = connection.internal_receiver.try_recv() {
             match message {
-                InternalAsyncMessage::Connected => {
-                    connection.state = ConnectionState::Connected;
+                InternalAsyncMessage::Connected(internal_connection) => {
+                    connection.state = ConnectionState::Connected(internal_connection);
                     connection_events.send(ConnectionEvent(*connection_id));
                 }
                 InternalAsyncMessage::LostConnection => {
