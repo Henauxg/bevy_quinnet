@@ -72,7 +72,8 @@ impl ConnectionConfiguration {
     /// # Examples
     ///
     /// ```
-    /// let config = ClientConfigurationData::new(
+    /// use bevy_quinnet::client::ConnectionConfiguration;
+    /// let config = ConnectionConfiguration::new(
     ///         "127.0.0.1".to_string(),
     ///         6000,
     ///         "0.0.0.0".to_string(),

@@ -62,6 +62,7 @@ impl ServerConfigurationData {
     /// # Examples
     ///
     /// ```
+    /// use bevy_quinnet::server::ServerConfigurationData;
     /// let config = ServerConfigurationData::new(
     ///         "127.0.0.1".to_string(),
     ///         6000,
@@ -399,11 +400,10 @@ async fn endpoint_task(
 
     let endpoint = QuinnEndpoint::server(endpoint_config, endpoint_adr)
         .expect("Failed to create the endpoint");
-
     // Handle incoming connections/clients.
     tokio::select! {
         _ = close_receiver.recv() => {
-            trace!("Endpoint incoming connection handler received a requets to close")
+            trace!("Endpoint incoming connection handler received a request to close")
         }
         _ = async {
             while let Some(connecting) = endpoint.accept().await {
