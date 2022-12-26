@@ -10,6 +10,7 @@ pub const DEFAULT_KILL_MESSAGE_QUEUE_SIZE: usize = 10;
 pub const DEFAULT_KEEP_ALIVE_INTERVAL_S: u64 = 4;
 
 pub type ClientId = u64;
+pub type ChannelId = u64;
 
 #[derive(Resource, Deref, DerefMut)]
 pub(crate) struct AsyncRuntime(pub(crate) Runtime);
@@ -27,6 +28,8 @@ pub enum QuinnetError {
     UnknownConnection(ConnectionId),
     #[error("Connection is closed")]
     ConnectionClosed,
+    #[error("Channel with id `{0}` is unknown")]
+    UnknownChannel(ChannelId),
     #[error("Endpoint is already closed")]
     EndpointAlreadyClosed,
     #[error("Failed serialization")]
