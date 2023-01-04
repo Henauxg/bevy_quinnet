@@ -91,15 +91,17 @@ struct WallBundle {
 }
 
 pub(crate) fn start_connection(mut client: ResMut<Client>) {
-    client.open_connection(
-        ConnectionConfiguration::new(
-            SERVER_HOST.to_string(),
-            SERVER_PORT,
-            "0.0.0.0".to_string(),
-            0,
-        ),
-        CertificateVerificationMode::SkipVerification,
-    );
+    client
+        .open_connection(
+            ConnectionConfiguration::new(
+                SERVER_HOST.to_string(),
+                SERVER_PORT,
+                "0.0.0.0".to_string(),
+                0,
+            ),
+            CertificateVerificationMode::SkipVerification,
+        )
+        .unwrap();
 }
 
 fn spawn_paddle(commands: &mut Commands, position: &Vec3, owned: bool) -> Entity {
