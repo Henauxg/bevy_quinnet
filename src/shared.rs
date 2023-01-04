@@ -30,6 +30,8 @@ pub enum QuinnetError {
     ConnectionClosed,
     #[error("Channel with id `{0}` is unknown")]
     UnknownChannel(ChannelId),
+    #[error("The connection has no default channel")]
+    NoDefaultChannel,
     #[error("Endpoint is already closed")]
     EndpointAlreadyClosed,
     #[error("Failed serialization")]
