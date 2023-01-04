@@ -69,6 +69,12 @@ mod tests {
         ChatMessage(String),
     }
 
+    ///////////////////////////////////////////////////////////
+    ///                                                     ///
+    ///                        Test                         ///
+    ///                                                     ///
+    ///////////////////////////////////////////////////////////
+
     #[test]
     fn connection_with_two_apps() {
         let port = 6000; // TODO Use port 0 and retrieve the port used by the server.
@@ -164,6 +170,12 @@ mod tests {
         }
     }
 
+    ///////////////////////////////////////////////////////////
+    ///                                                     ///
+    ///                        Test                         ///
+    ///                                                     ///
+    ///////////////////////////////////////////////////////////
+
     #[test]
     fn trust_on_first_use() {
         // TOFU With default parameters
@@ -230,14 +242,16 @@ mod tests {
         // Client connects with empty cert store
         {
             let mut client = client_app.world.resource_mut::<Client>();
-            client.open_connection(
-                default_client_configuration(port),
-                CertificateVerificationMode::TrustOnFirstUse(
-                    client::certificate::TrustOnFirstUseConfig {
-                        ..Default::default()
-                    },
-                ),
-            );
+            client
+                .open_connection(
+                    default_client_configuration(port),
+                    CertificateVerificationMode::TrustOnFirstUse(
+                        client::certificate::TrustOnFirstUseConfig {
+                            ..Default::default()
+                        },
+                    ),
+                )
+                .unwrap();
         }
 
         // Let the async runtime connection connect.
@@ -285,14 +299,16 @@ mod tests {
                 .close_all_connections()
                 .expect("Failed to close connections on the client");
 
-            client.open_connection(
-                default_client_configuration(port),
-                CertificateVerificationMode::TrustOnFirstUse(
-                    client::certificate::TrustOnFirstUseConfig {
-                        ..Default::default()
-                    },
-                ),
-            );
+            client
+                .open_connection(
+                    default_client_configuration(port),
+                    CertificateVerificationMode::TrustOnFirstUse(
+                        client::certificate::TrustOnFirstUseConfig {
+                            ..Default::default()
+                        },
+                    ),
+                )
+                .unwrap();
         }
 
         // Let the async runtime connection connect.
@@ -345,14 +361,16 @@ mod tests {
         // Client reconnects with its cert store containing the previously store certificate fingerprint
         {
             let mut client = client_app.world.resource_mut::<Client>();
-            client.open_connection(
-                default_client_configuration(port),
-                CertificateVerificationMode::TrustOnFirstUse(
-                    client::certificate::TrustOnFirstUseConfig {
-                        ..Default::default()
-                    },
-                ),
-            );
+            client
+                .open_connection(
+                    default_client_configuration(port),
+                    CertificateVerificationMode::TrustOnFirstUse(
+                        client::certificate::TrustOnFirstUseConfig {
+                            ..Default::default()
+                        },
+                    ),
+                )
+                .unwrap();
         }
 
         // Let the async runtime connection connect.
@@ -436,6 +454,12 @@ mod tests {
             .expect("Failed to remove default known hosts file");
     }
 
+    ///////////////////////////////////////////////////////////
+    ///                                                     ///
+    ///                  Test utilities                     ///
+    ///                                                     ///
+    ///////////////////////////////////////////////////////////
+
     fn build_client_app() -> App {
         let mut client_app = App::new();
         client_app
@@ -463,10 +487,12 @@ mod tests {
     }
 
     fn start_simple_connection(mut client: ResMut<Client>, port: Res<Port>) {
-        client.open_connection(
-            default_client_configuration(port.0),
-            CertificateVerificationMode::SkipVerification,
-        );
+        client
+            .open_connection(
+                default_client_configuration(port.0),
+                CertificateVerificationMode::SkipVerification,
+            )
+            .unwrap();
     }
 
     fn start_listening(mut server: ResMut<Server>, port: Res<Port>) {
