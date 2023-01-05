@@ -5,12 +5,15 @@ use bevy::prelude::{Deref, DerefMut, Resource};
 use rcgen::RcgenError;
 use tokio::runtime::Runtime;
 
+use self::channel::ChannelId;
+
 pub const DEFAULT_MESSAGE_QUEUE_SIZE: usize = 150;
 pub const DEFAULT_KILL_MESSAGE_QUEUE_SIZE: usize = 10;
 pub const DEFAULT_KEEP_ALIVE_INTERVAL_S: u64 = 4;
 
 pub type ClientId = u64;
-pub type ChannelId = u64;
+
+pub mod channel;
 
 #[derive(Resource, Deref, DerefMut)]
 pub(crate) struct AsyncRuntime(pub(crate) Runtime);
