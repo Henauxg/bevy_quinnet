@@ -70,7 +70,8 @@ Those are the features/tasks that will probably come next (in no particular orde
 - [x] Feature: Send messages from the server to a specific client
 - [x] Feature: Send messages from the server to a selected group of clients
 - [x] Feature: Raise connection/disconnection events from the plugins
-- [ ] Feature: Send unordered reliable messages from the server
+- [ ] Feature: Expose unordered & ordered reliable message channels from client & server
+- [ ] Feature: Send & receive unreliable messages from client & server
 - [x] Feature: Implementing a way to launch a local server from a client
 - [x] Feature: Client should be capable to connect to another server after disconnecting
 - [ ] Performance: Messages aggregation before sending
