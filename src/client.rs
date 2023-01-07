@@ -251,7 +251,7 @@ impl Connection {
                 Ok(msg_payload) => Ok(Some(msg_payload)),
                 Err(err) => match err {
                     TryRecvError::Empty => Ok(None),
-                    TryRecvError::Disconnected => Err(QuinnetError::ChannelClosed),
+                    TryRecvError::Disconnected => Err(QuinnetError::InternalChannelClosed),
                 },
             },
         }
@@ -276,7 +276,7 @@ impl Connection {
                 self.state = ConnectionState::Disconnected;
                 match self.close_sender.send(()) {
                     Ok(_) => Ok(()),
-                    Err(_) => Err(QuinnetError::ChannelClosed),
+                    Err(_) => Err(QuinnetError::InternalChannelClosed),
                 }
             }
         }
@@ -346,7 +346,7 @@ impl Connection {
             }
             Err(err) => match err {
                 TrySendError::Full(_) => Err(QuinnetError::FullQueue),
-                TrySendError::Closed(_) => Err(QuinnetError::ChannelClosed),
+                TrySendError::Closed(_) => Err(QuinnetError::InternalChannelClosed),
             },
         }
     }

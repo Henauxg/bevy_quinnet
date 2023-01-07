@@ -43,7 +43,7 @@ impl Channel {
             Ok(_) => Ok(()),
             Err(err) => match err {
                 TrySendError::Full(_) => Err(QuinnetError::FullQueue),
-                TrySendError::Closed(_) => Err(QuinnetError::ChannelClosed),
+                TrySendError::Closed(_) => Err(QuinnetError::InternalChannelClosed),
             },
         }
     }

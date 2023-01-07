@@ -40,7 +40,7 @@ impl CertInteractionEvent {
         if let Some(sender) = sender.take() {
             match sender.send(action) {
                 Ok(_) => Ok(()),
-                Err(_) => Err(QuinnetError::ChannelClosed),
+                Err(_) => Err(QuinnetError::InternalChannelClosed),
             }
         } else {
             Err(QuinnetError::CertificateActionAlreadyApplied)

@@ -207,7 +207,7 @@ impl Endpoint {
                 Err(err) => match err {
                     mpsc::error::TrySendError::Full(_) => return Err(QuinnetError::FullQueue),
                     mpsc::error::TrySendError::Closed(_) => {
-                        return Err(QuinnetError::ChannelClosed)
+                        return Err(QuinnetError::InternalChannelClosed)
                     }
                 },
             };
@@ -232,7 +232,9 @@ impl Endpoint {
                 Ok(_) => Ok(()),
                 Err(err) => match err {
                     mpsc::error::TrySendError::Full(_) => Err(QuinnetError::FullQueue),
-                    mpsc::error::TrySendError::Closed(_) => Err(QuinnetError::ChannelClosed),
+                    mpsc::error::TrySendError::Closed(_) => {
+                        Err(QuinnetError::InternalChannelClosed)
+                    }
                 },
             }
         } else {
@@ -252,7 +254,7 @@ impl Endpoint {
             Ok(msg) => Ok(Some(msg)),
             Err(err) => match err {
                 TryRecvError::Empty => Ok(None),
-                TryRecvError::Disconnected => Err(QuinnetError::ChannelClosed),
+                TryRecvError::Disconnected => Err(QuinnetError::InternalChannelClosed),
             },
         }
     }
@@ -271,7 +273,7 @@ impl Endpoint {
         match self.clients.remove(&client_id) {
             Some(client_connection) => match client_connection.close_sender.send(()) {
                 Ok(_) => Ok(()),
-                Err(_) => Err(QuinnetError::ChannelClosed),
+                Err(_) => Err(QuinnetError::InternalChannelClosed),
             },
             None => Err(QuinnetError::UnknownClient(client_id)),
         }
@@ -287,7 +289,7 @@ impl Endpoint {
     pub(crate) fn close_incoming_connections_handler(&mut self) -> Result<(), QuinnetError> {
         match self.close_sender.send(()) {
             Ok(_) => Ok(()),
-            Err(_) => Err(QuinnetError::ChannelClosed),
+            Err(_) => Err(QuinnetError::InternalChannelClosed),
         }
     }
 }

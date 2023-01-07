@@ -44,7 +44,7 @@ pub enum QuinnetError {
     #[error("The data could not be sent on the channel because the channel is currently full and sending would require blocking")]
     FullQueue,
     #[error("The receiving half of the channel was explicitly closed or has been dropped")]
-    ChannelClosed,
+    InternalChannelClosed,
     #[error("The hosts file is invalid")]
     InvalidHostFile,
     #[error("Lock acquisition failure")]
