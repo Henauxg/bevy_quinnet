@@ -47,9 +47,13 @@ pub const DEFAULT_KNOWN_HOSTS_FILE: &str = "quinnet/known_hosts";
 pub type ConnectionId = u64;
 
 /// Connection event raised when the client just connected to the server. Raised in the CoreStage::PreUpdate stage.
-pub struct ConnectionEvent(ConnectionId);
+pub struct ConnectionEvent {
+    pub id: ConnectionId,
+}
 /// ConnectionLost event raised when the client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
-pub struct ConnectionLostEvent(ConnectionId);
+pub struct ConnectionLostEvent {
+    pub id: ConnectionId,
+}
 
 /// Configuration of the client, used when connecting to a server
 #[derive(Debug, Deserialize, Clone)]
@@ -539,11 +543,11 @@ fn update_sync_client(
             match message {
                 InternalAsyncMessage::Connected(internal_connection) => {
                     connection.state = ConnectionState::Connected(internal_connection);
-                    connection_events.send(ConnectionEvent(*connection_id));
+                    connection_events.send(ConnectionEvent { id: *connection_id });
                 }
                 InternalAsyncMessage::LostConnection => {
                     connection.state = ConnectionState::Disconnected;
-                    connection_lost_events.send(ConnectionLostEvent(*connection_id));
+                    connection_lost_events.send(ConnectionLostEvent { id: *connection_id });
                 }
                 InternalAsyncMessage::CertificateInteractionRequest {
                     status,
