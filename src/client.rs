@@ -148,13 +148,12 @@ pub(crate) struct ConnectionSpawnConfig {
 #[derive(Debug)]
 pub struct Connection {
     state: ConnectionState,
-    // channels: HashMap<ChannelId, Channel>,
     channels: HashMap<ChannelId, Channel>,
     default_channel: Option<ChannelId>,
     last_gen_id: OrdRelChannelId,
-    // default_channel_id: Option<ChannelId>,
     receiver: mpsc::Receiver<Bytes>,
     close_sender: broadcast::Sender<()>,
+
     pub(crate) internal_receiver: mpsc::Receiver<InternalAsyncMessage>,
     pub(crate) internal_sender: mpsc::Sender<InternalSyncMessage>,
 }
@@ -321,8 +320,18 @@ impl Connection {
         }
     }
 
-    pub fn close_channel(&mut self, channel_id: ChannelId) {
-        todo!()
+    pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), QuinnetError> {
+        match self.channels.remove(&channel_id) {
+            Some(mut channel) => {
+                // channel.close()?;
+                todo!("Close channels tasks");
+                if Some(channel_id) == self.default_channel {
+                    self.default_channel = None;
+                }
+                Ok(())
+            }
+            None => Err(QuinnetError::UnknownChannel(channel_id)),
+        }
     }
 
     fn create_channel(&mut self, channel_id: ChannelId) -> Result<ChannelId, QuinnetError> {
@@ -481,10 +490,8 @@ impl Client {
         match self.connections.remove(&connection_id) {
             Some(mut connection) => {
                 connection.disconnect()?;
-                if let Some(default_id) = self.default_connection_id {
-                    if connection_id == default_id {
-                        self.default_connection_id = None;
-                    }
+                if Some(connection_id) == self.default_connection_id {
+                    self.default_connection_id = None;
                 }
                 Ok(())
             }
@@ -651,7 +658,6 @@ async fn handle_connection_channels(
         }
         _ = async {
             while let Some(sync_message) = from_sync_client.recv().await {
-
                  let InternalSyncMessage::CreateChannel{ channel_id,  to_server_receiver } = sync_message;
 
                  let close_receiver = close_sender.subscribe();
