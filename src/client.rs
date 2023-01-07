@@ -30,7 +30,7 @@ use tokio::{
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use crate::shared::{
-    channel::{Channel, ChannelId, OrdRelChannelId},
+    channel::{Channel, ChannelId, ChannelType, OrdRelChannelId},
     AsyncRuntime, QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
@@ -297,12 +297,38 @@ impl Connection {
         }
     }
 
-    pub fn open_ordered_reliable_channel(&mut self) -> Result<ChannelId, QuinnetError> {
+    pub fn open_channel(&mut self, channel_type: ChannelType) -> Result<ChannelId, QuinnetError> {
+        match channel_type {
+            ChannelType::OrderedReliable => {
+                self.last_gen_id += 1;
+                let channel_id = ChannelId::OrderedReliable(self.last_gen_id);
+                self.create_channel(channel_id)
+            }
+            ChannelType::UnorderedReliable => {
+                let channel_id = ChannelId::UnorderedReliable;
+                match self.channels.contains_key(&channel_id) {
+                    true => Ok(channel_id),
+                    false => self.create_channel(channel_id),
+                }
+            }
+            ChannelType::Unreliable => {
+                let channel_id = ChannelId::Unreliable;
+                match self.channels.contains_key(&channel_id) {
+                    true => Ok(channel_id),
+                    false => self.create_channel(channel_id),
+                }
+            }
+        }
+    }
+
+    pub fn close_channel(&mut self, channel_id: ChannelId) {
+        todo!()
+    }
+
+    fn create_channel(&mut self, channel_id: ChannelId) -> Result<ChannelId, QuinnetError> {
         let (to_server_sender, to_server_receiver) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
 
-        self.last_gen_id += 1;
-        let channel_id = ChannelId::OrderedReliable(self.last_gen_id);
         match self
             .internal_sender
             .try_send(InternalSyncMessage::CreateChannel {
@@ -412,10 +438,10 @@ impl Client {
             internal_receiver: from_async_client,
             internal_sender: to_async_client,
         };
-        // Create a default channel
-        if let Err(err) = connection.open_ordered_reliable_channel() {
-            return Err(err);
-        }
+        // Create default channels
+        connection.open_channel(ChannelType::OrderedReliable)?;
+        connection.open_channel(ChannelType::UnorderedReliable)?;
+        connection.open_channel(ChannelType::Unreliable)?;
 
         // Async connection
         self.runtime.spawn(async move {

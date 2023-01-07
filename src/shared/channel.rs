@@ -12,12 +12,12 @@ use super::QuinnetError;
 
 pub(crate) type OrdRelChannelId = u64;
 
-// #[derive(Debug, Copy, Clone)]
-// pub enum ChannelType {
-//     OrderedReliable,
-//     UnorderedReliable,
-//     Unreliable,
-// }
+#[derive(Debug, Copy, Clone)]
+pub enum ChannelType {
+    OrderedReliable,
+    UnorderedReliable,
+    Unreliable,
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ChannelId {
