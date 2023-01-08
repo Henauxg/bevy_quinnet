@@ -12,8 +12,8 @@ use bevy::prelude::*;
 use bytes::Bytes;
 use futures::sink::SinkExt;
 use futures_util::StreamExt;
-use quinn::{ClientConfig, Connection as QuinnConnection, Endpoint};
-use quinn_proto::ConnectionStats;
+use quinn::{ClientConfig, Connection as QuinnConnection, Endpoint, SendStream};
+use quinn_proto::{ConnectionStats, VarInt};
 use serde::Deserialize;
 use tokio::{
     runtime::{self},
@@ -474,31 +474,49 @@ async fn connection_task(mut spawn_config: ConnectionSpawnConfig) {
                 .expect("Failed to open send stream");
             let mut frame_send = FramedWrite::new(send, LengthDelimitedCodec::new());
 
+            let _close_waiter = {
+                let conn = connection.clone();
+                let to_sync_client = spawn_config.to_sync_client.clone();
+                let close_sender = spawn_config.close_sender.clone();
+                tokio::spawn(async move {
+                    let conn_err = conn.closed().await;
+                    info!("Disconnected: {}", conn_err);
+                    close_sender.send(()).ok();
+                    to_sync_client
+                        .send(InternalAsyncMessage::LostConnection)
+                        .await
+                        .expect("Failed to signal connection lost to sync client");
+                })
+            };
+
             let close_sender_clone = spawn_config.close_sender.clone();
-            let _network_sends = tokio::spawn(async move {
-                tokio::select! {
-                    _ = spawn_config.close_receiver.recv() => {
-                        trace!("Unidirectional send Stream forced to disconnected")
-                    }
-                    _ = async {
-                        while let Some(msg_bytes) = spawn_config.to_server_receiver.recv().await {
-                            if let Err(err) = frame_send.send(msg_bytes).await {
-                                error!("Error while sending, {}", err); // TODO Clean: error handling
-                                error!("Client seems disconnected, closing resources");
-                                if let Err(_) = close_sender_clone.send(()) {
-                                    error!("Failed to close all client streams & resources")
-                                }
-                                spawn_config.to_sync_client.send(
-                                    InternalAsyncMessage::LostConnection)
-                                    .await
-                                    .expect("Failed to signal connection lost to sync client");
-                            }
+            let _network_sends = {
+                let conn = connection.clone();
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = spawn_config.close_receiver.recv() => {
+                            trace!("Unidirectional send Stream forced to disconnected")
                         }
-                    } => {
-                        trace!("Unidirectional send Stream ended")
+                        _ = async {
+                            while let Some(msg_bytes) = spawn_config.to_server_receiver.recv().await {
+                                send_msg(&close_sender_clone, &mut frame_send, msg_bytes).await
+                            }
+                        } => {
+                            trace!("Unidirectional send Stream ended")
+                        }
                     }
-                }
-            });
+                    while let Ok(msg_bytes) = spawn_config.to_server_receiver.try_recv() {
+                        send_msg(&close_sender_clone, &mut frame_send, msg_bytes).await
+                    }
+                    if let Err(err) = frame_send.flush().await {
+                        error!("Error while flushing stream: {}", err);
+                    }
+                    if let Err(err) = frame_send.into_inner().finish().await {
+                        error!("Failed to shutdown stream gracefully: {}", err);
+                    }
+                    conn.close(VarInt::from_u32(0), "closed".as_bytes());
+                });
+            };
 
             let mut uni_receivers: JoinSet<()> = JoinSet::new();
             let mut close_receiver = spawn_config.close_sender.subscribe();
@@ -525,6 +543,20 @@ async fn connection_task(mut spawn_config: ConnectionSpawnConfig) {
                 uni_receivers.shutdown().await;
                 trace!("All unidirectional stream receivers cleaned");
             });
+        }
+    }
+}
+
+async fn send_msg(
+    close_sender: &tokio::sync::broadcast::Sender<()>,
+    frame_send: &mut FramedWrite<SendStream, LengthDelimitedCodec>,
+    msg_bytes: Bytes,
+) {
+    if let Err(err) = frame_send.send(msg_bytes).await {
+        error!("Error while sending, {}", err); // TODO Clean: error handling
+        error!("Client seems disconnected, closing resources");
+        if let Err(_) = close_sender.send(()) {
+            error!("Failed to close all client streams & resources")
         }
     }
 }
