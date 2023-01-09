@@ -452,18 +452,22 @@ async fn handle_client_connection(
     // Create an ordered reliable send channel for this client
     let (to_client_sender, to_client_receiver) = mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
 
-    let close_sender_clone = client_close_sender.clone();
-    let connection_clone = connection.clone();
-    tokio::spawn(async move {
-        client_sender_task(
-            client_id,
-            connection_clone,
-            to_client_receiver,
-            client_close_receiver,
-            close_sender_clone,
-        )
-        .await
-    });
+    let _client_sender = {
+        let to_sync_server_clone = to_sync_server.clone();
+        let close_sender_clone = client_close_sender.clone();
+        let connection_clone = connection.clone();
+        tokio::spawn(async move {
+            client_sender_task(
+                client_id,
+                connection_clone,
+                to_client_receiver,
+                client_close_receiver,
+                close_sender_clone,
+                to_sync_server_clone,
+            )
+            .await
+        })
+    };
 
     // Signal the sync server of this new connection
     to_sync_server
@@ -515,6 +519,7 @@ async fn client_sender_task(
     mut to_client_receiver: tokio::sync::mpsc::Receiver<Bytes>,
     mut close_receiver: tokio::sync::broadcast::Receiver<()>,
     close_sender: tokio::sync::broadcast::Sender<()>,
+    to_sync_server: mpsc::Sender<InternalAsyncMessage>,
 ) {
     let send_stream = connection.open_uni().await.expect(
         format!(
@@ -535,6 +540,7 @@ async fn client_sender_task(
                 send_msg(
                     client_id,
                     &close_sender,
+                    &to_sync_server,
                     &mut framed_send_stream,
                     msg_bytes,
                 )
@@ -543,7 +549,9 @@ async fn client_sender_task(
         } => {}
     }
     while let Ok(msg_bytes) = to_client_receiver.try_recv() {
-        send_msg(client_id, &close_sender, &mut framed_send_stream, msg_bytes).await
+        if let Err(err) = framed_send_stream.send(msg_bytes.clone()).await {
+            error!("Error while sending to client {}: {}", client_id, err);
+        };
     }
     if let Err(err) = framed_send_stream.flush().await {
         error!(
@@ -563,14 +571,20 @@ async fn client_sender_task(
 async fn send_msg(
     client_id: ClientId,
     close_sender: &tokio::sync::broadcast::Sender<()>,
+    to_sync_server: &mpsc::Sender<InternalAsyncMessage>,
     framed_send_stream: &mut FramedWrite<SendStream, LengthDelimitedCodec>,
     msg_bytes: Bytes,
 ) {
     // TODO Perf: Batch frames for a send_all
-    // TODO Clean: Error handling
     if let Err(err) = framed_send_stream.send(msg_bytes.clone()).await {
         error!("Error while sending to client {}: {}", client_id, err);
         error!("Client {} seems disconnected, closing resources", client_id);
+        // Emit ClientLostConnection to properly update the server about this client state.
+        // Raise ClientLostConnection event before emitting a close signal because we have no guarantee to continue this async execution after the close signal has been processed.
+        to_sync_server
+            .send(InternalAsyncMessage::ClientLostConnection(client_id))
+            .await
+            .expect("Failed to signal connection lost to sync server");
         if let Err(_) = close_sender.send(()) {
             error!(
                 "Failed to close all client streams & resources for client {}",
@@ -648,8 +662,12 @@ fn update_sync_server(
                     connection_events.send(ConnectionEvent { id: id });
                 }
                 InternalAsyncMessage::ClientLostConnection(client_id) => {
-                    endpoint.clients.remove(&client_id);
-                    connection_lost_events.send(ConnectionLostEvent { id: client_id });
+                    match endpoint.clients.remove(&client_id) {
+                        Some(_) => {
+                            connection_lost_events.send(ConnectionLostEvent { id: client_id })
+                        }
+                        None => (),
+                    }
                 }
             }
         }
