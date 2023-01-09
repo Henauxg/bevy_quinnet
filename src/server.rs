@@ -4,7 +4,8 @@ use bevy::prelude::*;
 use bytes::Bytes;
 use futures::sink::SinkExt;
 use futures_util::StreamExt;
-use quinn::{Endpoint as QuinnEndpoint, ServerConfig};
+use quinn::{Endpoint as QuinnEndpoint, SendStream, ServerConfig};
+use quinn_proto::VarInt;
 use serde::Deserialize;
 use tokio::{
     runtime,
@@ -451,20 +452,22 @@ async fn handle_client_connection(
     // Create an ordered reliable send channel for this client
     let (to_client_sender, to_client_receiver) = mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
 
-    let to_sync_server_clone = to_sync_server.clone();
-    let close_sender_clone = client_close_sender.clone();
-    let connection_clone = connection.clone();
-    tokio::spawn(async move {
-        client_sender_task(
-            client_id,
-            connection_clone,
-            to_client_receiver,
-            client_close_receiver,
-            close_sender_clone,
-            to_sync_server_clone,
-        )
-        .await
-    });
+    let _client_sender = {
+        let to_sync_server_clone = to_sync_server.clone();
+        let close_sender_clone = client_close_sender.clone();
+        let connection_clone = connection.clone();
+        tokio::spawn(async move {
+            client_sender_task(
+                client_id,
+                connection_clone,
+                to_client_receiver,
+                client_close_receiver,
+                close_sender_clone,
+                to_sync_server_clone,
+            )
+            .await
+        })
+    };
 
     // Signal the sync server of this new connection
     to_sync_server
@@ -482,6 +485,21 @@ async fn handle_client_connection(
             break;
         }
     }
+
+    let _client_close_wait = {
+        let conn = connection.clone();
+        let close_sender = client_close_sender.clone();
+        let to_sync_server = to_sync_server.clone();
+        tokio::spawn(async move {
+            let conn_err = conn.closed().await;
+            info!("Client {} disconnected: {}", client_id, conn_err);
+            close_sender.send(()).ok();
+            to_sync_server
+                .send(InternalAsyncMessage::ClientLostConnection(client_id))
+                .await
+                .expect("Failed to signal connection lost to sync server");
+        });
+    };
 
     // Spawn a task to listen for streams opened by this client
     let _client_receiver = tokio::spawn(async move {
@@ -519,22 +537,61 @@ async fn client_sender_task(
         }
         _ = async {
             while let Some(msg_bytes) = to_client_receiver.recv().await {
-                // TODO Perf: Batch frames for a send_all
-                // TODO Clean: Error handling
-                if let Err(err) = framed_send_stream.send(msg_bytes.clone()).await {
-                    error!("Error while sending to client {}: {}", client_id, err);
-                    error!("Client {} seems disconnected, closing resources", client_id);
-                    if let Err(_) = close_sender.send(()) {
-                        error!("Failed to close all client streams & resources for client {}", client_id)
-                    }
-                    to_sync_server.send(
-                        InternalAsyncMessage::ClientLostConnection(client_id))
-                        .await
-                        .expect("Failed to signal connection lost to sync server");
-                };
+                send_msg(
+                    client_id,
+                    &close_sender,
+                    &to_sync_server,
+                    &mut framed_send_stream,
+                    msg_bytes,
+                )
+                .await
             }
         } => {}
     }
+    while let Ok(msg_bytes) = to_client_receiver.try_recv() {
+        if let Err(err) = framed_send_stream.send(msg_bytes.clone()).await {
+            error!("Error while sending to client {}: {}", client_id, err);
+        };
+    }
+    if let Err(err) = framed_send_stream.flush().await {
+        error!(
+            "Error while flushing stream to client {}: {}",
+            client_id, err
+        );
+    }
+    if let Err(err) = framed_send_stream.into_inner().finish().await {
+        error!(
+            "Failed to shutdown stream gracefully for client {}: {}",
+            client_id, err
+        );
+    }
+    connection.close(VarInt::from_u32(0), "closed".as_bytes());
+}
+
+async fn send_msg(
+    client_id: ClientId,
+    close_sender: &tokio::sync::broadcast::Sender<()>,
+    to_sync_server: &mpsc::Sender<InternalAsyncMessage>,
+    framed_send_stream: &mut FramedWrite<SendStream, LengthDelimitedCodec>,
+    msg_bytes: Bytes,
+) {
+    // TODO Perf: Batch frames for a send_all
+    if let Err(err) = framed_send_stream.send(msg_bytes.clone()).await {
+        error!("Error while sending to client {}: {}", client_id, err);
+        error!("Client {} seems disconnected, closing resources", client_id);
+        // Emit ClientLostConnection to properly update the server about this client state.
+        // Raise ClientLostConnection event before emitting a close signal because we have no guarantee to continue this async execution after the close signal has been processed.
+        to_sync_server
+            .send(InternalAsyncMessage::ClientLostConnection(client_id))
+            .await
+            .expect("Failed to signal connection lost to sync server");
+        if let Err(_) = close_sender.send(()) {
+            error!(
+                "Failed to close all client streams & resources for client {}",
+                client_id
+            )
+        }
+    };
 }
 
 async fn client_receiver_task(
@@ -605,8 +662,12 @@ fn update_sync_server(
                     connection_events.send(ConnectionEvent { id: id });
                 }
                 InternalAsyncMessage::ClientLostConnection(client_id) => {
-                    endpoint.clients.remove(&client_id);
-                    connection_lost_events.send(ConnectionLostEvent { id: client_id });
+                    match endpoint.clients.remove(&client_id) {
+                        Some(_) => {
+                            connection_lost_events.send(ConnectionLostEvent { id: client_id })
+                        }
+                        None => (),
+                    }
                 }
             }
         }
