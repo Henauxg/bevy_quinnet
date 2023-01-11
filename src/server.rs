@@ -273,7 +273,7 @@ impl Endpoint {
         match self.clients.remove(&client_id) {
             Some(client_connection) => match client_connection.close_sender.send(()) {
                 Ok(_) => Ok(()),
-                Err(_) => Err(QuinnetError::InternalChannelClosed),
+                Err(_) => Err(QuinnetError::ClientAlreadyDisconnected(client_id)),
             },
             None => Err(QuinnetError::UnknownClient(client_id)),
         }
