@@ -665,26 +665,26 @@ async fn handle_connection_channels(
     mut from_sync_client: mpsc::Receiver<InternalSyncMessage>,
     to_sync_client: mpsc::Sender<InternalAsyncMessage>,
 ) {
-    // let close_receiver_clone = close_receiver.resubscribe();
+    let close_receiver_clone = close_receiver.resubscribe();
     tokio::select! {
         _ = close_receiver.recv() => {
             trace!("Connection Channels listener received a close signal")
         }
         _ = async {
             while let Some(sync_message) = from_sync_client.recv().await {
-                 let InternalSyncMessage::CreateChannel{ channel_id,  to_server_receiver, channel_close_receiver } = sync_message;
+                let InternalSyncMessage::CreateChannel{ channel_id,  to_server_receiver, channel_close_receiver } = sync_message;
 
-                //  let close_receiver = close_receiver_clone.resubscribe();
-                 let connection_handle = connection.clone();
-                 let to_sync_client = to_sync_client.clone();
-                 match channel_id {
+                let close_receiver = close_receiver_clone.resubscribe();
+                let connection_handle = connection.clone();
+                let to_sync_client = to_sync_client.clone();
+                match channel_id {
                     ChannelId::OrderedReliable(_) => {
                         tokio::spawn(async move {
                             ordered_reliable_channel_task(
                                 connection_handle,
                                 to_sync_client,
                                 || InternalAsyncMessage::LostConnection,
-                                // close_receiver,
+                                 close_receiver,
                                 channel_close_receiver,
                                 to_server_receiver
                             )
@@ -697,7 +697,7 @@ async fn handle_connection_channels(
                                 connection_handle,
                                 to_sync_client,
                                 || InternalAsyncMessage::LostConnection,
-                                // close_receiver,
+                                 close_receiver,
                                 channel_close_receiver,
                                 to_server_receiver
                             )
