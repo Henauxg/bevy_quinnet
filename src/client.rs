@@ -31,7 +31,7 @@ use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 use crate::shared::{
     channel::{
         ordered_reliable_channel_task, unordered_reliable_channel_task, Channel, ChannelId,
-        ChannelType, OrdRelChannelId,
+        ChannelType, MultiChannelId,
     },
     AsyncRuntime, QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
@@ -152,7 +152,7 @@ pub struct Connection {
     state: ConnectionState,
     channels: HashMap<ChannelId, Channel>,
     default_channel: Option<ChannelId>,
-    last_gen_id: OrdRelChannelId,
+    last_gen_id: MultiChannelId,
     receiver: mpsc::Receiver<Bytes>,
     close_sender: broadcast::Sender<()>,
 

@@ -10,7 +10,7 @@ use tokio::sync::{
 };
 use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
 
-pub(crate) type OrdRelChannelId = u64;
+pub(crate) type MultiChannelId = u64;
 
 #[derive(Debug, Copy, Clone)]
 pub enum ChannelType {
@@ -21,7 +21,7 @@ pub enum ChannelType {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum ChannelId {
-    OrderedReliable(OrdRelChannelId),
+    OrderedReliable(MultiChannelId),
     UnorderedReliable,
     Unreliable,
 }
@@ -132,24 +132,3 @@ async fn new_uni_frame_sender(
         .expect("Failed to open send stream");
     FramedWrite::new(uni_sender, LengthDelimitedCodec::new())
 }
-
-// async fn send_msg(
-//     // close_sender: &tokio::sync::broadcast::Sender<()>,
-//     to_sync_client: &mpsc::Sender<InternalAsyncMessage>,
-//     frame_send: &mut FramedWrite<SendStream, LengthDelimitedCodec>,
-//     msg_bytes: Bytes,
-// ) {
-//     if let Err(err) = frame_send.send(msg_bytes).await {
-//         error!("Error while sending, {}", err);
-//         error!("Client seems disconnected, closing resources");
-//         // Emit LostConnection to properly update the connection about its state.
-//         // Raise LostConnection event before emitting a close signal because we have no guarantee to continue this async execution after the close signal has been processed.
-//         to_sync_client
-//             .send(InternalAsyncMessage::LostConnection)
-//             .await
-//             .expect("Failed to signal connection lost to sync client");
-//         // if let Err(_) = close_sender.send(()) {
-//         //     error!("Failed to close all client streams & resources")
-//         // }
-//     }
-// }
