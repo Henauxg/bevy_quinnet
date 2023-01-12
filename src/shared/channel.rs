@@ -33,6 +33,20 @@ impl std::fmt::Display for ChannelId {
 }
 
 #[derive(Debug)]
+pub(crate) enum ChannelAsyncMessage {
+    LostConnection,
+}
+
+#[derive(Debug)]
+pub(crate) enum ChannelSyncMessage {
+    CreateChannel {
+        channel_id: ChannelId,
+        bytes_to_channel_recv: mpsc::Receiver<Bytes>,
+        channel_close_recv: mpsc::Receiver<()>,
+    },
+}
+
+#[derive(Debug)]
 pub struct Channel {
     sender: mpsc::Sender<Bytes>,
     close_sender: mpsc::Sender<()>,
@@ -67,30 +81,29 @@ impl Channel {
     }
 }
 
-pub(crate) async fn ordered_reliable_channel_task<T: Debug>(
+pub(crate) async fn ordered_reliable_channel_task(
     connection: quinn::Connection,
     _: mpsc::Sender<()>,
-    to_sync_client: mpsc::Sender<T>,
-    on_lost_connection: fn() -> T,
-    mut close_receiver: broadcast::Receiver<()>,
-    mut channel_close_receiver: mpsc::Receiver<()>,
-    mut to_server_receiver: mpsc::Receiver<Bytes>,
+    from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
+    mut close_recv: broadcast::Receiver<()>,
+    mut channel_close_recv: mpsc::Receiver<()>,
+    mut bytes_to_channel_recv: mpsc::Receiver<Bytes>,
 ) {
     let mut frame_sender = new_uni_frame_sender(&connection).await;
 
     tokio::select! {
-        _ = close_receiver.recv() => {
+        _ = close_recv.recv() => {
             trace!("Ordered Reliable Channel task received a close signal")
         }
-        _ = channel_close_receiver.recv() => {
+        _ = channel_close_recv.recv() => {
             trace!("Ordered Reliable Channel task received a channel close signal")
         }
         _ = async {
-            while let Some(msg_bytes) = to_server_receiver.recv().await {
+            while let Some(msg_bytes) = bytes_to_channel_recv.recv().await {
                 if let Err(err) = frame_sender.send(msg_bytes).await {
                     error!("Error while sending, {}", err);
-                    to_sync_client.send(
-                        on_lost_connection())
+                    from_channels_send.send(
+                        ChannelAsyncMessage::LostConnection)
                         .await
                         .expect("Failed to signal connection lost to sync client");
                 }
@@ -99,7 +112,7 @@ pub(crate) async fn ordered_reliable_channel_task<T: Debug>(
             trace!("Ordered Reliable Channel task ended")
         }
     };
-    while let Ok(msg_bytes) = to_server_receiver.try_recv() {
+    while let Ok(msg_bytes) = bytes_to_channel_recv.try_recv() {
         if let Err(err) = frame_sender.send(msg_bytes).await {
             error!("Error while sending, {}", err);
         }
@@ -112,44 +125,58 @@ pub(crate) async fn ordered_reliable_channel_task<T: Debug>(
     }
 }
 
-pub(crate) async fn unordered_reliable_channel_task<T: Debug>(
+pub(crate) async fn unordered_reliable_channel_task(
     connection: quinn::Connection,
-    _: mpsc::Sender<()>,
-    to_sync_client: mpsc::Sender<T>,
-    on_lost_connection: fn() -> T,
-    mut close_receiver: broadcast::Receiver<()>,
-    mut channel_close_receiver: mpsc::Receiver<()>,
-    mut to_server_receiver: mpsc::Receiver<Bytes>,
+    channel_tasks_keepalive: mpsc::Sender<()>,
+    from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
+    mut close_recv: broadcast::Receiver<()>,
+    mut channel_close_recv: mpsc::Receiver<()>,
+    mut bytes_to_channel_recv: mpsc::Receiver<Bytes>,
 ) {
     tokio::select! {
-        _ = close_receiver.recv() => {
+        _ = close_recv.recv() => {
             trace!("Ordered Reliable Channel task received a close signal")
         }
-        _ = channel_close_receiver.recv() => {
+        _ = channel_close_recv.recv() => {
             trace!("Unordered Reliable Channel task received a channel close signal")
         }
         _ = async {
-            while let Some(msg_bytes) = to_server_receiver.recv().await {
-                let mut frame_sender = new_uni_frame_sender(&connection).await;
-                if let Err(err) = frame_sender.send(msg_bytes).await {
-                    error!("Error while sending, {}", err);
-                    to_sync_client.send(
-                        on_lost_connection())
-                        .await
-                        .expect("Failed to signal connection lost to sync client");
-                }
-                todo!("finish the stream")
+            while let Some(msg_bytes) = bytes_to_channel_recv.recv().await {
+                let conn = connection.clone();
+                let to_sync_client_clone = from_channels_send.clone();
+                let channels_keepalive_clone = channel_tasks_keepalive.clone();
+                tokio::spawn(async move {
+                    let mut frame_sender = new_uni_frame_sender(&conn).await;
+                    if let Err(err) = frame_sender.send(msg_bytes).await {
+                        error!("Error while sending, {}", err);
+                        to_sync_client_clone.send(
+                            ChannelAsyncMessage::LostConnection)
+                            .await
+                            .expect("Failed to signal connection lost to sync client");
+                    }
+                    if let Err(err) = frame_sender.into_inner().finish().await {
+                        error!("Failed to shutdown stream gracefully: {}", err);
+                    }
+                    drop(channels_keepalive_clone)
+                });
             }
         } => {
             trace!("Unordered Reliable Channel task ended")
         }
     };
-    while let Ok(msg_bytes) = to_server_receiver.try_recv() {
-        let mut frame_sender = new_uni_frame_sender(&connection).await;
-        if let Err(err) = frame_sender.send(msg_bytes).await {
-            error!("Error while sending, {}", err);
-        }
-        todo!("finish the stream")
+    while let Ok(msg_bytes) = bytes_to_channel_recv.try_recv() {
+        let conn = connection.clone();
+        let channels_keepalive_clone = channel_tasks_keepalive.clone();
+        tokio::spawn(async move {
+            let mut frame_sender = new_uni_frame_sender(&conn).await;
+            if let Err(err) = frame_sender.send(msg_bytes).await {
+                error!("Error while sending, {}", err);
+            }
+            if let Err(err) = frame_sender.into_inner().finish().await {
+                error!("Failed to shutdown stream gracefully: {}", err);
+            }
+            drop(channels_keepalive_clone)
+        });
     }
 }
 
