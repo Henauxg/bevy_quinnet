@@ -1,7 +1,7 @@
 use std::{
     collections::{
         hash_map::{Iter, IterMut},
-        HashMap,
+        HashMap, HashSet,
     },
     error::Error,
     net::SocketAddr,
@@ -11,7 +11,7 @@ use std::{
 use bevy::prelude::*;
 use bytes::Bytes;
 use futures_util::StreamExt;
-use quinn::{ClientConfig, Connection as QuinnConnection, Endpoint};
+use quinn::{ClientConfig, Connection as QuinnConnection, Endpoint, VarInt};
 use quinn_proto::ConnectionStats;
 use serde::Deserialize;
 use tokio::{
@@ -665,6 +665,9 @@ async fn handle_connection_channels(
     mut from_sync_client: mpsc::Receiver<InternalSyncMessage>,
     to_sync_client: mpsc::Sender<InternalAsyncMessage>,
 ) {
+    // Use an mpsc channel where, instead of sending messages, we wait for the channel to be closed, which happens when every sender has been dropped. We can't use a JoinSet as simply here since we would also need to drain closed channels from it.
+    let (channel_tasks_keepalive, mut channel_tasks_waiter) = mpsc::channel(1);
+
     let close_receiver_clone = close_receiver.resubscribe();
     tokio::select! {
         _ = close_receiver.recv() => {
@@ -677,11 +680,14 @@ async fn handle_connection_channels(
                 let close_receiver = close_receiver_clone.resubscribe();
                 let connection_handle = connection.clone();
                 let to_sync_client = to_sync_client.clone();
+                let channels_keepalive_clone = channel_tasks_keepalive.clone();
+
                 match channel_id {
                     ChannelId::OrderedReliable(_) => {
                         tokio::spawn(async move {
                             ordered_reliable_channel_task(
                                 connection_handle,
+                                channels_keepalive_clone,
                                 to_sync_client,
                                 || InternalAsyncMessage::LostConnection,
                                  close_receiver,
@@ -695,6 +701,7 @@ async fn handle_connection_channels(
                         tokio::spawn(async move {
                             unordered_reliable_channel_task(
                                 connection_handle,
+                                channels_keepalive_clone,
                                 to_sync_client,
                                 || InternalAsyncMessage::LostConnection,
                                  close_receiver,
@@ -711,6 +718,14 @@ async fn handle_connection_channels(
             trace!("Connection Channels listener ended")
         }
     };
+
+    // Wait for all the channels to have flushed/finished:
+    // We drop our sender first because the recv() call otherwise sleeps forever.
+    // When every sender has gone out of scope, the recv call will return with an error. We ignore the error.
+    drop(channel_tasks_keepalive);
+    let _ = channel_tasks_waiter.recv().await;
+
+    connection.close(VarInt::from_u32(0), "closed".as_bytes());
 }
 
 // Receive messages from the async client tasks and update the sync client.
