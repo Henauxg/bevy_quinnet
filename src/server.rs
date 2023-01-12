@@ -20,6 +20,7 @@ use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 use crate::{
     server::certificate::retrieve_certificate,
     shared::{
+        channel::{ChannelAsyncMessage, ChannelSyncMessage},
         AsyncRuntime, ClientId, QuinnetError, DEFAULT_KEEP_ALIVE_INTERVAL_S,
         DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
     },
@@ -108,11 +109,11 @@ pub(crate) struct ClientConnection {
 
 pub struct Endpoint {
     clients: HashMap<ClientId, ClientConnection>,
-    payloads_receiver: mpsc::Receiver<ClientPayload>,
+    payloads_recv: mpsc::Receiver<ClientPayload>,
     close_sender: broadcast::Sender<()>,
 
-    pub(crate) internal_receiver: mpsc::Receiver<InternalAsyncMessage>,
-    pub(crate) internal_sender: broadcast::Sender<InternalSyncMessage>,
+    pub(crate) from_async_server_recv: mpsc::Receiver<InternalAsyncMessage>,
+    pub(crate) to_async_server_send: broadcast::Sender<InternalSyncMessage>,
 }
 
 impl Endpoint {
@@ -250,7 +251,7 @@ impl Endpoint {
     }
 
     pub fn receive_payload(&mut self) -> Result<Option<ClientPayload>, QuinnetError> {
-        match self.payloads_receiver.try_recv() {
+        match self.payloads_recv.try_recv() {
             Ok(msg) => Ok(Some(msg)),
             Err(err) => match err {
                 TryRecvError::Empty => Ok(None),
@@ -336,14 +337,14 @@ impl Server {
             .ok_or(QuinnetError::LockAcquisitionFailure)?
             .keep_alive_interval(Some(Duration::from_secs(DEFAULT_KEEP_ALIVE_INTERVAL_S)));
 
-        let (from_clients_sender, from_clients_receiver) =
+        let (payloads_from_clients_send, payloads_from_clients_recv) =
             mpsc::channel::<ClientPayload>(DEFAULT_MESSAGE_QUEUE_SIZE);
-        let (to_sync_server, from_async_server) =
+        let (to_sync_server_send, from_async_server_recv) =
             mpsc::channel::<InternalAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
-        let (to_async_server, from_sync_server) =
+        let (to_async_server_send, from_sync_server_recv) =
             broadcast::channel::<InternalSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
         // Create a close channel for this endpoint
-        let (endpoint_close_sender, endpoint_close_receiver) =
+        let (endpoint_close_send, endpoint_close_recv) =
             broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
         info!("Starting endpoint on: {} ...", server_adr_str);
@@ -352,20 +353,20 @@ impl Server {
             endpoint_task(
                 server_config,
                 server_addr,
-                to_sync_server.clone(),
-                endpoint_close_receiver,
-                from_sync_server,
-                from_clients_sender.clone(),
+                to_sync_server_send.clone(),
+                endpoint_close_recv,
+                from_sync_server_recv,
+                payloads_from_clients_send.clone(),
             )
             .await;
         });
 
         self.endpoint = Some(Endpoint {
             clients: HashMap::new(),
-            payloads_receiver: from_clients_receiver,
-            close_sender: endpoint_close_sender,
-            internal_receiver: from_async_server,
-            internal_sender: to_async_server.clone(),
+            payloads_recv: payloads_from_clients_recv,
+            close_sender: endpoint_close_send,
+            from_async_server_recv,
+            to_async_server_send: to_async_server_send.clone(),
         });
 
         Ok(server_cert)
@@ -393,10 +394,10 @@ impl Server {
 async fn endpoint_task(
     endpoint_config: ServerConfig,
     endpoint_adr: SocketAddr,
-    to_sync_server: mpsc::Sender<InternalAsyncMessage>,
-    mut close_receiver: broadcast::Receiver<()>,
-    mut from_sync_server: broadcast::Receiver<InternalSyncMessage>,
-    from_clients_sender: mpsc::Sender<ClientPayload>,
+    to_sync_server_send: mpsc::Sender<InternalAsyncMessage>,
+    mut endpoint_close_recv: broadcast::Receiver<()>,
+    mut from_sync_server_recv: broadcast::Receiver<InternalSyncMessage>,
+    payloads_from_clients_send: mpsc::Sender<ClientPayload>,
 ) {
     let mut client_gen_id: ClientId = 0;
     let mut client_id_mappings = HashMap::new();
@@ -405,7 +406,7 @@ async fn endpoint_task(
         .expect("Failed to create the endpoint");
     // Handle incoming connections/clients.
     tokio::select! {
-        _ = close_receiver.recv() => {
+        _ = endpoint_close_recv.recv() => {
             trace!("Endpoint incoming connection handler received a request to close")
         }
         _ = async {
@@ -420,9 +421,9 @@ async fn endpoint_task(
                         handle_client_connection(
                             connection,
                             client_id,
-                            &to_sync_server,
-                            &mut from_sync_server,
-                            from_clients_sender.clone(),
+                            &to_sync_server_send,
+                            &mut from_sync_server_recv,
+                            payloads_from_clients_send.clone(),
                         )
                         .await;
                     },
@@ -436,9 +437,9 @@ async fn endpoint_task(
 async fn handle_client_connection(
     connection: quinn::Connection,
     client_id: ClientId,
-    to_sync_server: &mpsc::Sender<InternalAsyncMessage>,
-    from_sync_server: &mut broadcast::Receiver<InternalSyncMessage>,
-    from_clients_sender: mpsc::Sender<ClientPayload>,
+    to_sync_server_send: &mpsc::Sender<InternalAsyncMessage>,
+    from_sync_server_recv: &mut broadcast::Receiver<InternalSyncMessage>,
+    payloads_from_clients_send: mpsc::Sender<ClientPayload>,
 ) {
     info!(
         "New connection from {}, client_id: {}, stable_id : {}",
@@ -447,42 +448,41 @@ async fn handle_client_connection(
         connection.stable_id()
     );
 
-    // Create a close channel for this client
-    let (client_close_sender, client_close_receiver) =
+    let (client_close_send, client_close_recv) =
         broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
     // Create an ordered reliable send channel for this client
     let (to_client_sender, to_client_receiver) = mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
 
     let _client_sender = {
-        let to_sync_server_clone = to_sync_server.clone();
-        let close_sender_clone = client_close_sender.clone();
+        let to_sync_server_send_clone = to_sync_server_send.clone();
+        let close_sender_clone = client_close_send.clone();
         let connection_clone = connection.clone();
         tokio::spawn(async move {
             client_sender_task(
                 client_id,
                 connection_clone,
                 to_client_receiver,
-                client_close_receiver,
+                client_close_recv,
                 close_sender_clone,
-                to_sync_server_clone,
+                to_sync_server_send_clone,
             )
             .await
         })
     };
 
     // Signal the sync server of this new connection
-    to_sync_server
+    to_sync_server_send
         .send(InternalAsyncMessage::ClientConnected(ClientConnection {
             client_id: client_id,
             sender: to_client_sender,
-            close_sender: client_close_sender.clone(),
+            close_sender: client_close_send.clone(),
         }))
         .await
         .expect("Failed to signal connection to sync client");
 
     // Wait for the sync server to acknowledge the connection before spawning reception tasks.
-    while let Ok(InternalSyncMessage::ClientConnectedAck(id)) = from_sync_server.recv().await {
+    while let Ok(InternalSyncMessage::ClientConnectedAck(id)) = from_sync_server_recv.recv().await {
         if id == client_id {
             break;
         }
@@ -490,8 +490,8 @@ async fn handle_client_connection(
 
     let _client_close_wait = {
         let conn = connection.clone();
-        let close_sender = client_close_sender.clone();
-        let to_sync_server = to_sync_server.clone();
+        let close_sender = client_close_send.clone();
+        let to_sync_server = to_sync_server_send.clone();
         tokio::spawn(async move {
             let conn_err = conn.closed().await;
             info!("Client {} disconnected: {}", client_id, conn_err);
@@ -508,8 +508,8 @@ async fn handle_client_connection(
         client_receiver_task(
             client_id,
             connection,
-            client_close_sender.subscribe(),
-            from_clients_sender,
+            client_close_send.subscribe(),
+            payloads_from_clients_send,
         )
         .await
     });
@@ -519,9 +519,9 @@ async fn client_sender_task(
     client_id: ClientId,
     connection: quinn::Connection,
     mut to_client_receiver: tokio::sync::mpsc::Receiver<Bytes>,
-    mut close_receiver: tokio::sync::broadcast::Receiver<()>,
+    mut client_close_recv: tokio::sync::broadcast::Receiver<()>,
     close_sender: tokio::sync::broadcast::Sender<()>,
-    to_sync_server: mpsc::Sender<InternalAsyncMessage>,
+    to_sync_server_send: mpsc::Sender<InternalAsyncMessage>,
 ) {
     let send_stream = connection.open_uni().await.expect(
         format!(
@@ -534,7 +534,7 @@ async fn client_sender_task(
     let mut framed_send_stream = FramedWrite::new(send_stream, LengthDelimitedCodec::new());
 
     tokio::select! {
-        _ = close_receiver.recv() => {
+        _ = client_close_recv.recv() => {
             trace!("Unidirectional send stream forced to disconnected for client: {}", client_id)
         }
         _ = async {
@@ -542,7 +542,7 @@ async fn client_sender_task(
                 send_msg(
                     client_id,
                     &close_sender,
-                    &to_sync_server,
+                    &to_sync_server_send,
                     &mut framed_send_stream,
                     msg_bytes,
                 )
@@ -652,13 +652,13 @@ fn update_sync_server(
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
 ) {
     if let Some(endpoint) = server.get_endpoint_mut() {
-        while let Ok(message) = endpoint.internal_receiver.try_recv() {
+        while let Ok(message) = endpoint.from_async_server_recv.try_recv() {
             match message {
                 InternalAsyncMessage::ClientConnected(connection) => {
                     let id = connection.client_id;
                     endpoint.clients.insert(id, connection);
                     endpoint
-                        .internal_sender
+                        .to_async_server_send
                         .send(InternalSyncMessage::ClientConnectedAck(id))
                         .unwrap();
                     connection_events.send(ConnectionEvent { id: id });
