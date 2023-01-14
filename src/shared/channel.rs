@@ -2,7 +2,7 @@ use super::QuinnetError;
 use bevy::prelude::{error, trace};
 use bytes::Bytes;
 use futures::sink::SinkExt;
-use quinn::SendStream;
+use quinn::{SendStream, VarInt};
 use std::fmt::Debug;
 use tokio::sync::{
     broadcast,
@@ -93,6 +93,73 @@ where
         ChannelType::UnorderedReliable => ChannelId::UnorderedReliable,
         ChannelType::Unreliable => ChannelId::Unreliable,
     }
+}
+
+pub(crate) async fn channels_task(
+    connection: quinn::Connection,
+    mut close_recv: broadcast::Receiver<()>,
+    mut to_channels_recv: mpsc::Receiver<ChannelSyncMessage>,
+    from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
+) {
+    // Use an mpsc channel where, instead of sending messages, we wait for the channel to be closed, which happens when every sender has been dropped. We can't use a JoinSet as simply here since we would also need to drain closed channels from it.
+    let (channel_tasks_keepalive, mut channel_tasks_waiter) = mpsc::channel::<()>(1);
+
+    let close_receiver_clone = close_recv.resubscribe();
+    tokio::select! {
+        _ = close_recv.recv() => {
+            trace!("Connection Channels listener received a close signal")
+        }
+        _ = async {
+            while let Some(sync_message) = to_channels_recv.recv().await {
+                let ChannelSyncMessage::CreateChannel{ channel_id,  bytes_to_channel_recv, channel_close_recv } = sync_message;
+
+                let close_receiver = close_receiver_clone.resubscribe();
+                let connection_handle = connection.clone();
+                let from_channels_send = from_channels_send.clone();
+                let channels_keepalive_clone = channel_tasks_keepalive.clone();
+
+                match channel_id {
+                    ChannelId::OrderedReliable(_) => {
+                        tokio::spawn(async move {
+                            ordered_reliable_channel_task(
+                                connection_handle,
+                                channels_keepalive_clone,
+                                from_channels_send,
+                                close_receiver,
+                                channel_close_recv,
+                                bytes_to_channel_recv
+                            )
+                            .await
+                        });
+                    },
+                    ChannelId::UnorderedReliable => {
+                        tokio::spawn(async move {
+                            unordered_reliable_channel_task(
+                                connection_handle,
+                                channels_keepalive_clone,
+                                from_channels_send,
+                                close_receiver,
+                                channel_close_recv,
+                                bytes_to_channel_recv
+                            )
+                            .await
+                        });
+                    },
+                    ChannelId::Unreliable => todo!(),
+                }
+            }
+        } => {
+            trace!("Connection Channels listener ended")
+        }
+    };
+
+    // Wait for all the channels to have flushed/finished:
+    // We drop our sender first because the recv() call otherwise sleeps forever.
+    // When every sender has gone out of scope, the recv call will return with an error. We ignore the error.
+    drop(channel_tasks_keepalive);
+    let _ = channel_tasks_waiter.recv().await;
+
+    connection.close(VarInt::from_u32(0), "closed".as_bytes());
 }
 
 pub(crate) async fn ordered_reliable_channel_task(
