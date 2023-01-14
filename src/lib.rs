@@ -219,7 +219,7 @@ mod tests {
         // Server listens with a cert loaded from a file
         {
             let mut server = server_app.world.resource_mut::<Server>();
-            let server_cert = server
+            let (server_cert, _) = server
                 .start_endpoint(
                     ServerConfigurationData::new(
                         SERVER_HOST.to_string(),
@@ -349,7 +349,7 @@ mod tests {
         // Let the endpoint fully stop.
         sleep(Duration::from_secs_f32(0.1));
 
-        let server_cert = server_app
+        let (server_cert, _) = server_app
             .world
             .resource_mut::<Server>()
             .start_endpoint(

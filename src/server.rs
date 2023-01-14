@@ -492,9 +492,10 @@ impl Endpoint {
     }
 
     fn open_default_channels(&mut self) -> Result<ChannelId, QuinnetError> {
-        self.open_channel(ChannelType::OrderedReliable)?;
+        let ordered_reliable_id = self.open_channel(ChannelType::OrderedReliable)?;
         self.open_channel(ChannelType::UnorderedReliable)?;
-        self.open_channel(ChannelType::Unreliable)
+        self.open_channel(ChannelType::Unreliable)?;
+        Ok(ordered_reliable_id)
     }
 
     fn create_channel(&mut self, channel_id: ChannelId) -> Result<ChannelId, QuinnetError> {
@@ -562,11 +563,13 @@ impl Server {
     }
 
     /// Run the server with the given [ServerConfigurationData] and [CertificateRetrievalMode]
+    ///
+    /// Returns the [ServerCertificate] generated or loaded, and the default [ChannelId]
     pub fn start_endpoint(
         &mut self,
         config: ServerConfigurationData,
         cert_mode: CertificateRetrievalMode,
-    ) -> Result<ServerCertificate, QuinnetError> {
+    ) -> Result<(ServerCertificate, ChannelId), QuinnetError> {
         let server_adr_str = format!("{}:{}", config.local_bind_host, config.port);
         let server_addr = server_adr_str.parse::<SocketAddr>()?;
 
@@ -603,22 +606,20 @@ impl Server {
             .await;
         });
 
-        {
-            let mut endpoint = Endpoint {
-                clients: HashMap::new(),
-                channels: HashSet::new(),
-                default_channel: None,
-                last_gen_id: 0,
-                payloads_from_clients_recv,
-                close_sender: endpoint_close_send,
-                from_async_server_recv,
-                to_async_server_send: to_async_server_send.clone(),
-            };
-            endpoint.open_default_channels()?;
-            self.endpoint = Some(endpoint);
-        }
+        let mut endpoint = Endpoint {
+            clients: HashMap::new(),
+            channels: HashSet::new(),
+            default_channel: None,
+            last_gen_id: 0,
+            payloads_from_clients_recv,
+            close_sender: endpoint_close_send,
+            from_async_server_recv,
+            to_async_server_send: to_async_server_send.clone(),
+        };
+        let ordered_reliable_id = endpoint.open_default_channels()?;
+        self.endpoint = Some(endpoint);
 
-        Ok(server_cert)
+        Ok((server_cert, ordered_reliable_id))
     }
 
     pub fn stop_endpoint(&mut self) -> Result<(), QuinnetError> {

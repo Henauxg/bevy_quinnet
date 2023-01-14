@@ -430,11 +430,13 @@ impl Client {
     }
 
     /// Open a connection to a server with the given [ConnectionConfiguration] and [CertificateVerificationMode]. The connection will raise an event when fully connected, see [ConnectionEvent]
+    ///
+    /// Returns the [ConnectionId], and the default [ChannelId]
     pub fn open_connection(
         &mut self,
         config: ConnectionConfiguration,
         cert_mode: CertificateVerificationMode,
-    ) -> Result<ConnectionId, QuinnetError> {
+    ) -> Result<(ConnectionId, ChannelId), QuinnetError> {
         let (bytes_from_server_send, bytes_from_server_recv) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
 
@@ -460,7 +462,7 @@ impl Client {
             from_channels_recv,
         };
         // Create default channels
-        connection.open_channel(ChannelType::OrderedReliable)?;
+        let ordered_reliable_id = connection.open_channel(ChannelType::OrderedReliable)?;
         connection.open_channel(ChannelType::UnorderedReliable)?;
         connection.open_channel(ChannelType::Unreliable)?;
 
@@ -485,7 +487,7 @@ impl Client {
             self.default_connection_id = Some(connection_id);
         }
 
-        Ok(connection_id)
+        Ok((connection_id, ordered_reliable_id))
     }
 
     /// Set the default connection
