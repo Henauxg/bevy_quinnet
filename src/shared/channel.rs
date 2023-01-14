@@ -81,6 +81,20 @@ impl Channel {
     }
 }
 
+pub(crate) fn get_channel_id_from_type<F>(
+    channel_type: ChannelType,
+    mut multi_id_generator: F,
+) -> ChannelId
+where
+    F: FnMut() -> MultiChannelId,
+{
+    match channel_type {
+        ChannelType::OrderedReliable => ChannelId::OrderedReliable(multi_id_generator()),
+        ChannelType::UnorderedReliable => ChannelId::UnorderedReliable,
+        ChannelType::Unreliable => ChannelId::Unreliable,
+    }
+}
+
 pub(crate) async fn ordered_reliable_channel_task(
     connection: quinn::Connection,
     _: mpsc::Sender<()>,
