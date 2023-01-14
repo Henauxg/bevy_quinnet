@@ -481,6 +481,16 @@ impl Endpoint {
         }
     }
 
+    /// Set the default channel
+    pub fn set_default_channel(&mut self, channel_id: ChannelId) {
+        self.default_channel = Some(channel_id);
+    }
+
+    /// Get the default Channel Id
+    pub fn get_default_channel(&self) -> Option<ChannelId> {
+        self.default_channel
+    }
+
     fn open_default_channels(&mut self) -> Result<ChannelId, QuinnetError> {
         self.open_channel(ChannelType::OrderedReliable)?;
         self.open_channel(ChannelType::UnorderedReliable)?;

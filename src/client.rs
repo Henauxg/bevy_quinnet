@@ -330,6 +330,16 @@ impl Connection {
         }
     }
 
+    /// Set the default channel
+    pub fn set_default_channel(&mut self, channel_id: ChannelId) {
+        self.default_channel = Some(channel_id);
+    }
+
+    /// Get the default Channel Id
+    pub fn get_default_channel(&self) -> Option<ChannelId> {
+        self.default_channel
+    }
+
     fn create_channel(&mut self, channel_id: ChannelId) -> Result<ChannelId, QuinnetError> {
         let (bytes_to_channel_send, bytes_to_channel_recv) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
