@@ -47,7 +47,7 @@ pub(crate) enum ChannelSyncMessage {
 }
 
 #[derive(Debug)]
-pub struct Channel {
+pub(crate) struct Channel {
     sender: mpsc::Sender<Bytes>,
     close_sender: mpsc::Sender<()>,
 }
@@ -145,7 +145,9 @@ pub(crate) async fn channels_task(
                             .await
                         });
                     },
-                    ChannelId::Unreliable => todo!(),
+                    ChannelId::Unreliable => {
+                        // TODO
+                    },
                 }
             }
         } => {
