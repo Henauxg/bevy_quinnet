@@ -12,6 +12,7 @@ A Client/Server game networking plugin using [QUIC](https://www.chromium.org/qui
   - [Quickstart](#quickstart)
     - [Client](#client)
     - [Server](#server)
+  - [Channels](#channels)
   - [Certificates and server authentication](#certificates-and-server-authentication)
   - [Logs](#logs)
   - [Examples](#examples)
@@ -29,7 +30,7 @@ Most of the features proposed by the big networking libs are supported by defaul
 * *Connection-oriented API (like TCP)*: -> by default
 * *... but message-oriented (like UDP), not stream-oriented*: -> by default (*)
 * *Supports both reliable and unreliable message types*: ->by default
-* *Messages can be larger than underlying MTU. The protocol performs fragmentation, reassembly, and retransmission for reliable messages*: -> by default
+* *Messages can be larger than underlying MTU. The protocol performs fragmentation, reassembly, and retransmission for reliable messages*: -> by default (frag & reassembly is not done by the protocol for unreliable packets)
 * *A reliability layer [...]. It is based on the "ack vector" model from DCCP (RFC 4340, section 11.4) and Google QUIC and discussed in the context of games by Glenn Fiedler [...]*: -> by default.
 * *Encryption. [...] The details for shared key derivation and per-packet IV are based on the design used by Google's QUIC protocol*: -> by default
 * *Tools for simulating packet latency/loss, and detailed stats measurement*: -> Not by default
@@ -70,11 +71,12 @@ Those are the features/tasks that will probably come next (in no particular orde
 - [x] Feature: Send messages from the server to a specific client
 - [x] Feature: Send messages from the server to a selected group of clients
 - [x] Feature: Raise connection/disconnection events from the plugins
-- [ ] Feature: Expose unordered & ordered reliable message channels from client & server
-- [ ] Feature: Send & receive unreliable messages from client & server
+- [x] Feature: Implement unordered & ordered reliable message channels from client & server
+- [ ] Feature: Implement unreliable message channel from client & server
+- [ ] Feature: Send unreliable messages larger than the MTU from client & server
 - [x] Feature: Implementing a way to launch a local server from a client
 - [x] Feature: Client should be capable to connect to another server after disconnecting
-- [ ] Performance: Messages aggregation before sending
+- [ ] Performance: feed multiples messages before flushing channels
 - [ ] Clean: Rework the error handling in the async back-end
 - [x] Clean: Rework the configuration input for the client & server plugins
 - [ ] Documentation: Fully document the API
@@ -192,6 +194,41 @@ fn handle_client_messages(
 
 You can also use `endpoint.broadcast_message`, which will send a message to all connected clients. "Connected" here means connected to the server plugin, which happens before your own app handshakes/verifications if you have any. Use `send_group_message` if you want to control the recipients.
 
+## Channels
+
+There are currently 3 types of channels available when you send a message:
+- `OrderedReliable`: ensure that messages sent are delivered, and are processed by the receiving end in the same order as they were sent (exemple usage: chat messages)
+- `UnorderedReliable`: ensure that messages sent are delivered, in any order (exemple usage: an animation trigger)
+- `Unreliable`: no guarantees on the delivery or the order of processing by the receiving end (exemple usage: an entity position sent every ticks)
+
+By default for the server as well as the client, Quinnet creates 1 channel instance of each type, eahc with their own ChannelId. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is an `OrderedReliable` channel.
+
+```rust
+let connection = client.connection();
+// No channel specified, default channel is used
+connection.send_message(message);
+// Specifying the channel id
+connection.send_message_on(ChannelId::UnorderedReliable, message);
+// Changing the default channel
+connection.set_default_channel(ChannelId::Unreliable);
+```
+
+One channel instance is more than enough for `UnorderedReliable` and `Unreliable` since messages are not ordered on those, in fact even if you tried to create more, Quinnet would just reuse the existing ones. This is why you can directly use their ChannelId when sending messages as seen above.
+
+In some cases, you may however want to create more than one channel instance, it may be the case for `OrderedReliable` channels to avoid some [Head of line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking) issues. Channels can be opened & closed at any time.
+
+```rust
+// If you want to create more channels:
+let chat_channel = client.connection().open_channel(ChannelType::OrderedReliable).unwrap();
+client.connection().send_message_on(chat_channel, chat_message);
+```
+
+On the server, channels are created and closed at the endpoint level and exist for all current & future clients.
+```rust
+let chat_channel = server.endpoint().open_channel(ChannelType::OrderedReliable).unwrap();
+server.endpoint().send_message_on(client_id, chat_channel, chat_message);
+```
+
 ## Certificates and server authentication
 
 Bevy Quinnet (through Quinn & QUIC) uses TLS 1.3 for authentication, the server needs to provide the client with a certificate confirming its identity, and the client must be configured to trust the certificates it receives from the server.
@@ -278,8 +315,8 @@ Compatibility of `bevy_quinnet` versions:
 
 | `bevy_quinnet` | `bevy` |
 | :------------- | :----- |
-| `0.1`          | `0.8`  |
 | `0.2`          | `0.9`  |
+| `0.1`          | `0.8`  |
 
 ## Limitations
 
