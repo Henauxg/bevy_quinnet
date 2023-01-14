@@ -146,7 +146,17 @@ pub(crate) async fn channels_task(
                         });
                     },
                     ChannelId::Unreliable => {
-                        // TODO
+                        tokio::spawn(async move {
+                            unreliable_channel_task(
+                                connection_handle,
+                                channels_keepalive_clone,
+                                from_channels_send,
+                                close_receiver,
+                                channel_close_recv,
+                                bytes_to_channel_recv
+                            )
+                            .await
+                        });
                     },
                 }
             }
@@ -260,6 +270,43 @@ pub(crate) async fn unordered_reliable_channel_task(
             }
             drop(channels_keepalive_clone)
         });
+    }
+}
+
+pub(crate) async fn unreliable_channel_task(
+    connection: quinn::Connection,
+    _: mpsc::Sender<()>,
+    from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
+    mut close_recv: broadcast::Receiver<()>,
+    mut channel_close_recv: mpsc::Receiver<()>,
+    mut bytes_to_channel_recv: mpsc::Receiver<Bytes>,
+) {
+    tokio::select! {
+        _ = close_recv.recv() => {
+            trace!("Unreliable Channel task received a close signal")
+        }
+        _ = channel_close_recv.recv() => {
+            trace!("Unreliable Channel task received a channel close signal")
+        }
+        _ = async {
+            while let Some(msg_bytes) = bytes_to_channel_recv.recv().await {
+                // TODO Test datagram_send_buffer_space + adapt to max_datagram_size
+                if let Err(err) = connection.send_datagram(msg_bytes) {
+                    error!("Error while sending, {}", err);
+                    from_channels_send.send(
+                        ChannelAsyncMessage::LostConnection)
+                        .await
+                        .expect("Failed to signal connection lost to sync client");
+                }
+            }
+        } => {
+            trace!("Unreliable Channel task ended")
+        }
+    };
+    while let Ok(msg_bytes) = bytes_to_channel_recv.try_recv() {
+        if let Err(err) = connection.send_datagram(msg_bytes) {
+            error!("Error while sending, {}", err);
+        }
     }
 }
 
