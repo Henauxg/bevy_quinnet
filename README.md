@@ -201,7 +201,7 @@ There are currently 3 types of channels available when you send a message:
 - `UnorderedReliable`: ensure that messages sent are delivered, in any order (exemple usage: an animation trigger)
 - `Unreliable`: no guarantees on the delivery or the order of processing by the receiving end (exemple usage: an entity position sent every ticks)
 
-By default for the server as well as the client, Quinnet creates 1 channel instance of each type, eahc with their own ChannelId. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is an `OrderedReliable` channel.
+By default for the server as well as the client, Quinnet creates 1 channel instance of each type, each with their own `ChannelId`. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is an `OrderedReliable` channel.
 
 ```rust
 let connection = client.connection();
@@ -213,12 +213,12 @@ connection.send_message_on(ChannelId::UnorderedReliable, message);
 connection.set_default_channel(ChannelId::Unreliable);
 ```
 
-One channel instance is more than enough for `UnorderedReliable` and `Unreliable` since messages are not ordered on those, in fact even if you tried to create more, Quinnet would just reuse the existing ones. This is why you can directly use their ChannelId when sending messages as seen above.
+One channel instance is more than enough for `UnorderedReliable` and `Unreliable` since messages are not ordered on those, in fact even if you tried to create more, Quinnet would just reuse the existing ones. This is why you can directly use their `ChannelId` when sending messages, as seen above.
 
 In some cases, you may however want to create more than one channel instance, it may be the case for `OrderedReliable` channels to avoid some [Head of line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking) issues. Channels can be opened & closed at any time.
 
 ```rust
-// If you want to create more channels:
+// If you want to create more channels
 let chat_channel = client.connection().open_channel(ChannelType::OrderedReliable).unwrap();
 client.connection().send_message_on(chat_channel, chat_message);
 ```
