@@ -30,8 +30,8 @@ use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 
 use crate::shared::{
     channel::{
-        ordered_reliable_channel_task, unordered_reliable_channel_task, Channel,
-        ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelType, MultiChannelId,
+        get_channel_id_from_type, ordered_reliable_channel_task, unordered_reliable_channel_task,
+        Channel, ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelType, MultiChannelId,
     },
     AsyncRuntime, QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
@@ -302,26 +302,13 @@ impl Connection {
     }
 
     pub fn open_channel(&mut self, channel_type: ChannelType) -> Result<ChannelId, QuinnetError> {
-        match channel_type {
-            ChannelType::OrderedReliable => {
-                self.last_gen_id += 1;
-                let channel_id = ChannelId::OrderedReliable(self.last_gen_id);
-                self.create_channel(channel_id)
-            }
-            ChannelType::UnorderedReliable => {
-                let channel_id = ChannelId::UnorderedReliable;
-                match self.channels.contains_key(&channel_id) {
-                    true => Ok(channel_id),
-                    false => self.create_channel(channel_id),
-                }
-            }
-            ChannelType::Unreliable => {
-                let channel_id = ChannelId::Unreliable;
-                match self.channels.contains_key(&channel_id) {
-                    true => Ok(channel_id),
-                    false => self.create_channel(channel_id),
-                }
-            }
+        let channel_id = get_channel_id_from_type(channel_type, || {
+            self.last_gen_id += 1;
+            self.last_gen_id
+        });
+        match self.channels.contains_key(&channel_id) {
+            true => Ok(channel_id),
+            false => self.create_channel(channel_id),
         }
     }
 
@@ -341,7 +328,7 @@ impl Connection {
     }
 
     fn create_channel(&mut self, channel_id: ChannelId) -> Result<ChannelId, QuinnetError> {
-        let (bytes_to_server_send, bytes_from_channel_recv) =
+        let (bytes_to_channel_send, bytes_to_channel_recv) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
         let (channel_close_send, channel_close_recv) =
             mpsc::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
@@ -350,11 +337,11 @@ impl Connection {
             .to_channels_send
             .try_send(ChannelSyncMessage::CreateChannel {
                 channel_id,
-                bytes_to_channel_recv: bytes_from_channel_recv,
+                bytes_to_channel_recv,
                 channel_close_recv,
             }) {
             Ok(_) => {
-                let channel = Channel::new(bytes_to_server_send, channel_close_send);
+                let channel = Channel::new(bytes_to_channel_send, channel_close_send);
                 self.channels.insert(channel_id, channel);
                 if self.default_channel.is_none() {
                     self.default_channel = Some(channel_id);
@@ -688,9 +675,9 @@ async fn handle_connection_channels(
                                 connection_handle,
                                 channels_keepalive_clone,
                                 from_channels_send,
-                                 close_receiver,
-                                 channel_close_recv,
-                                 bytes_to_channel_recv
+                                close_receiver,
+                                channel_close_recv,
+                                bytes_to_channel_recv
                             )
                             .await
                         });
@@ -701,9 +688,9 @@ async fn handle_connection_channels(
                                 connection_handle,
                                 channels_keepalive_clone,
                                 from_channels_send,
-                                 close_receiver,
-                                 channel_close_recv,
-                                 bytes_to_channel_recv
+                                close_receiver,
+                                channel_close_recv,
+                                bytes_to_channel_recv
                             )
                             .await
                         });
