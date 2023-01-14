@@ -314,6 +314,9 @@ impl Connection {
 
     /// Immediately prevents new messages from being sent on the channel and signal the channel to closes all its background tasks.
     /// Before trully closing, the channel will wait for all buffered messages to be properly sent according to the channel type.
+    ///
+    /// If called on the default channel, set default channel to None.
+    ///
     /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
     pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), QuinnetError> {
         match self.channels.remove(&channel_id) {
