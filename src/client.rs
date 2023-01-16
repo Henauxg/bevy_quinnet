@@ -611,10 +611,13 @@ async fn connection_task(spawn_config: ConnectionSpawnConfig) {
                 tokio::spawn(async move {
                     let conn_err = conn.closed().await;
                     info!("Disconnected: {}", conn_err);
-                    to_sync_client
-                        .send(ClientAsyncMessage::ConnectionClosed(conn_err))
-                        .await
-                        .expect("Failed to signal connection lost to sync client");
+                    // If we requested the connection to close, channel may have been closed already.
+                    if !to_sync_client.is_closed() {
+                        to_sync_client
+                            .send(ClientAsyncMessage::ConnectionClosed(conn_err))
+                            .await
+                            .expect("Failed to signal connection lost to sync client");
+                    }
                 })
             };
 
