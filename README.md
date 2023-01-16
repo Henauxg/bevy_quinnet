@@ -72,11 +72,11 @@ Those are the features/tasks that will probably come next (in no particular orde
 - [x] Feature: Send messages from the server to a selected group of clients
 - [x] Feature: Raise connection/disconnection events from the plugins
 - [x] Feature: Implement unordered & ordered reliable message channels from client & server
-- [ ] Feature: Implement unreliable message channel from client & server
-- [ ] Feature: Send unreliable messages larger than the MTU from client & server
+- [x] Feature: Implement unreliable message channel from client & server
+- [ ] Feature: Send unreliable messages larger than the path MTU from client & server
 - [x] Feature: Implementing a way to launch a local server from a client
 - [x] Feature: Client should be capable to connect to another server after disconnecting
-- [ ] Performance: feed multiples messages before flushing channels
+- [ ] Performance: feed multiples messages before flushing ordered reliable channels
 - [ ] Clean: Rework the error handling in the async back-end
 - [x] Clean: Rework the configuration input for the client & server plugins
 - [ ] Documentation: Fully document the API
