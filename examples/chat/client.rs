@@ -117,10 +117,12 @@ fn start_terminal_listener(mut commands: Commands) {
 }
 
 fn start_connection(mut client: ResMut<Client>) {
-    client.open_connection(
-        ConnectionConfiguration::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string(), 0),
-        CertificateVerificationMode::SkipVerification,
-    );
+    client
+        .open_connection(
+            ConnectionConfiguration::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string(), 0),
+            CertificateVerificationMode::SkipVerification,
+        )
+        .unwrap();
 
     // You can already send message(s) even before being connected, they will be buffered. In this example we will wait for a ConnectionEvent.
 }

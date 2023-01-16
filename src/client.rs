@@ -10,10 +10,9 @@ use std::{
 
 use bevy::prelude::*;
 use bytes::Bytes;
-use futures::sink::SinkExt;
 use futures_util::StreamExt;
-use quinn::{ClientConfig, Connection as QuinnConnection, Endpoint, SendStream};
-use quinn_proto::{ConnectionStats, VarInt};
+use quinn::{ClientConfig, Connection as QuinnConnection, ConnectionError, Endpoint};
+use quinn_proto::ConnectionStats;
 use serde::Deserialize;
 use tokio::{
     runtime::{self},
@@ -27,9 +26,13 @@ use tokio::{
     },
     task::JoinSet,
 };
-use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
+use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 
 use crate::shared::{
+    channel::{
+        channels_task, get_channel_id_from_type, Channel, ChannelAsyncMessage, ChannelId,
+        ChannelSyncMessage, ChannelType, MultiChannelId,
+    },
     AsyncRuntime, QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
@@ -111,9 +114,9 @@ enum ConnectionState {
 }
 
 #[derive(Debug)]
-pub(crate) enum InternalAsyncMessage {
+pub(crate) enum ClientAsyncMessage {
     Connected(InternalConnectionRef),
-    LostConnection,
+    ConnectionClosed(ConnectionError),
     CertificateInteractionRequest {
         status: CertVerificationStatus,
         info: CertVerificationInfo,
@@ -125,26 +128,29 @@ pub(crate) enum InternalAsyncMessage {
         cert_info: CertVerificationInfo,
     },
 }
-
 #[derive(Debug)]
 pub(crate) struct ConnectionSpawnConfig {
     connection_config: ConnectionConfiguration,
     cert_mode: CertificateVerificationMode,
-    to_sync_client: mpsc::Sender<InternalAsyncMessage>,
-    close_sender: tokio::sync::broadcast::Sender<()>,
-    close_receiver: tokio::sync::broadcast::Receiver<()>,
-    to_server_receiver: mpsc::Receiver<Bytes>,
-    from_server_sender: mpsc::Sender<Bytes>,
+    to_sync_client_send: mpsc::Sender<ClientAsyncMessage>,
+    to_channels_recv: mpsc::Receiver<ChannelSyncMessage>,
+    from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
+    close_recv: broadcast::Receiver<()>,
+    bytes_from_server_send: mpsc::Sender<Bytes>,
 }
 
 #[derive(Debug)]
 pub struct Connection {
     state: ConnectionState,
-    // TODO Perf: multiple channels
-    sender: mpsc::Sender<Bytes>,
-    receiver: mpsc::Receiver<Bytes>,
+    channels: HashMap<ChannelId, Channel>,
+    default_channel: Option<ChannelId>,
+    last_gen_id: MultiChannelId,
+    bytes_from_server_recv: mpsc::Receiver<Bytes>,
     close_sender: broadcast::Sender<()>,
-    pub(crate) internal_receiver: mpsc::Receiver<InternalAsyncMessage>,
+
+    pub(crate) from_async_client_recv: mpsc::Receiver<ClientAsyncMessage>,
+    pub(crate) to_channels_send: mpsc::Sender<ChannelSyncMessage>,
+    pub(crate) from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
 }
 
 impl Connection {
@@ -172,11 +178,25 @@ impl Connection {
     }
 
     pub fn send_message<T: serde::Serialize>(&self, message: T) -> Result<(), QuinnetError> {
+        match self.default_channel {
+            Some(channel) => self.send_message_on(channel, message),
+            None => Err(QuinnetError::NoDefaultChannel),
+        }
+    }
+
+    pub fn send_message_on<T: serde::Serialize>(
+        &self,
+        channel_id: ChannelId,
+        message: T,
+    ) -> Result<(), QuinnetError> {
         match &self.state {
             ConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
-            _ => match bincode::serialize(&message) {
-                Ok(payload) => self.send_payload(payload),
-                Err(_) => Err(QuinnetError::Serialization),
+            _ => match self.channels.get(&channel_id) {
+                Some(channel) => match bincode::serialize(&message) {
+                    Ok(payload) => channel.send_payload(payload),
+                    Err(_) => Err(QuinnetError::Serialization),
+                },
+                None => Err(QuinnetError::UnknownChannel(channel_id)),
             },
         }
     }
@@ -190,14 +210,22 @@ impl Connection {
     }
 
     pub fn send_payload<T: Into<Bytes>>(&self, payload: T) -> Result<(), QuinnetError> {
+        match self.default_channel {
+            Some(channel) => self.send_payload_on(channel, payload),
+            None => Err(QuinnetError::NoDefaultChannel),
+        }
+    }
+
+    pub fn send_payload_on<T: Into<Bytes>>(
+        &self,
+        channel_id: ChannelId,
+        payload: T,
+    ) -> Result<(), QuinnetError> {
         match &self.state {
             ConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
-            _ => match self.sender.try_send(payload.into()) {
-                Ok(_) => Ok(()),
-                Err(err) => match err {
-                    TrySendError::Full(_) => Err(QuinnetError::FullQueue),
-                    TrySendError::Closed(_) => Err(QuinnetError::ChannelClosed),
-                },
+            _ => match self.channels.get(&channel_id) {
+                Some(channel) => channel.send_payload(payload),
+                None => Err(QuinnetError::UnknownChannel(channel_id)),
             },
         }
     }
@@ -213,11 +241,11 @@ impl Connection {
     pub fn receive_payload(&mut self) -> Result<Option<Bytes>, QuinnetError> {
         match &self.state {
             ConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
-            _ => match self.receiver.try_recv() {
+            _ => match self.bytes_from_server_recv.try_recv() {
                 Ok(msg_payload) => Ok(Some(msg_payload)),
                 Err(err) => match err {
                     TryRecvError::Empty => Ok(None),
-                    TryRecvError::Disconnected => Err(QuinnetError::ChannelClosed),
+                    TryRecvError::Disconnected => Err(QuinnetError::InternalChannelClosed),
                 },
             },
         }
@@ -234,7 +262,7 @@ impl Connection {
         }
     }
 
-    /// Disconnect from the server on this connection. This does not send any message to the server, and simply closes all the connection's tasks locally.
+    /// Immediately prevents new messages from being sent on the connection and signal the connection to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
     fn disconnect(&mut self) -> Result<(), QuinnetError> {
         match &self.state {
             ConnectionState::Disconnected => Ok(()),
@@ -242,9 +270,19 @@ impl Connection {
                 self.state = ConnectionState::Disconnected;
                 match self.close_sender.send(()) {
                     Ok(_) => Ok(()),
-                    Err(_) => Err(QuinnetError::ChannelClosed),
+                    Err(_) => {
+                        // The only possible error for a send is that there is no active receivers, meaning that the tasks are already terminated.
+                        Err(QuinnetError::ConnectionAlreadyClosed)
+                    }
                 }
             }
+        }
+    }
+
+    fn try_disconnect(&mut self) {
+        match &self.disconnect() {
+            Ok(_) => (),
+            Err(err) => error!("Failed to properly close clonnection: {}", err),
         }
     }
 
@@ -260,6 +298,82 @@ impl Connection {
         match &self.state {
             ConnectionState::Connected(connection) => Some(connection.stats()),
             _ => None,
+        }
+    }
+
+    /// Opens a channel of the requested [ChannelType] and returns its [ChannelId].
+    ///
+    /// By default, when starting a [Connection]], Quinnet creates 1 channel instance of each [ChannelType], each with their own [ChannelId]. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelType::OrderedReliable] channel.
+    ///
+    /// If no channels were previously opened, the opened channel will be the new default channel.
+    ///
+    /// Can fail if the Connection is closed.
+    pub fn open_channel(&mut self, channel_type: ChannelType) -> Result<ChannelId, QuinnetError> {
+        let channel_id = get_channel_id_from_type(channel_type, || {
+            self.last_gen_id += 1;
+            self.last_gen_id
+        });
+        match self.channels.contains_key(&channel_id) {
+            true => Ok(channel_id),
+            false => self.create_channel(channel_id),
+        }
+    }
+
+    /// Closes the channel with the corresponding [ChannelId].
+    ///
+    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelType], before fully closing.
+    ///
+    /// If the closed channel is the current default channel, the default channel gets set to `None`.
+    ///
+    /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
+    pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), QuinnetError> {
+        match self.channels.remove(&channel_id) {
+            Some(channel) => {
+                if Some(channel_id) == self.default_channel {
+                    self.default_channel = None;
+                }
+                channel.close()
+            }
+            None => Err(QuinnetError::UnknownChannel(channel_id)),
+        }
+    }
+
+    /// Set the default channel
+    pub fn set_default_channel(&mut self, channel_id: ChannelId) {
+        self.default_channel = Some(channel_id);
+    }
+
+    /// Get the default Channel Id
+    pub fn get_default_channel(&self) -> Option<ChannelId> {
+        self.default_channel
+    }
+
+    fn create_channel(&mut self, channel_id: ChannelId) -> Result<ChannelId, QuinnetError> {
+        let (bytes_to_channel_send, bytes_to_channel_recv) =
+            mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
+        let (channel_close_send, channel_close_recv) =
+            mpsc::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
+
+        match self
+            .to_channels_send
+            .try_send(ChannelSyncMessage::CreateChannel {
+                channel_id,
+                bytes_to_channel_recv,
+                channel_close_recv,
+            }) {
+            Ok(_) => {
+                let channel = Channel::new(bytes_to_channel_send, channel_close_send);
+                self.channels.insert(channel_id, channel);
+                if self.default_channel.is_none() {
+                    self.default_channel = Some(channel_id);
+                }
+
+                Ok(channel_id)
+            }
+            Err(err) => match err {
+                TrySendError::Full(_) => Err(QuinnetError::FullQueue),
+                TrySendError::Closed(_) => Err(QuinnetError::InternalChannelClosed),
+            },
         }
     }
 }
@@ -324,43 +438,52 @@ impl Client {
     }
 
     /// Open a connection to a server with the given [ConnectionConfiguration] and [CertificateVerificationMode]. The connection will raise an event when fully connected, see [ConnectionEvent]
+    ///
+    /// Returns the [ConnectionId], and the default [ChannelId]
     pub fn open_connection(
         &mut self,
         config: ConnectionConfiguration,
         cert_mode: CertificateVerificationMode,
-    ) -> ConnectionId {
-        let (from_server_sender, from_server_receiver) =
-            mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
-        let (to_server_sender, to_server_receiver) =
+    ) -> Result<(ConnectionId, ChannelId), QuinnetError> {
+        let (bytes_from_server_send, bytes_from_server_recv) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
 
-        let (to_sync_client, from_async_client) =
-            mpsc::channel::<InternalAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+        let (to_sync_client_send, from_async_client_recv) =
+            mpsc::channel::<ClientAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+        let (from_channels_send, from_channels_recv) =
+            mpsc::channel::<ChannelAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+        let (to_channels_send, to_channels_recv) =
+            mpsc::channel::<ChannelSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
 
         // Create a close channel for this connection
-        let (close_sender, close_receiver): (
-            tokio::sync::broadcast::Sender<()>,
-            tokio::sync::broadcast::Receiver<()>,
-        ) = broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
+        let (close_sender, close_receiver) = broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
-        let connection = Connection {
+        let mut connection = Connection {
             state: ConnectionState::Connecting,
-            sender: to_server_sender,
-            receiver: from_server_receiver,
+            channels: HashMap::new(),
+            last_gen_id: 0,
+            default_channel: None,
+            bytes_from_server_recv,
             close_sender: close_sender.clone(),
-            internal_receiver: from_async_client,
+            from_async_client_recv,
+            to_channels_send,
+            from_channels_recv,
         };
+        // Create default channels
+        let ordered_reliable_id = connection.open_channel(ChannelType::OrderedReliable)?;
+        connection.open_channel(ChannelType::UnorderedReliable)?;
+        connection.open_channel(ChannelType::Unreliable)?;
 
         // Async connection
         self.runtime.spawn(async move {
             connection_task(ConnectionSpawnConfig {
                 connection_config: config,
                 cert_mode,
-                to_sync_client,
-                close_sender,
-                close_receiver,
-                to_server_receiver,
-                from_server_sender,
+                to_channels_recv,
+                from_channels_send,
+                to_sync_client_send,
+                close_recv: close_receiver,
+                bytes_from_server_send,
             })
             .await
         });
@@ -372,7 +495,7 @@ impl Client {
             self.default_connection_id = Some(connection_id);
         }
 
-        connection_id
+        Ok((connection_id, ordered_reliable_id))
     }
 
     /// Set the default connection
@@ -385,17 +508,14 @@ impl Client {
         self.default_connection_id
     }
 
-    /// Close a specific connection. This will call disconnect on the connection and remove it from the client. This may fail if the [Connection] fails to disconnect or if no [Connection] if found for connection_id
+    /// Close a specific connection. Removes it from the client. This may fail if no [Connection] if found for connection_id, or if the [Connection] is already closed.
     pub fn close_connection(&mut self, connection_id: ConnectionId) -> Result<(), QuinnetError> {
         match self.connections.remove(&connection_id) {
             Some(mut connection) => {
-                connection.disconnect()?;
-                if let Some(default_id) = self.default_connection_id {
-                    if connection_id == default_id {
-                        self.default_connection_id = None;
-                    }
+                if Some(connection_id) == self.default_connection_id {
+                    self.default_connection_id = None;
                 }
-                Ok(())
+                connection.disconnect()
             }
             None => Err(QuinnetError::UnknownConnection(connection_id)),
         }
@@ -417,7 +537,7 @@ impl Client {
 
 fn configure_client(
     cert_mode: CertificateVerificationMode,
-    to_sync_client: mpsc::Sender<InternalAsyncMessage>,
+    to_sync_client: mpsc::Sender<ClientAsyncMessage>,
 ) -> Result<ClientConfig, Box<dyn Error>> {
     match cert_mode {
         CertificateVerificationMode::SkipVerification => {
@@ -447,7 +567,7 @@ fn configure_client(
     }
 }
 
-async fn connection_task(mut spawn_config: ConnectionSpawnConfig) {
+async fn connection_task(spawn_config: ConnectionSpawnConfig) {
     let config = spawn_config.connection_config;
     let server_adr_str = format!("{}:{}", config.server_host, config.server_port);
     let srv_host = config.server_host.clone();
@@ -459,8 +579,11 @@ async fn connection_task(mut spawn_config: ConnectionSpawnConfig) {
         .parse()
         .expect("Failed to parse server address");
 
-    let client_cfg = configure_client(spawn_config.cert_mode, spawn_config.to_sync_client.clone())
-        .expect("Failed to configure client");
+    let client_cfg = configure_client(
+        spawn_config.cert_mode,
+        spawn_config.to_sync_client_send.clone(),
+    )
+    .expect("Failed to configure client");
 
     let mut endpoint = Endpoint::client(local_bind_adr.parse().unwrap())
         .expect("Failed to create client endpoint");
@@ -476,113 +599,83 @@ async fn connection_task(mut spawn_config: ConnectionSpawnConfig) {
             info!("Connected to {}", connection.remote_address());
 
             spawn_config
-                .to_sync_client
-                .send(InternalAsyncMessage::Connected(connection.clone()))
+                .to_sync_client_send
+                .send(ClientAsyncMessage::Connected(connection.clone()))
                 .await
                 .expect("Failed to signal connection to sync client");
 
-            let send = connection
-                .open_uni()
-                .await
-                .expect("Failed to open send stream");
-            let mut frame_send = FramedWrite::new(send, LengthDelimitedCodec::new());
-
-            let _close_waiter = {
+            // Spawn a task to listen for the underlying connection being closed
+            {
                 let conn = connection.clone();
-                let to_sync_client = spawn_config.to_sync_client.clone();
-                let close_sender = spawn_config.close_sender.clone();
+                let to_sync_client = spawn_config.to_sync_client_send.clone();
                 tokio::spawn(async move {
                     let conn_err = conn.closed().await;
                     info!("Disconnected: {}", conn_err);
-                    close_sender.send(()).ok();
-                    to_sync_client
-                        .send(InternalAsyncMessage::LostConnection)
-                        .await
-                        .expect("Failed to signal connection lost to sync client");
+                    // If we requested the connection to close, channel may have been closed already.
+                    if !to_sync_client.is_closed() {
+                        to_sync_client
+                            .send(ClientAsyncMessage::ConnectionClosed(conn_err))
+                            .await
+                            .expect("Failed to signal connection lost to sync client");
+                    }
                 })
             };
 
-            let _network_sends = {
-                let close_sender_clone = spawn_config.close_sender.clone();
-                let conn = connection.clone();
+            // Spawn a task to listen for streams opened by the server
+            {
+                let close_recv = spawn_config.close_recv.resubscribe();
+                let connection_handle = connection.clone();
                 tokio::spawn(async move {
-                    tokio::select! {
-                        _ = spawn_config.close_receiver.recv() => {
-                            trace!("Unidirectional send Stream forced to disconnected")
-                        }
-                        _ = async {
-                            while let Some(msg_bytes) = spawn_config.to_server_receiver.recv().await {
-                                send_msg(&close_sender_clone, &spawn_config.to_sync_client, &mut frame_send, msg_bytes).await;
-                            }
-                        } => {
-                            trace!("Unidirectional send Stream ended")
-                        }
-                    }
-                    while let Ok(msg_bytes) = spawn_config.to_server_receiver.try_recv() {
-                        if let Err(err) = frame_send.send(msg_bytes).await {
-                            error!("Error while sending, {}", err);
-                        }
-                    }
-                    if let Err(err) = frame_send.flush().await {
-                        error!("Error while flushing stream: {}", err);
-                    }
-                    if let Err(err) = frame_send.into_inner().finish().await {
-                        error!("Failed to shutdown stream gracefully: {}", err);
-                    }
-                    conn.close(VarInt::from_u32(0), "closed".as_bytes());
-                })
-            };
+                    connection_receiving_task(
+                        connection_handle,
+                        spawn_config.bytes_from_server_send,
+                        close_recv,
+                    )
+                    .await
+                });
+            }
 
-            let _network_reads = {
-                let mut uni_receivers: JoinSet<()> = JoinSet::new();
-                let mut close_receiver = spawn_config.close_sender.subscribe();
-                tokio::spawn(async move {
-                    tokio::select! {
-                        _ = close_receiver.recv() => {
-                            trace!("New Stream listener forced to disconnected")
-                        }
-                        _ = async {
-                            while let Ok(recv)= connection.accept_uni().await {
-                                let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
-                                let from_server_sender = spawn_config.from_server_sender.clone();
-
-                                uni_receivers.spawn(async move {
-                                    while let Some(Ok(msg_bytes)) = frame_recv.next().await {
-                                        from_server_sender.send(msg_bytes.into()).await.unwrap(); // TODO Clean: error handling
-                                    }
-                                });
-                            }
-                        } => {
-                            trace!("New Stream listener ended ")
-                        }
-                    }
-                    uni_receivers.shutdown().await;
-                    trace!("All unidirectional stream receivers cleaned");
-                })
-            };
+            // Spawn a task to handle channels for this connection
+            tokio::spawn(async move {
+                channels_task(
+                    connection,
+                    spawn_config.close_recv,
+                    spawn_config.to_channels_recv,
+                    spawn_config.from_channels_send,
+                )
+                .await
+            });
         }
     }
 }
 
-async fn send_msg(
-    close_sender: &tokio::sync::broadcast::Sender<()>,
-    to_sync_client: &mpsc::Sender<InternalAsyncMessage>,
-    frame_send: &mut FramedWrite<SendStream, LengthDelimitedCodec>,
-    msg_bytes: Bytes,
+async fn connection_receiving_task(
+    connection: quinn::Connection,
+    bytes_from_server_send: mpsc::Sender<Bytes>,
+    mut close_recv: broadcast::Receiver<()>,
 ) {
-    if let Err(err) = frame_send.send(msg_bytes).await {
-        error!("Error while sending, {}", err);
-        error!("Client seems disconnected, closing resources");
-        // Emit LostConnection to properly update the connection about its state.
-        // Raise LostConnection event before emitting a close signal because we have no guarantee to continue this async execution after the close signal has been processed.
-        to_sync_client
-            .send(InternalAsyncMessage::LostConnection)
-            .await
-            .expect("Failed to signal connection lost to sync client");
-        if let Err(_) = close_sender.send(()) {
-            error!("Failed to close all client streams & resources")
+    let mut uni_receivers: JoinSet<()> = JoinSet::new();
+    tokio::select! {
+        _ = close_recv.recv() => {
+            trace!("Listener for new Unidirectional Receiving Streams  received a close signal")
         }
-    }
+        _ = async {
+            while let Ok(recv) = connection.accept_uni().await {
+                let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
+                let from_server_sender = bytes_from_server_send.clone();
+                uni_receivers.spawn(async move {
+                    while let Some(Ok(msg_bytes)) = frame_recv.next().await {
+                         // TODO Clean: error handling
+                        from_server_sender.send(msg_bytes.into()).await.unwrap();
+                    }
+                });
+            }
+        } => {
+            trace!("Listener for new Unidirectional Receiving Streams ended")
+        }
+    };
+    uni_receivers.shutdown().await;
+    trace!("All unidirectional stream receivers cleaned");
 }
 
 // Receive messages from the async client tasks and update the sync client.
@@ -595,20 +688,20 @@ fn update_sync_client(
     mut client: ResMut<Client>,
 ) {
     for (connection_id, mut connection) in &mut client.connections {
-        while let Ok(message) = connection.internal_receiver.try_recv() {
+        while let Ok(message) = connection.from_async_client_recv.try_recv() {
             match message {
-                InternalAsyncMessage::Connected(internal_connection) => {
+                ClientAsyncMessage::Connected(internal_connection) => {
                     connection.state = ConnectionState::Connected(internal_connection);
                     connection_events.send(ConnectionEvent { id: *connection_id });
                 }
-                InternalAsyncMessage::LostConnection => match connection.state {
+                ClientAsyncMessage::ConnectionClosed(_) => match connection.state {
                     ConnectionState::Disconnected => (),
                     _ => {
-                        connection.state = ConnectionState::Disconnected;
+                        connection.try_disconnect();
                         connection_lost_events.send(ConnectionLostEvent { id: *connection_id });
                     }
                 },
-                InternalAsyncMessage::CertificateInteractionRequest {
+                ClientAsyncMessage::CertificateInteractionRequest {
                     status,
                     info,
                     action_sender,
@@ -620,19 +713,30 @@ fn update_sync_client(
                         action_sender: Mutex::new(Some(action_sender)),
                     });
                 }
-                InternalAsyncMessage::CertificateTrustUpdate(info) => {
+                ClientAsyncMessage::CertificateTrustUpdate(info) => {
                     cert_trust_update_events.send(CertTrustUpdateEvent {
                         connection_id: *connection_id,
                         cert_info: info,
                     });
                 }
-                InternalAsyncMessage::CertificateConnectionAbort { status, cert_info } => {
+                ClientAsyncMessage::CertificateConnectionAbort { status, cert_info } => {
                     cert_connection_abort_events.send(CertConnectionAbortEvent {
                         connection_id: *connection_id,
                         status,
                         cert_info,
                     });
                 }
+            }
+        }
+        while let Ok(message) = connection.from_channels_recv.try_recv() {
+            match message {
+                ChannelAsyncMessage::LostConnection => match connection.state {
+                    ConnectionState::Disconnected => (),
+                    _ => {
+                        connection.try_disconnect();
+                        connection_lost_events.send(ConnectionLostEvent { id: *connection_id });
+                    }
+                },
             }
         }
     }

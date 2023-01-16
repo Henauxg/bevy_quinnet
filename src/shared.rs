@@ -5,11 +5,15 @@ use bevy::prelude::{Deref, DerefMut, Resource};
 use rcgen::RcgenError;
 use tokio::runtime::Runtime;
 
+use self::channel::ChannelId;
+
 pub const DEFAULT_MESSAGE_QUEUE_SIZE: usize = 150;
 pub const DEFAULT_KILL_MESSAGE_QUEUE_SIZE: usize = 10;
 pub const DEFAULT_KEEP_ALIVE_INTERVAL_S: u64 = 4;
 
 pub type ClientId = u64;
+
+pub mod channel;
 
 #[derive(Resource, Deref, DerefMut)]
 pub(crate) struct AsyncRuntime(pub(crate) Runtime);
@@ -23,10 +27,20 @@ pub enum QuinnetError {
     CertificateGenerationFailed(#[from] RcgenError),
     #[error("Client with id `{0}` is unknown")]
     UnknownClient(ClientId),
+    #[error("Client with id `{0}` is already disconnected")]
+    ClientAlreadyDisconnected(ClientId),
     #[error("Connection with id `{0}` is unknown")]
     UnknownConnection(ConnectionId),
-    #[error("Connection is closed")]
+    #[error("Connection is 'disconnected'")]
     ConnectionClosed,
+    #[error("Connection is already closed")]
+    ConnectionAlreadyClosed,
+    #[error("Channel with id `{0}` is unknown")]
+    UnknownChannel(ChannelId),
+    #[error("Channel is already closed")]
+    ChannelAlreadyClosed,
+    #[error("The connection has no default channel")]
+    NoDefaultChannel,
     #[error("Endpoint is already closed")]
     EndpointAlreadyClosed,
     #[error("Failed serialization")]
@@ -35,8 +49,10 @@ pub enum QuinnetError {
     Deserialization,
     #[error("The data could not be sent on the channel because the channel is currently full and sending would require blocking")]
     FullQueue,
-    #[error("The receiving half of the channel was explicitly closed or has been dropped")]
-    ChannelClosed,
+    #[error(
+        "The receiving half of the internal channel was explicitly closed or has been dropped"
+    )]
+    InternalChannelClosed,
     #[error("The hosts file is invalid")]
     InvalidHostFile,
     #[error("Lock acquisition failure")]

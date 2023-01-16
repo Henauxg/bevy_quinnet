@@ -15,7 +15,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::shared::{CertificateFingerprint, QuinnetError};
 
-use super::{ConnectionId, InternalAsyncMessage, DEFAULT_KNOWN_HOSTS_FILE};
+use super::{ClientAsyncMessage, ConnectionId, DEFAULT_KNOWN_HOSTS_FILE};
 
 pub const DEFAULT_CERT_VERIFIER_BEHAVIOUR: CertVerifierBehaviour =
     CertVerifierBehaviour::ImmediateAction(CertVerifierAction::AbortConnection);
@@ -40,7 +40,7 @@ impl CertInteractionEvent {
         if let Some(sender) = sender.take() {
             match sender.send(action) {
                 Ok(_) => Ok(()),
-                Err(_) => Err(QuinnetError::ChannelClosed),
+                Err(_) => Err(QuinnetError::InternalChannelClosed),
             }
         } else {
             Err(QuinnetError::CertificateActionAlreadyApplied)
@@ -211,7 +211,7 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
 pub(crate) struct TofuServerVerification {
     store: CertStore,
     verifier_behaviour: HashMap<CertVerificationStatus, CertVerifierBehaviour>,
-    to_sync_client: mpsc::Sender<InternalAsyncMessage>,
+    to_sync_client: mpsc::Sender<ClientAsyncMessage>,
 
     /// If present, the file where new fingerprints should be stored
     hosts_file: Option<String>,
@@ -221,7 +221,7 @@ impl TofuServerVerification {
     pub(crate) fn new(
         store: CertStore,
         verifier_behaviour: HashMap<CertVerificationStatus, CertVerifierBehaviour>,
-        to_sync_client: mpsc::Sender<InternalAsyncMessage>,
+        to_sync_client: mpsc::Sender<ClientAsyncMessage>,
         hosts_file: Option<String>,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -248,7 +248,7 @@ impl TofuServerVerification {
             CertVerifierBehaviour::RequestClientAction => {
                 let (action_sender, cert_action_recv) = oneshot::channel::<CertVerifierAction>();
                 self.to_sync_client
-                    .try_send(InternalAsyncMessage::CertificateInteractionRequest {
+                    .try_send(ClientAsyncMessage::CertificateInteractionRequest {
                         status: status.clone(),
                         info: cert_info.clone(),
                         action_sender,
@@ -273,12 +273,12 @@ impl TofuServerVerification {
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         match action {
             CertVerifierAction::AbortConnection => {
-                match self.to_sync_client.try_send(
-                    InternalAsyncMessage::CertificateConnectionAbort {
+                match self
+                    .to_sync_client
+                    .try_send(ClientAsyncMessage::CertificateConnectionAbort {
                         status: status,
                         cert_info,
-                    },
-                ) {
+                    }) {
                     Ok(_) => Err(rustls::Error::InvalidCertificateData(format!(
                         "CertVerifierAction requested to abort the connection"
                     ))),
@@ -304,7 +304,7 @@ impl TofuServerVerification {
                 // In all cases raise an event containing the new certificate entry
                 match self
                     .to_sync_client
-                    .try_send(InternalAsyncMessage::CertificateTrustUpdate(cert_info))
+                    .try_send(ClientAsyncMessage::CertificateTrustUpdate(cert_info))
                 {
                     Ok(_) => Ok(rustls::client::ServerCertVerified::assertion()),
                     Err(_) => Err(rustls::Error::General(format!(
