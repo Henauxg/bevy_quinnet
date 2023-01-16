@@ -301,6 +301,13 @@ impl Connection {
         }
     }
 
+    /// Opens a channel of the requested [ChannelType] and returns its [ChannelId].
+    ///
+    /// By default, when starting a [Connection]], Quinnet creates 1 channel instance of each [ChannelType], each with their own [ChannelId]. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelType::OrderedReliable] channel.
+    ///
+    /// If no channels were previously opened, the opened channel will be the new default channel.
+    ///
+    /// Can fail if the Connection is closed.
     pub fn open_channel(&mut self, channel_type: ChannelType) -> Result<ChannelId, QuinnetError> {
         let channel_id = get_channel_id_from_type(channel_type, || {
             self.last_gen_id += 1;
@@ -312,10 +319,11 @@ impl Connection {
         }
     }
 
-    /// Immediately prevents new messages from being sent on the channel and signal the channel to closes all its background tasks.
-    /// Before trully closing, the channel will wait for all buffered messages to be properly sent according to the channel type.
+    /// Closes the channel with the corresponding [ChannelId].
     ///
-    /// If called on the default channel, set default channel to None.
+    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelType], before fully closing.
+    ///
+    /// If the closed channel is the current default channel, the default channel gets set to `None`.
     ///
     /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
     pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), QuinnetError> {

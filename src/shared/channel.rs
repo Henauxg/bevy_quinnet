@@ -14,20 +14,29 @@ pub(crate) type MultiChannelId = u64;
 
 #[derive(Debug, Copy, Clone)]
 pub enum ChannelType {
-    OrderedReliable,
-    UnorderedReliable,
-    Unreliable,
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum ChannelId {
     /// An OrderedReliable channel ensures that messages sent are delivered, and are processed by the receiving end in the same order as they were sent.
-    OrderedReliable(MultiChannelId),
+    OrderedReliable,
     /// An UnorderedReliable channel ensures that messages sent are delivered, but they may be delivered out of order.
     UnorderedReliable,
     /// Channel which transmits messages as unreliable and unordered datagrams (may be lost or delivered out of order).
     ///
     /// The maximum allowed size of a datagram may change over the lifetime of a connection according to variation in the path MTU estimate. This is guaranteed to be a little over a kilobyte at minimum.
+    Unreliable,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum ChannelId {
+    /// There may be more than one OrderedReliable channel instance. This may be useful to avoid some Head of line blocking (<https://en.wikipedia.org/wiki/Head-of-line_blocking>) issues.
+    ///
+    /// See [ChannelType::OrderedReliable] for more information.
+    OrderedReliable(MultiChannelId),
+    /// One `UnorderedReliable` channel instance is enough since messages are not ordered on those, in fact even if you tried to create more, Quinnet would just reuse the existing one. This is why you can directly use this [ChannelId::UnorderedReliable] when sending messages.
+    ///
+    /// See [ChannelType::UnorderedReliable] for more information.
+    UnorderedReliable,
+    /// One `Unreliable` channel instance is enough since messages are not ordered on those, in fact even if you tried to create more, Quinnet would just reuse the existing one. This is why you can directly use this [ChannelId::Unreliable] when sending messages.
+    ///
+    /// See [ChannelType::Unreliable] for more information.
     Unreliable,
 }
 

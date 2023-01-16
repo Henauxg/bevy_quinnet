@@ -438,6 +438,7 @@ impl Endpoint {
         }
     }
 
+    /// Same as disconnect_client but errors are logged instead of returned
     pub fn try_disconnect_client(&mut self, client_id: ClientId) {
         match self.disconnect_client(client_id) {
             Ok(_) => (),
@@ -455,6 +456,13 @@ impl Endpoint {
         Ok(())
     }
 
+    /// Opens a channel of the requested [ChannelType] and returns its [ChannelId].
+    ///
+    /// By default, when starting an [Endpoint], Quinnet creates 1 channel instance of each [ChannelType], each with their own [ChannelId]. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelType::OrderedReliable] channel.
+    ///
+    /// If no channels were previously opened, the opened channel will be the new default channel.
+    ///
+    /// Can fail if the Endpoint is closed.
     pub fn open_channel(&mut self, channel_type: ChannelType) -> Result<ChannelId, QuinnetError> {
         let channel_id = get_channel_id_from_type(channel_type, || {
             self.last_gen_id += 1;
@@ -466,6 +474,13 @@ impl Endpoint {
         }
     }
 
+    /// Closes the channel with the corresponding [ChannelId].
+    ///
+    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelType], before fully closing.
+    ///
+    /// If the closed channel is the current default channel, the default channel gets set to `None`.
+    ///
+    /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
     pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), QuinnetError> {
         match self.channels.remove(&channel_id) {
             true => {
@@ -481,12 +496,12 @@ impl Endpoint {
         }
     }
 
-    /// Set the default channel
+    /// Set the default channel via its [ChannelId]
     pub fn set_default_channel(&mut self, channel_id: ChannelId) {
         self.default_channel = Some(channel_id);
     }
 
-    /// Get the default Channel Id
+    /// Get the default [ChannelId]
     pub fn get_default_channel(&self) -> Option<ChannelId> {
         self.default_channel
     }
