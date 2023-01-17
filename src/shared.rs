@@ -1,6 +1,6 @@
 use std::{fmt, io, net::AddrParseError, sync::PoisonError};
 
-use crate::client::ConnectionId;
+use crate::client::connection::ConnectionId;
 use bevy::prelude::{Deref, DerefMut, Resource};
 use rcgen::RcgenError;
 use tokio::runtime::Runtime;

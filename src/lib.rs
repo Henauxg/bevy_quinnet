@@ -20,7 +20,8 @@ mod tests {
                 CertVerificationInfo, CertVerificationStatus, CertVerifierAction,
                 CertificateVerificationMode,
             },
-            Client, ConnectionConfiguration, QuinnetClientPlugin, DEFAULT_KNOWN_HOSTS_FILE,
+            connection::ConnectionConfiguration,
+            Client, QuinnetClientPlugin, DEFAULT_KNOWN_HOSTS_FILE,
         },
         server::{
             self, certificate::CertificateRetrievalMode, QuinnetServerPlugin, Server,
@@ -509,7 +510,7 @@ mod tests {
     }
 
     fn handle_client_events(
-        mut connection_events: EventReader<client::ConnectionEvent>,
+        mut connection_events: EventReader<client::connection::ConnectionEvent>,
         mut cert_trust_update_events: EventReader<CertTrustUpdateEvent>,
         mut cert_interaction_events: EventReader<CertInteractionEvent>,
         mut cert_connection_abort_events: EventReader<CertConnectionAbortEvent>,
