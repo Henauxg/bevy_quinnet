@@ -624,17 +624,24 @@ async fn connection_task(spawn_config: ConnectionSpawnConfig) {
             {
                 let close_recv = spawn_config.close_recv.resubscribe();
                 let connection_handle = connection.clone();
+                let bytes_incoming_send = spawn_config.bytes_from_server_send.clone();
                 tokio::spawn(async move {
-                    reliable_receiver_task(
-                        connection_handle,
-                        spawn_config.bytes_from_server_send,
-                        close_recv,
-                    )
-                    .await
+                    reliable_receiver_task(connection_handle, close_recv, bytes_incoming_send).await
                 });
             }
 
-            // Spawn a task to handle channels for this connection
+            // Spawn a task to listen for datagrams sent by the server
+            {
+                let close_recv = spawn_config.close_recv.resubscribe();
+                let connection_handle = connection.clone();
+                let bytes_incoming_send = spawn_config.bytes_from_server_send.clone();
+                tokio::spawn(async move {
+                    unreliable_receiver_task(connection_handle, close_recv, bytes_incoming_send)
+                        .await
+                });
+            }
+
+            // Spawn a task to handle send channels for this connection
             tokio::spawn(async move {
                 channels_task(
                     connection,
@@ -669,8 +676,8 @@ async fn uni_receiver_task(
 
 async fn reliable_receiver_task(
     connection: quinn::Connection,
-    incoming_bytes_send: mpsc::Sender<Bytes>,
     mut close_recv: broadcast::Receiver<()>,
+    bytes_incoming_send: mpsc::Sender<Bytes>,
 ) {
     let close_recv_clone = close_recv.resubscribe();
     tokio::select! {
@@ -679,7 +686,7 @@ async fn reliable_receiver_task(
         }
         _ = async {
             while let Ok(recv) = connection.accept_uni().await {
-                let bytes_from_server_send = incoming_bytes_send.clone();
+                let bytes_from_server_send = bytes_incoming_send.clone();
                 let close_recv_clone = close_recv_clone.resubscribe();
                 tokio::spawn(async move {
                     uni_receiver_task(
@@ -694,6 +701,26 @@ async fn reliable_receiver_task(
         }
     };
     trace!("All unidirectional stream receivers cleaned");
+}
+
+async fn unreliable_receiver_task(
+    connection: quinn::Connection,
+    mut close_recv: broadcast::Receiver<()>,
+    bytes_incoming_send: mpsc::Sender<Bytes>,
+) {
+    tokio::select! {
+        _ = close_recv.recv() => {
+            trace!("Listener for unreliable datagrams received a close signal")
+        }
+        _ = async {
+            while let Ok(msg_bytes) = connection.read_datagram().await {
+                // TODO Clean: error handling
+                bytes_incoming_send.send(msg_bytes.into()).await.unwrap();
+            }
+        } => {
+            trace!("Listener for unreliable datagrams ended")
+        }
+    };
 }
 
 // Receive messages from the async client tasks and update the sync client.

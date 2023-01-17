@@ -777,20 +777,37 @@ async fn client_connection_task(
 
     // Spawn a task to listen for streams opened by this client
     {
-        let conn = connection.clone();
+        let connection_handle = connection.clone();
         let client_close_recv = client_close_recv.resubscribe();
+        let payloads_incoming_send = payloads_from_clients_send.clone();
         tokio::spawn(async move {
-            client_receiver_task(
+            reliable_receiver_task(
                 client_id,
-                conn,
+                connection_handle,
                 client_close_recv,
-                payloads_from_clients_send,
+                payloads_incoming_send,
             )
             .await
         });
     }
 
-    // Spawn a task to handle channels for this client
+    // Spawn a task to listen for datagrams sent by this client
+    {
+        let connection_handle = connection.clone();
+        let client_close_recv = client_close_recv.resubscribe();
+        let payloads_incoming_send = payloads_from_clients_send.clone();
+        tokio::spawn(async move {
+            unreliable_receiver_task(
+                client_id,
+                connection_handle,
+                client_close_recv,
+                payloads_incoming_send,
+            )
+            .await
+        });
+    }
+
+    // Spawn a task to handle send channels for this client
     tokio::spawn(async move {
         channels_task(
             connection,
@@ -828,7 +845,7 @@ async fn uni_receiver_task(
     };
 }
 
-async fn client_receiver_task(
+async fn reliable_receiver_task(
     client_id: ClientId,
     connection: quinn::Connection,
     mut close_recv: tokio::sync::broadcast::Receiver<()>,
@@ -860,6 +877,34 @@ async fn client_receiver_task(
         "All unidirectional stream receivers cleaned for client: {}",
         client_id
     )
+}
+
+async fn unreliable_receiver_task(
+    client_id: ClientId,
+    connection: quinn::Connection,
+    mut close_recv: broadcast::Receiver<()>,
+    payloads_incoming_send: mpsc::Sender<ClientPayload>,
+) {
+    tokio::select! {
+        _ = close_recv.recv() => {
+            trace!("Listener for unreliable datagrams received a close signal for client: {}",
+            client_id)
+        }
+        _ = async {
+            while let Ok(msg_bytes) = connection.read_datagram().await {
+                // TODO Clean: error handling
+                payloads_incoming_send.send(ClientPayload {
+                    client_id: client_id,
+                    msg: msg_bytes.into(),
+                })
+                .await
+                .unwrap();
+            }
+        } => {
+            trace!("Listener for unreliable datagrams ended for client: {}",
+            client_id)
+        }
+    };
 }
 
 fn create_server(mut commands: Commands, runtime: Res<AsyncRuntime>) {
