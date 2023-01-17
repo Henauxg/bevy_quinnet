@@ -14,8 +14,9 @@ use bevy::{
 };
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, Client, ConnectionConfiguration, ConnectionEvent,
-        QuinnetClientPlugin,
+        certificate::CertificateVerificationMode,
+        connection::{ConnectionConfiguration, ConnectionEvent},
+        Client, QuinnetClientPlugin,
     },
     shared::ClientId,
 };
