@@ -54,6 +54,16 @@ pub struct ConnectionLostEvent {
 }
 
 /// Configuration of the server, used when the server starts
+///
+/// # Examples
+///
+/// ```
+/// use bevy_quinnet::server::ServerConfigurationData;
+/// let config = ServerConfigurationData::new(
+///             "127.0.0.1".to_string(),
+///             6000,
+///             "0.0.0.0".to_string());
+/// ```
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfigurationData {
     host: String,
@@ -577,9 +587,9 @@ impl Server {
         self.endpoint.as_mut()
     }
 
-    /// Run the server with the given [ServerConfigurationData] and [CertificateRetrievalMode]
+    /// Starts a new endpoint with the given [ServerConfigurationData] and [CertificateRetrievalMode] and opens the default channels.
     ///
-    /// Returns the [ServerCertificate] generated or loaded, and the default [ChannelId]
+    /// Returns a tuple of the [ServerCertificate] generated or loaded, and the default [ChannelId]
     pub fn start_endpoint(
         &mut self,
         config: ServerConfigurationData,
@@ -637,6 +647,9 @@ impl Server {
         Ok((server_cert, ordered_reliable_id))
     }
 
+    /// Closes the endpoint and all the connections associated with it
+    ///
+    /// Returns `QuinnetError::EndpointAlreadyClosed` if the endpoint is already closed
     pub fn stop_endpoint(&mut self) -> Result<(), QuinnetError> {
         match self.endpoint.take() {
             Some(mut endpoint) => {

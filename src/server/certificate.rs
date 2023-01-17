@@ -8,9 +8,12 @@ use bevy::prelude::{trace, warn};
 
 use crate::shared::{CertificateFingerprint, QuinnetError};
 
+/// Represents the origin of a certificate.
 #[derive(Debug, Clone)]
 pub enum CertOrigin {
+    /// Indicates that the certificate was generated. The `server_host` field contains the hostname used when generating the certificate.
     Generated { server_host: String },
+    /// Indicates that the certificate was loaded from a file.
     Loaded,
 }
 
@@ -30,9 +33,13 @@ pub enum CertificateRetrievalMode {
     },
 }
 
+/// Represents a server certificate.
 pub struct ServerCertificate {
+    /// A vector of [rustls::Certificate] that contains the server's certificate chain.
     pub cert_chain: Vec<rustls::Certificate>,
+    /// The server's private key, represented by a [rustls::PrivateKey] struct.
     pub priv_key: rustls::PrivateKey,
+    /// The fingerprint of the server's main certificate, represented by a [CertificateFingerprint] struct.
     pub fingerprint: CertificateFingerprint,
 }
 
