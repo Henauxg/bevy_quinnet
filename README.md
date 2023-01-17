@@ -45,42 +45,37 @@ Most of the features proposed by the big networking libs are supported by defaul
 
 ## Features
 
-Quinnet does not have many features, I made it mostly to satisfy my own needs for my own game projects.
+Quinnet has basic features, I made it mostly to satisfy my own needs for my own game projects.
 
 It currently features:
 
 - A Client plugin which can:
     - Connect/disconnect to/from one or more server
-    - Send ordered reliable messages (same as messages over TCP) to the server
-    - Receive (ordered or unordered) reliable messages from the server
+    - Send unreliable and ordered/unordered reliable messages
+    - Receive ordered/unordered reliable messages from the server
 - A Server plugin which can:
     - Accept client connections & disconnect them
-    - Send ordered reliable messages to the clients
-    - Receive (ordered or unordered) reliable messages from any client
+    - Send unreliable and ordered/unordered reliable messages
+    - Receive ordered/unordered reliable messages from any client
 - Both client & server accept custom protocol structs/enums defined by the user as the message format.
 - Communications are encrypted, and the client can [authenticate the server](#certificates-and-server-authentication).
 
 Although Quinn and parts of Quinnet are asynchronous, the APIs exposed by Quinnet for the client and server are synchronous. This makes the surface API easy to work with and adapted to a Bevy usage.
-The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channels) to communicate with the networking async tasks.
+The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channels) internally to communicate with the networking async tasks.
 
 ##  Roadmap
 
-Those are the features/tasks that will probably come next (in no particular order):
+This is a bird-eye view of the features/tasks that will probably be worked on next (in no particular order):
 
+- [x] [Previous roadmap tasks](ROADMAP.md)
 - [x] Security: More certificates support, see [certificates-and-server-authentication](#certificates-and-server-authentication)
-- [x] Feature: Send messages from the server to a specific client
-- [x] Feature: Send messages from the server to a selected group of clients
-- [x] Feature: Raise connection/disconnection events from the plugins
-- [x] Feature: Implement unordered & ordered reliable message channels from client & server
-- [x] Feature: Implement unreliable message channel from client & server
-- [ ] Feature: Send unreliable messages larger than the path MTU from client & server
-- [x] Feature: Implementing a way to launch a local server from a client
-- [x] Feature: Client should be capable to connect to another server after disconnecting
+- [x] Feature: Implement `unordered` & `ordered` `reliable` message channels on client & server, see [channels](#channels)
+- [ ] Feature: Implement `unreliable` message channel on client & server
+- [ ] Feature: Implement `unreliable` messages larger than the path MTU from client & server
 - [ ] Performance: feed multiples messages before flushing ordered reliable channels
 - [ ] Clean: Rework the error handling in the async back-end
-- [x] Clean: Rework the configuration input for the client & server plugins
+- [ ] Clean: Rework the error handling on collections to not fail at the first error
 - [ ] Documentation: Fully document the API
-- [x] Tests: Add tests
 
 ## Quickstart
 
