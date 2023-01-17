@@ -11,7 +11,7 @@ use std::{
 use bevy::prelude::*;
 use bytes::Bytes;
 use futures_util::StreamExt;
-use quinn::{ClientConfig, Connection as QuinnConnection, ConnectionError, Endpoint};
+use quinn::{ClientConfig, Connection as QuinnConnection, ConnectionError, Endpoint, RecvStream};
 use quinn_proto::ConnectionStats;
 use serde::Deserialize;
 use tokio::{
@@ -24,7 +24,6 @@ use tokio::{
         },
         oneshot,
     },
-    task::JoinSet,
 };
 use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 
@@ -626,7 +625,7 @@ async fn connection_task(spawn_config: ConnectionSpawnConfig) {
                 let close_recv = spawn_config.close_recv.resubscribe();
                 let connection_handle = connection.clone();
                 tokio::spawn(async move {
-                    connection_receiving_task(
+                    reliable_receiver_task(
                         connection_handle,
                         spawn_config.bytes_from_server_send,
                         close_recv,
@@ -649,32 +648,51 @@ async fn connection_task(spawn_config: ConnectionSpawnConfig) {
     }
 }
 
-async fn connection_receiving_task(
-    connection: quinn::Connection,
-    bytes_from_server_send: mpsc::Sender<Bytes>,
+async fn uni_receiver_task(
+    recv: RecvStream,
     mut close_recv: broadcast::Receiver<()>,
+    bytes_from_server_send: mpsc::Sender<Bytes>,
 ) {
-    let mut uni_receivers: JoinSet<()> = JoinSet::new();
     tokio::select! {
         _ = close_recv.recv() => {
-            trace!("Listener for new Unidirectional Receiving Streams  received a close signal")
+            trace!("Listener of a Unidirectional Receiving Streams received a close signal")
+        }
+        _ = async {
+            let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
+            while let Some(Ok(msg_bytes)) = frame_recv.next().await {
+                // TODO Clean: error handling
+                bytes_from_server_send.send(msg_bytes.into()).await.unwrap();
+            }
+        } => {}
+    };
+}
+
+async fn reliable_receiver_task(
+    connection: quinn::Connection,
+    incoming_bytes_send: mpsc::Sender<Bytes>,
+    mut close_recv: broadcast::Receiver<()>,
+) {
+    let close_recv_clone = close_recv.resubscribe();
+    tokio::select! {
+        _ = close_recv.recv() => {
+            trace!("Listener for new Unidirectional Receiving Streams received a close signal")
         }
         _ = async {
             while let Ok(recv) = connection.accept_uni().await {
-                let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
-                let from_server_sender = bytes_from_server_send.clone();
-                uni_receivers.spawn(async move {
-                    while let Some(Ok(msg_bytes)) = frame_recv.next().await {
-                         // TODO Clean: error handling
-                        from_server_sender.send(msg_bytes.into()).await.unwrap();
-                    }
+                let bytes_from_server_send = incoming_bytes_send.clone();
+                let close_recv_clone = close_recv_clone.resubscribe();
+                tokio::spawn(async move {
+                    uni_receiver_task(
+                        recv,
+                        close_recv_clone,
+                        bytes_from_server_send
+                    ).await;
                 });
             }
         } => {
             trace!("Listener for new Unidirectional Receiving Streams ended")
         }
     };
-    uni_receivers.shutdown().await;
     trace!("All unidirectional stream receivers cleaned");
 }
 

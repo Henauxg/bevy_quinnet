@@ -8,7 +8,7 @@ use std::{
 use bevy::prelude::*;
 use bytes::Bytes;
 use futures_util::StreamExt;
-use quinn::{ConnectionError, Endpoint as QuinnEndpoint, ServerConfig};
+use quinn::{ConnectionError, Endpoint as QuinnEndpoint, RecvStream, ServerConfig};
 use serde::Deserialize;
 use tokio::{
     runtime,
@@ -19,7 +19,6 @@ use tokio::{
             error::{TryRecvError, TrySendError},
         },
     },
-    task::JoinSet,
 };
 use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 
@@ -803,42 +802,60 @@ async fn client_connection_task(
     });
 }
 
+async fn uni_receiver_task(
+    client_id: ClientId,
+    mut close_recv: broadcast::Receiver<()>,
+    recv: RecvStream,
+    payloads_from_clients_send: mpsc::Sender<ClientPayload>,
+) {
+    tokio::select! {
+        _ = close_recv.recv() => {
+            trace!("Listener of a Unidirectional Receiving Streams received a close signal")
+        }
+        _ = async {
+            let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
+            while let Some(Ok(msg_bytes)) = frame_recv.next().await {
+                // TODO Clean: error handling
+                payloads_from_clients_send
+                .send(ClientPayload {
+                    client_id: client_id,
+                    msg: msg_bytes.into(),
+                })
+                .await
+                .unwrap();
+            }
+        } => {}
+    };
+}
+
 async fn client_receiver_task(
     client_id: ClientId,
     connection: quinn::Connection,
-    mut close_receiver: tokio::sync::broadcast::Receiver<()>,
-    from_clients_sender: mpsc::Sender<ClientPayload>,
+    mut close_recv: tokio::sync::broadcast::Receiver<()>,
+    payloads_from_clients_send: mpsc::Sender<ClientPayload>,
 ) {
-    let mut uni_receivers: JoinSet<()> = JoinSet::new();
+    let close_recv_clone = close_recv.resubscribe();
     tokio::select! {
-        _ = close_receiver.recv() => {
-            trace!("New Stream listener forced to disconnected for client: {}", client_id)
+        _ = close_recv.recv() => {
+            trace!("Listener for new Unidirectional Receiving Streams received a close signal for client: {}", client_id)
         }
         _ = async {
-            // For each new stream opened by the client
             while let Ok(recv) = connection.accept_uni().await {
-                let mut frame_recv = FramedRead::new(recv, LengthDelimitedCodec::new());
-
-                // Spawn a task to receive data on this stream.
-                let from_client_sender = from_clients_sender.clone();
-                uni_receivers.spawn(async move {
-                    while let Some(Ok(msg_bytes)) = frame_recv.next().await {
-                        from_client_sender
-                            .send(ClientPayload {
-                                client_id: client_id,
-                                msg: msg_bytes.into(),
-                            })
-                            .await
-                            .unwrap();// TODO Fix: error event
-                    }
-                    trace!("Unidirectional stream receiver ended for client: {}", client_id)
+                let payloads_from_clients_send = payloads_from_clients_send.clone();
+                let  close_recv_clone = close_recv_clone.resubscribe();
+                tokio::spawn(async move {
+                    uni_receiver_task(
+                        client_id,
+                        close_recv_clone,
+                        recv,
+                        payloads_from_clients_send
+                    ).await;
                 });
             }
         } => {
             trace!("New Stream listener ended for client: {}", client_id)
         }
     }
-    uni_receivers.shutdown().await;
     trace!(
         "All unidirectional stream receivers cleaned for client: {}",
         client_id
