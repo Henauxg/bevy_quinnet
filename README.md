@@ -160,28 +160,30 @@ fn handle_client_messages(
     /*...*/
 ) {
     let mut endpoint = server.endpoint_mut();
-    while let Ok(Some((message, client_id))) = endpoint.receive_message::<ClientMessage>() {
-        match message {
-            // Match on your own message types ...
-            ClientMessage::Join { username} => {
-                // Send a messsage to 1 client
-                endpoint.send_message(client_id, ServerMessage::InitClient {/*...*/}).unwrap();
-                /*...*/
+    for client_id in endpoint.clients() {
+        while let Some(message) = endpoint.try_receive_message_from::<ClientMessage>(client_id) {
+            match message {
+                // Match on your own message types ...
+                ClientMessage::Join { username} => {
+                    // Send a messsage to 1 client
+                    endpoint.send_message(client_id, ServerMessage::InitClient {/*...*/}).unwrap();
+                    /*...*/
+                }
+                ClientMessage::Disconnect { } => {
+                    // Disconnect a client
+                    endpoint.disconnect_client(client_id);
+                    /*...*/
+                }
+                ClientMessage::ChatMessage { message } => {
+                    // Send a message to a group of clients
+                    endpoint.send_group_message(
+                            client_group, // Iterator of ClientId
+                            ServerMessage::ChatMessage {/*...*/}
+                        )
+                        .unwrap();
+                    /*...*/
+                }           
             }
-            ClientMessage::Disconnect { } => {
-                // Disconnect a client
-                endpoint.disconnect_client(client_id);
-                /*...*/
-            }
-            ClientMessage::ChatMessage { message } => {
-                // Send a message to a group of clients
-                endpoint.send_group_message(
-                        client_group, // Iterator of ClientId
-                        ServerMessage::ChatMessage {/*...*/}
-                    )
-                    .unwrap();
-                /*...*/
-            }           
         }
     }
 }
