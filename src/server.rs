@@ -8,6 +8,7 @@ use std::{
 use bevy::prelude::*;
 use bytes::Bytes;
 use quinn::{ConnectionError, Endpoint as QuinnEndpoint, ServerConfig};
+use quinn_proto::ConnectionStats;
 use serde::Deserialize;
 use tokio::{
     runtime,
@@ -489,6 +490,14 @@ impl Endpoint {
             self.disconnect_client(client_id)?;
         }
         Ok(())
+    }
+
+    /// Returns statistics about a client if connected.
+    pub fn stats(&self, client_id: ClientId) -> Option<ConnectionStats> {
+        match &self.clients.get(&client_id) {
+            Some(client) => Some(client.connection_handle.stats()),
+            None => None,
+        }
     }
 
     /// Opens a channel of the requested [ChannelType] and returns its [ChannelId].
