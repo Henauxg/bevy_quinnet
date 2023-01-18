@@ -2,7 +2,7 @@ use std::{collections::HashMap, error::Error, net::SocketAddr, sync::Arc};
 
 use bevy::prelude::{error, info};
 use bytes::Bytes;
-use quinn::{ClientConfig, Connection as QuinnConnection, Endpoint};
+use quinn::{ClientConfig, Endpoint};
 use quinn_proto::ConnectionStats;
 
 use serde::Deserialize;
@@ -19,7 +19,8 @@ use crate::shared::{
         channels_task, get_channel_id_from_type, reliable_receiver_task, unreliable_receiver_task,
         Channel, ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelType, MultiChannelId,
     },
-    QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+    InternalConnectionRef, QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE,
+    DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
 use super::{
@@ -85,8 +86,6 @@ impl ConnectionConfiguration {
         }
     }
 }
-
-pub(crate) type InternalConnectionRef = QuinnConnection;
 
 /// Current state of a client connection
 #[derive(Debug)]

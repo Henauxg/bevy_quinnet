@@ -20,7 +20,8 @@ use tokio::{
 
 use crate::shared::{
     channel::{ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelType},
-    AsyncRuntime, QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+    AsyncRuntime, InternalConnectionRef, QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE,
+    DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
 use self::{
@@ -30,7 +31,7 @@ use self::{
     },
     connection::{
         connection_task, Connection, ConnectionConfiguration, ConnectionEvent, ConnectionId,
-        ConnectionLostEvent, ConnectionState, InternalConnectionRef,
+        ConnectionLostEvent, ConnectionState,
     },
 };
 

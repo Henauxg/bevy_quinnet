@@ -17,6 +17,7 @@ pub mod channel;
 
 #[derive(Resource, Deref, DerefMut)]
 pub(crate) struct AsyncRuntime(pub(crate) Runtime);
+pub(crate) type InternalConnectionRef = quinn::Connection;
 
 /// Enum with possibles errors that can occur in Bevy Quinnet
 #[derive(thiserror::Error, Debug)]
