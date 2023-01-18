@@ -130,20 +130,20 @@ mod tests {
         server_app.update();
 
         {
-            let (client_message, client_id) = server_app
+            let server_test_data = server_app.world.resource::<ServerTestData>();
+            assert!(
+                server_test_data.last_connected_client_id.is_some(),
+                "A client should have connected"
+            );
+            let client_id = server_test_data.last_connected_client_id.unwrap();
+
+            let client_message = server_app
                 .world
                 .resource_mut::<Server>()
                 .endpoint_mut()
-                .receive_message::<SharedMessage>()
+                .receive_message_from::<SharedMessage>(client_id)
                 .expect("Failed to receive client message")
                 .expect("There should be a client message");
-            let server_test_data = server_app.world.resource::<ServerTestData>();
-            assert_eq!(
-                client_id,
-                server_test_data
-                    .last_connected_client_id
-                    .expect("A client should have connected")
-            );
             assert_eq!(client_message, sent_client_message);
         }
 
