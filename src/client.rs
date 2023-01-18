@@ -148,9 +148,17 @@ impl Client {
         connection.open_channel(ChannelType::UnorderedReliable)?;
         connection.open_channel(ChannelType::Unreliable)?;
 
+        self.last_gen_id += 1;
+        let connection_id = self.last_gen_id;
+        self.connections.insert(connection_id, connection);
+        if self.default_connection_id.is_none() {
+            self.default_connection_id = Some(connection_id);
+        }
+
         // Async connection
         self.runtime.spawn(async move {
             connection_task(
+                connection_id,
                 config,
                 cert_mode,
                 to_sync_client_send,
@@ -161,13 +169,6 @@ impl Client {
             )
             .await
         });
-
-        self.last_gen_id += 1;
-        let connection_id = self.last_gen_id;
-        self.connections.insert(connection_id, connection);
-        if self.default_connection_id.is_none() {
-            self.default_connection_id = Some(connection_id);
-        }
 
         Ok((connection_id, ordered_reliable_id))
     }
