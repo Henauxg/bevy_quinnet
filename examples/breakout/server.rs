@@ -92,13 +92,14 @@ pub(crate) fn start_listening(mut server: ResMut<Server>) {
 }
 
 pub(crate) fn handle_client_messages(mut server: ResMut<Server>, mut players: ResMut<Players>) {
-    while let Some((message, client_id)) =
-        server.endpoint_mut().try_receive_message::<ClientMessage>()
-    {
-        match message {
-            ClientMessage::PaddleInput { input } => {
-                if let Some(player) = players.map.get_mut(&client_id) {
-                    player.input = input;
+    let endpoint = server.endpoint_mut();
+    for client_id in endpoint.clients() {
+        while let Some(message) = endpoint.try_receive_message_from::<ClientMessage>(client_id) {
+            match message {
+                ClientMessage::PaddleInput { input } => {
+                    if let Some(player) = players.map.get_mut(&client_id) {
+                        player.input = input;
+                    }
                 }
             }
         }

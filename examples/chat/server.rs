@@ -6,7 +6,7 @@ use bevy_quinnet::{
         certificate::CertificateRetrievalMode, ConnectionLostEvent, Endpoint, QuinnetServerPlugin,
         Server, ServerConfigurationData,
     },
-    shared::ClientId,
+    shared::{channel::ChannelId, ClientId},
 };
 
 use protocol::{ClientMessage, ServerMessage};
@@ -20,57 +20,60 @@ struct Users {
 
 fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) {
     let endpoint = server.endpoint_mut();
-    while let Ok(Some((message, client_id))) = endpoint.receive_message::<ClientMessage>() {
-        match message {
-            ClientMessage::Join { name } => {
-                if users.names.contains_key(&client_id) {
-                    warn!(
-                        "Received a Join from an already connected client: {}",
-                        client_id
-                    )
-                } else {
-                    info!("{} connected", name);
-                    users.names.insert(client_id, name.clone());
-                    // Initialize this client with existing state
-                    endpoint
-                        .send_message(
-                            client_id,
-                            ServerMessage::InitClient {
-                                client_id: client_id,
-                                usernames: users.names.clone(),
-                            },
+    for client_id in endpoint.clients() {
+        while let Some(message) = endpoint.try_receive_message_from::<ClientMessage>(client_id) {
+            match message {
+                ClientMessage::Join { name } => {
+                    if users.names.contains_key(&client_id) {
+                        warn!(
+                            "Received a Join from an already connected client: {}",
+                            client_id
                         )
-                        .unwrap();
-                    // Broadcast the connection event
-                    endpoint
-                        .send_group_message(
-                            users.names.keys().into_iter(),
-                            ServerMessage::ClientConnected {
-                                client_id: client_id,
-                                username: name,
-                            },
-                        )
-                        .unwrap();
+                    } else {
+                        info!("{} connected", name);
+                        users.names.insert(client_id, name.clone());
+                        // Initialize this client with existing state
+                        endpoint
+                            .send_message(
+                                client_id,
+                                ServerMessage::InitClient {
+                                    client_id: client_id,
+                                    usernames: users.names.clone(),
+                                },
+                            )
+                            .unwrap();
+                        // Broadcast the connection event
+                        endpoint
+                            .send_group_message(
+                                users.names.keys().into_iter(),
+                                ServerMessage::ClientConnected {
+                                    client_id: client_id,
+                                    username: name,
+                                },
+                            )
+                            .unwrap();
+                    }
                 }
-            }
-            ClientMessage::Disconnect {} => {
-                // We tell the server to disconnect this user
-                endpoint.disconnect_client(client_id).unwrap();
-                handle_disconnect(endpoint, &mut users, client_id);
-            }
-            ClientMessage::ChatMessage { message } => {
-                info!(
-                    "Chat message | {:?}: {}",
-                    users.names.get(&client_id),
-                    message
-                );
-                endpoint.try_send_group_message(
-                    users.names.keys().into_iter(),
-                    ServerMessage::ChatMessage {
-                        client_id: client_id,
-                        message: message,
-                    },
-                );
+                ClientMessage::Disconnect {} => {
+                    // We tell the server to disconnect this user
+                    endpoint.disconnect_client(client_id).unwrap();
+                    handle_disconnect(endpoint, &mut users, client_id);
+                }
+                ClientMessage::ChatMessage { message } => {
+                    info!(
+                        "Chat message | {:?}: {}",
+                        users.names.get(&client_id),
+                        message
+                    );
+                    endpoint.try_send_group_message_on(
+                        users.names.keys().into_iter(),
+                        ChannelId::UnorderedReliable,
+                        ServerMessage::ChatMessage {
+                            client_id: client_id,
+                            message: message,
+                        },
+                    );
+                }
             }
         }
     }
