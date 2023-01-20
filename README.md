@@ -304,7 +304,7 @@ It also makes uses of [`Channels`](#channels). The server broadcasts the paddle 
 
 Start two clients with `cargo run --example breakout`, "Host" on one and "Join" on the other.
 
-![breakout_versus_demo_short](https://user-images.githubusercontent.com/19689618/213700921-85967bd7-9a47-44ac-9471-77a33938569f.mp4)
+[breakout_versus_demo_short.mp4](https://user-images.githubusercontent.com/19689618/213700921-85967bd7-9a47-44ac-9471-77a33938569f.mp4)
 </details>
 
 Examples can be found in the [examples](examples) directory.
