@@ -464,6 +464,11 @@ impl Endpoint {
         }
     }
 
+    /// Disconnect a specific client. Removes it from the server.
+    ///
+    /// Disconnecting a client immediately prevents new messages from being sent on its connection and signal the underlying connection to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
+    ///
+    /// This may fail if no client if found for client_id, or if the client is already disconnected.
     pub fn disconnect_client(&mut self, client_id: ClientId) -> Result<(), QuinnetError> {
         match self.clients.remove(&client_id) {
             Some(client_connection) => match client_connection.close_sender.send(()) {
@@ -485,6 +490,7 @@ impl Endpoint {
         }
     }
 
+    /// Calls disconnect_client on all onnected clients
     pub fn disconnect_all_clients(&mut self) -> Result<(), QuinnetError> {
         for client_id in self.clients.keys().cloned().collect::<Vec<ClientId>>() {
             self.disconnect_client(client_id)?;

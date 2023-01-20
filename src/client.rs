@@ -184,7 +184,11 @@ impl Client {
         self.default_connection_id
     }
 
-    /// Close a specific connection. Removes it from the client. This may fail if no [Connection] if found for connection_id, or if the [Connection] is already closed.
+    /// Close a specific connection. Removes it from the client.
+    ///
+    /// Closign a connection immediately prevents new messages from being sent on the connection and signal it to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
+    ///
+    /// This may fail if no [Connection] if found for connection_id, or if the [Connection] is already closed.
     pub fn close_connection(&mut self, connection_id: ConnectionId) -> Result<(), QuinnetError> {
         match self.connections.remove(&connection_id) {
             Some(mut connection) => {
