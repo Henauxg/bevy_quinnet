@@ -368,7 +368,7 @@ impl Endpoint {
         }
     }
 
-    pub fn try_broadcast_message_on<T: serde::Serialize>(&self, message: T, channel_id: ChannelId) {
+    pub fn try_broadcast_message_on<T: serde::Serialize>(&self, channel_id: ChannelId, message: T) {
         match self.broadcast_message_on(channel_id, message) {
             Ok(_) => {}
             Err(err) => error!("try_broadcast_message: {}", err),
