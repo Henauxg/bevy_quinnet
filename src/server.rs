@@ -193,7 +193,7 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    /// Returns an iterator over all client ids
+    /// Returns a vec of all connected client ids
     pub fn clients(&self) -> Vec<ClientId> {
         self.clients.keys().cloned().collect()
     }
