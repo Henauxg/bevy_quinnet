@@ -519,7 +519,7 @@ checksum = "8ec44f7655039546bc5d34d98de877083473f3e9b2b81d560c528d6d74d3eff4"
 
 [[package]]
 name = "bevy_quinnet"
-version = "0.3.0-dev"
+version = "0.3.0"
 dependencies = [
  "base64 0.13.1",
  "bevy",

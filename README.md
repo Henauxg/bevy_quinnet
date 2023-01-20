@@ -314,7 +314,7 @@ Compatibility of `bevy_quinnet` versions:
 
 | `bevy_quinnet` | `bevy` |
 | :------------- | :----- |
-| `0.2`          | `0.9`  |
+| `0.2`-`0.3`    | `0.9`  |
 | `0.1`          | `0.8`  |
 
 ## Limitations
