@@ -12,7 +12,7 @@ use bevy_quinnet::{
     server::{
         certificate::CertificateRetrievalMode, ConnectionEvent, Server, ServerConfigurationData,
     },
-    shared::ClientId,
+    shared::{channel::ChannelId, ClientId},
 };
 
 use crate::{
@@ -158,8 +158,9 @@ pub(crate) fn update_paddles(
 
                 paddle_transform.translation.x = new_paddle_position.clamp(left_bound, right_bound);
 
-                server.endpoint().try_send_group_message(
+                server.endpoint().try_send_group_message_on(
                     players.map.keys().into_iter(),
+                    ChannelId::Unreliable,
                     ServerMessage::PaddleMoved {
                         entity: paddle_entity,
                         position: paddle_transform.translation,
@@ -198,10 +199,13 @@ pub(crate) fn check_for_collisions(
                 if let Some(brick) = maybe_brick {
                     commands.entity(collider_entity).despawn();
 
-                    endpoint.try_broadcast_message(ServerMessage::BrickDestroyed {
-                        by_client_id: ball.last_hit_by,
-                        brick_id: brick.0,
-                    });
+                    endpoint.try_broadcast_message_on(
+                        ChannelId::UnorderedReliable,
+                        ServerMessage::BrickDestroyed {
+                            by_client_id: ball.last_hit_by,
+                            brick_id: brick.0,
+                        },
+                    );
                 }
 
                 // reflect the ball when it collides
@@ -228,12 +232,15 @@ pub(crate) fn check_for_collisions(
                     ball_velocity.y = -ball_velocity.y;
                 }
 
-                endpoint.try_broadcast_message(ServerMessage::BallCollided {
-                    owner_client_id: ball.last_hit_by,
-                    entity: ball_entity,
-                    position: ball_transform.translation,
-                    velocity: ball_velocity.0,
-                });
+                endpoint.try_broadcast_message_on(
+                    ChannelId::UnorderedReliable,
+                    ServerMessage::BallCollided {
+                        owner_client_id: ball.last_hit_by,
+                        entity: ball_entity,
+                        position: ball_transform.translation,
+                        velocity: ball_velocity.0,
+                    },
+                );
             }
         }
     }
