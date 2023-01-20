@@ -1,10 +1,26 @@
 # Changelog
 
-## Version 0.3.0-dev
+## Version 0.3.0 (2023-01-20)
 
+### Added
+
+- [client & server] Add `OrderedReliable`, `UnorderedReliable` and `Unreliable` send channels. The existing API uses default channels, additional channel can be opened/closed with `open_channel`/`close_channel` and used with derivatives of `send_message_on`.
+- [client & server] Now also receive `Unreliable` messages
+- [client & server] Add a stats() function on a connection to retrieve statistics (thanks to [Andrewvy](https://github.com/andrewvy), PR [#4](https://github.com/Henauxg/bevy_quinnet/pull/4))
+- [server] Add a clients() function to retrieve all the connected Client ids
+- [tests] Add tests for channels, and move tests to cargo integration test directory
+
+### Changed
+
+- [server] `receive_message` and `receive_payload` functions are now `receive_message_from` and `receive_payload_from`, taking a ClientId as parameter (clients messages are now stored on separate queues to prevent a client from filling the shared queue)
+- [client] Expose `ConnectionId` as `pub` in `ConnectionEvent` and `ConnectionLostEvent ` (thanks to [Zheilbron](https://github.com/zheilbron), PR [#5](https://github.com/Henauxg/bevy_quinnet/pull/5))
+- [example:breakout] Make use of Unreliable and UnorderedReliable channels
+- Updated dependencies
+
+### Fixed
+- [client & server] Enhancement on disconnection behaviours, existing outgoing messages are now flushed (thanks to [Zheilbron](https://github.com/zheilbron), PR [#6](https://github.com/Henauxg/bevy_quinnet/pull/6))
 - [client] Do not fail in store_known_hosts_to_file if the path has no prefix
 - [server] Do not fail in write_certs_to_files if the cert and key files have non-existing parent directories, create them instead
-- [client] Expose a stats() function on a connection to retrieve statistics
 
 ## Version 0.2.0 (2022-11-18)
 
