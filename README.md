@@ -51,12 +51,10 @@ It currently features:
 
 - A Client plugin which can:
     - Connect/disconnect to/from one or more server
-    - Send unreliable and ordered/unordered reliable messages
-    - Receive ordered/unordered reliable messages from the server
+    - Send & receive unreliable and ordered/unordered reliable messages
 - A Server plugin which can:
     - Accept client connections & disconnect them
-    - Send unreliable and ordered/unordered reliable messages
-    - Receive ordered/unordered reliable messages from any client
+    - Send & receive unreliable and ordered/unordered reliable messages
 - Both client & server accept custom protocol structs/enums defined by the user as the message format.
 - Communications are encrypted, and the client can [authenticate the server](#certificates-and-server-authentication).
 
