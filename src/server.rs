@@ -311,8 +311,9 @@ impl Endpoint {
     ) -> Result<(), QuinnetError> {
         match bincode::serialize(&message) {
             Ok(payload) => {
+                let bytes = Bytes::from(payload);
                 for id in client_ids {
-                    self.send_payload_on(*id, channel_id, payload.clone())?;
+                    self.send_payload_on(*id, channel_id, bytes.clone())?;
                 }
                 Ok(())
             }
@@ -390,7 +391,7 @@ impl Endpoint {
         channel_id: ChannelId,
         payload: T,
     ) -> Result<(), QuinnetError> {
-        let payload = payload.into();
+        let payload: Bytes = payload.into();
         for (_, client_connection) in self.clients.iter() {
             match client_connection.channels.get(&channel_id) {
                 Some(channel) => channel.send_payload(payload.clone())?,
@@ -437,7 +438,7 @@ impl Endpoint {
     ) -> Result<(), QuinnetError> {
         if let Some(client_connection) = self.clients.get(&client_id) {
             match client_connection.channels.get(&channel_id) {
-                Some(channel) => channel.send_payload(payload),
+                Some(channel) => channel.send_payload(payload.into()),
                 None => return Err(QuinnetError::UnknownChannel(channel_id)),
             }
         } else {

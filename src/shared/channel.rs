@@ -74,8 +74,8 @@ impl Channel {
         }
     }
 
-    pub(crate) fn send_payload<T: Into<Bytes>>(&self, payload: T) -> Result<(), QuinnetError> {
-        match self.sender.try_send(payload.into()) {
+    pub(crate) fn send_payload(&self, payload: Bytes) -> Result<(), QuinnetError> {
+        match self.sender.try_send(payload) {
             Ok(_) => Ok(()),
             Err(err) => match err {
                 TrySendError::Full(_) => Err(QuinnetError::FullQueue),

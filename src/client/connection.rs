@@ -169,7 +169,7 @@ impl Connection {
             ConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
             _ => match self.channels.get(&channel_id) {
                 Some(channel) => match bincode::serialize(&message) {
-                    Ok(payload) => channel.send_payload(payload),
+                    Ok(payload) => channel.send_payload(payload.into()),
                     Err(_) => Err(QuinnetError::Serialization),
                 },
                 None => Err(QuinnetError::UnknownChannel(channel_id)),
@@ -208,7 +208,7 @@ impl Connection {
         match &self.state {
             ConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
             _ => match self.channels.get(&channel_id) {
-                Some(channel) => channel.send_payload(payload),
+                Some(channel) => channel.send_payload(payload.into()),
                 None => Err(QuinnetError::UnknownChannel(channel_id)),
             },
         }
