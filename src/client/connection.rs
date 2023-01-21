@@ -185,6 +185,14 @@ impl Connection {
         }
     }
 
+    /// Same as [Connection::send_message_on] but will log the error instead of returning it
+    pub fn try_send_message_on<T: serde::Serialize>(&self, channel_id: ChannelId, message: T) {
+        match self.send_message_on(channel_id, message) {
+            Ok(_) => {}
+            Err(err) => error!("try_send_message_on: {}", err),
+        }
+    }
+
     pub fn send_payload<T: Into<Bytes>>(&self, payload: T) -> Result<(), QuinnetError> {
         match self.default_channel {
             Some(channel) => self.send_payload_on(channel, payload),
@@ -211,6 +219,14 @@ impl Connection {
         match self.send_payload(payload) {
             Ok(_) => {}
             Err(err) => error!("try_send_payload: {}", err),
+        }
+    }
+
+    /// Same as [Connection::send_payload_on] but will log the error instead of returning it
+    pub fn try_send_payload_on<T: Into<Bytes>>(&self, channel_id: ChannelId, payload: T) {
+        match self.send_payload_on(channel_id, payload) {
+            Ok(_) => {}
+            Err(err) => error!("try_send_payload_on: {}", err),
         }
     }
 
