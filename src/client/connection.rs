@@ -42,7 +42,7 @@ pub struct ConnectionLostEvent {
     pub id: ConnectionId,
 }
 
-/// Configuration of the client, used when connecting to a server
+/// Configuration of a client connection, used when connecting to a server
 #[derive(Debug, Deserialize, Clone)]
 pub struct ConnectionConfiguration {
     server_host: String,
@@ -52,7 +52,7 @@ pub struct ConnectionConfiguration {
 }
 
 impl ConnectionConfiguration {
-    /// Creates a new ClientConfigurationData
+    /// Creates a new ConnectionConfiguration
     ///
     /// # Arguments
     ///
