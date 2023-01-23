@@ -680,8 +680,19 @@ pub(crate) async fn unreliable_receiver_task<T: Display>(
         }
         _ = async {
             while let Ok(msg_bytes) = connection.read_datagram().await {
-                // TODO Clean: error handling
-                bytes_incoming_send.send(msg_bytes.into()).await.unwrap();
+                match bincode::deserialize::<Datagram>(&msg_bytes) {
+                    Ok(fragment) => {
+                        match fragment.header {
+                            DatagramHeader::FirstFragmentSequenced { id, channel_id, frag_count } => todo!(),
+                            DatagramHeader::FragmentSequenced { id, channel_id, fragment } => todo!(),
+                            DatagramHeader::FirstFragmentNotSequenced { id, frag_count } => todo!(),
+                            DatagramHeader::FragmentNotSequenced { id, fragment } => todo!(),
+                            DatagramHeader::CompleteSequenced { id, channel_id } => todo!(),
+                            DatagramHeader::CompleteNotSequenced => bytes_incoming_send.send(fragment.payload.into()).await.unwrap(),
+                        }
+                    },
+                    Err(err) => error!("Failed to deserialize datagram: {}", err),
+                }
             }
         } => {
             trace!("Listener for unreliable datagrams with id {} ended", id)
