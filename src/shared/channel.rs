@@ -4,7 +4,10 @@ use bytes::Bytes;
 use futures::{sink::SinkExt, StreamExt};
 use quinn::{RecvStream, SendDatagramError, SendStream, VarInt};
 use serde::{Deserialize, Serialize};
-use std::fmt::{Debug, Display};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+};
 use tokio::sync::{
     broadcast,
     mpsc::{self, error::TrySendError},
@@ -52,28 +55,31 @@ impl std::fmt::Display for ChannelId {
     }
 }
 
+pub(crate) type DatagramId = u16;
+pub(crate) type FragmentId = u8;
+
 #[derive(Serialize, Deserialize)]
 enum DatagramHeader {
     FirstFragmentSequenced {
-        id: u16,
+        id: DatagramId,
         channel_id: MultiChannelId,
         frag_count: u8,
     },
     FragmentSequenced {
-        id: u16,
+        id: DatagramId,
         channel_id: MultiChannelId,
-        fragment: u8,
+        fragment: FragmentId,
     },
     FirstFragmentNotSequenced {
-        id: u16,
-        frag_count: u8,
+        id: DatagramId,
+        frag_count: FragmentId,
     },
     FragmentNotSequenced {
-        id: u16,
-        fragment: u8,
+        id: DatagramId,
+        fragment: FragmentId,
     },
     CompleteSequenced {
-        id: u16,
+        id: DatagramId,
         channel_id: MultiChannelId,
     },
     CompleteNotSequenced,
@@ -474,7 +480,7 @@ async fn send_unreliable_message<F>(
     }
 }
 
-fn build_datagram_header(header_type: DatagramHeaderType, msg_id: u16) -> DatagramHeader {
+fn build_datagram_header(header_type: DatagramHeaderType, msg_id: DatagramId) -> DatagramHeader {
     match header_type {
         DatagramHeaderType::FirstFrag(frag_count) => DatagramHeader::FirstFragmentNotSequenced {
             id: msg_id,
@@ -499,7 +505,7 @@ pub(crate) async fn unreliable_channel_task(
     let mut max_payload_size = connection
         .max_datagram_size()
         .unwrap_or(DEFAULT_MAX_DATAGRAM_SIZE);
-    let mut msg_id: u16 = 0;
+    let mut msg_id: DatagramId = 0;
 
     tokio::select! {
         _ = close_recv.recv() => {
@@ -541,7 +547,7 @@ pub(crate) async fn unreliable_channel_task(
 fn build_sequenced_datagram_header(
     header_type: DatagramHeaderType,
     channel_id: MultiChannelId,
-    msg_id: u16,
+    msg_id: DatagramId,
 ) -> DatagramHeader {
     match header_type {
         DatagramHeaderType::FirstFrag(frag_count) => DatagramHeader::FirstFragmentSequenced {
@@ -570,7 +576,7 @@ pub(crate) async fn sequenced_unreliable_channel_task(
     mut channel_close_recv: mpsc::Receiver<()>,
     mut bytes_to_channel_recv: mpsc::Receiver<Bytes>,
 ) {
-    let mut msg_id: u16 = 0;
+    let mut msg_id: DatagramId = 0;
     let mut max_payload_size = connection
         .max_datagram_size()
         .unwrap_or(DEFAULT_MAX_DATAGRAM_SIZE);
@@ -674,6 +680,8 @@ pub(crate) async fn unreliable_receiver_task<T: Display>(
     mut close_recv: broadcast::Receiver<()>,
     bytes_incoming_send: mpsc::Sender<Bytes>,
 ) {
+    let mut sequenced_channels: HashMap<MultiChannelId, DatagramId> = HashMap::new();
+
     tokio::select! {
         _ = close_recv.recv() => {
             trace!("Listener for unreliable datagrams with id {} received a close signal", id)
@@ -687,7 +695,19 @@ pub(crate) async fn unreliable_receiver_task<T: Display>(
                             DatagramHeader::FragmentSequenced { id, channel_id, fragment } => todo!(),
                             DatagramHeader::FirstFragmentNotSequenced { id, frag_count } => todo!(),
                             DatagramHeader::FragmentNotSequenced { id, fragment } => todo!(),
-                            DatagramHeader::CompleteSequenced { id, channel_id } => todo!(),
+                            DatagramHeader::CompleteSequenced { id, channel_id } => {
+                                match sequenced_channels.get(&channel_id) {
+                                    Some(most_recent_seq_id) => {
+                                        if id > *most_recent_seq_id {
+                                            bytes_incoming_send.send(fragment.payload.into()).await.unwrap();
+                                            sequenced_channels.insert(channel_id, id);
+                                        }
+                                    },
+                                    None => {
+                                        sequenced_channels.insert(channel_id, id);
+                                    }
+                                };
+                            },
                             DatagramHeader::CompleteNotSequenced => bytes_incoming_send.send(fragment.payload.into()).await.unwrap(),
                         }
                     },
