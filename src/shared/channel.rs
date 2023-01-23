@@ -3,6 +3,7 @@ use bevy::prelude::{error, trace};
 use bytes::Bytes;
 use futures::{sink::SinkExt, StreamExt};
 use quinn::{RecvStream, SendDatagramError, SendStream, VarInt};
+use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Display};
 use tokio::sync::{
     broadcast,
@@ -10,7 +11,10 @@ use tokio::sync::{
 };
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
-pub(crate) type MultiChannelId = u64;
+const DEFAULT_MAX_DATAGRAM_SIZE: usize = 1250;
+const UNRELIABLE_HEADER_MARGIN: usize = 4;
+
+pub(crate) type MultiChannelId = u16;
 
 #[derive(Debug, Copy, Clone)]
 pub enum ChannelType {
@@ -22,6 +26,7 @@ pub enum ChannelType {
     ///
     /// The maximum allowed size of a datagram may change over the lifetime of a connection according to variation in the path MTU estimate. This is guaranteed to be a little over a kilobyte at minimum.
     Unreliable,
+    UnreliableSequenced,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -38,12 +43,52 @@ pub enum ChannelId {
     ///
     /// See [ChannelType::Unreliable] for more information.
     Unreliable,
+    UnreliableSequenced(MultiChannelId),
 }
 
 impl std::fmt::Display for ChannelId {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?}", self)
     }
+}
+
+#[derive(Serialize, Deserialize)]
+enum DatagramHeader {
+    FirstFragmentSequenced {
+        id: u16,
+        channel_id: MultiChannelId,
+        frag_count: u8,
+    },
+    FragmentSequenced {
+        id: u16,
+        channel_id: MultiChannelId,
+        fragment: u8,
+    },
+    FirstFragmentNotSequenced {
+        id: u16,
+        frag_count: u8,
+    },
+    FragmentNotSequenced {
+        id: u16,
+        fragment: u8,
+    },
+    CompleteSequenced {
+        id: u16,
+        channel_id: MultiChannelId,
+    },
+    CompleteNotSequenced,
+}
+
+enum DatagramHeaderType {
+    FirstFrag(u8),
+    Frag(u8),
+    Complete,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Datagram {
+    header: DatagramHeader,
+    payload: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -106,6 +151,7 @@ where
         ChannelType::OrderedReliable => ChannelId::OrderedReliable(multi_id_generator()),
         ChannelType::UnorderedReliable => ChannelId::UnorderedReliable,
         ChannelType::Unreliable => ChannelId::Unreliable,
+        ChannelType::UnreliableSequenced => ChannelId::UnreliableSequenced(multi_id_generator()),
     }
 }
 
@@ -163,6 +209,20 @@ pub(crate) async fn channels_task(
                         tokio::spawn(async move {
                             unreliable_channel_task(
                                 connection_handle,
+                                channels_keepalive_clone,
+                                from_channels_send,
+                                close_receiver,
+                                channel_close_recv,
+                                bytes_to_channel_recv
+                            )
+                            .await
+                        });
+                    },
+                    ChannelId::UnreliableSequenced(internal_channel_id) => {
+                        tokio::spawn(async move {
+                            sequenced_unreliable_channel_task(
+                                connection_handle,
+                                internal_channel_id,
                                 channels_keepalive_clone,
                                 from_channels_send,
                                 close_receiver,
@@ -302,6 +362,132 @@ pub(crate) async fn unordered_reliable_channel_task(
     }
 }
 
+async fn send_datagram(
+    datagram: Datagram,
+    connection: &quinn::Connection,
+    from_channels_send: &mpsc::Sender<ChannelAsyncMessage>,
+    signal_connection_lost: bool,
+) -> Option<usize> {
+    match bincode::serialize(&datagram) {
+        Ok(datagram_bytes) => {
+            if let Err(err) = connection.send_datagram(datagram_bytes.into()) {
+                error!("Error while sending message on Unreliable Channel, {}", err);
+                match err {
+                    SendDatagramError::UnsupportedByPeer => (),
+                    SendDatagramError::Disabled => (),
+                    SendDatagramError::TooLarge => {
+                        let max_payload_size = match connection.max_datagram_size() {
+                            Some(max) => max - UNRELIABLE_HEADER_MARGIN,
+                            None => DEFAULT_MAX_DATAGRAM_SIZE,
+                        };
+                        return Some(max_payload_size);
+                    }
+                    SendDatagramError::ConnectionLost(_) => {
+                        if signal_connection_lost {
+                            from_channels_send
+                                .send(ChannelAsyncMessage::LostConnection)
+                                .await
+                                .expect("Failed to signal connection lost from channels");
+                        }
+                    }
+                }
+            }
+        }
+        Err(err) => error!("Failed to serialize datagram: {}", err),
+    }
+    None
+}
+
+fn fragment_message<F>(
+    msg_bytes: Bytes,
+    max_payload_size: usize,
+    header_builder: F,
+) -> (Option<Vec<Datagram>>, usize)
+where
+    F: Fn(DatagramHeaderType) -> DatagramHeader,
+{
+    let total_payload_size = msg_bytes.len();
+    if total_payload_size > max_payload_size {
+        let partial_fragment = if msg_bytes.len() % max_payload_size == 0 {
+            0
+        } else {
+            1
+        };
+        let frag_count = msg_bytes.len() / max_payload_size + partial_fragment;
+
+        if frag_count > std::u8::MAX as usize {
+            return (None, total_payload_size);
+        }
+
+        let mut frags = Vec::with_capacity(frag_count);
+        for (frag_id, frag_payload) in msg_bytes.chunks(max_payload_size).enumerate() {
+            let header = match frag_id {
+                1 => header_builder(DatagramHeaderType::FirstFrag(frag_count as u8)),
+                _ => header_builder(DatagramHeaderType::Frag(frag_id as u8)),
+            };
+            frags.push(Datagram {
+                header,
+                payload: frag_payload.into(),
+            });
+        }
+        (Some(frags), total_payload_size)
+    } else {
+        (
+            Some(vec![Datagram {
+                header: header_builder(DatagramHeaderType::Complete),
+                payload: msg_bytes.into(),
+            }]),
+            total_payload_size,
+        )
+    }
+}
+
+async fn send_unreliable_message<F>(
+    connection: &quinn::Connection,
+    from_channels_send: &mpsc::Sender<ChannelAsyncMessage>,
+    msg_bytes: Bytes,
+    max_payload_size: &mut usize,
+    header_builder: F,
+    signal_connection_lost: bool,
+) where
+    F: Fn(DatagramHeaderType) -> DatagramHeader,
+{
+    let (fragments, total_size) = fragment_message(msg_bytes, *max_payload_size, header_builder);
+
+    match fragments {
+        Some(fragments) => {
+            for frag in fragments {
+                *max_payload_size = send_datagram(
+                    frag,
+                    &connection,
+                    &from_channels_send,
+                    signal_connection_lost,
+                )
+                .await
+                .unwrap_or(*max_payload_size);
+            }
+        }
+        None => error!(
+            "Unable to fragment, unreliable message is too large: {}",
+            total_size
+        ),
+    }
+}
+
+fn build_datagram_header(header_type: DatagramHeaderType, msg_id: u16) -> DatagramHeader {
+    match header_type {
+        DatagramHeaderType::FirstFrag(frag_count) => DatagramHeader::FirstFragmentNotSequenced {
+            id: msg_id,
+            frag_count,
+        },
+        DatagramHeaderType::Frag(fragment) => DatagramHeader::FragmentNotSequenced {
+            id: msg_id,
+            fragment,
+        },
+        DatagramHeaderType::Complete => DatagramHeader::CompleteNotSequenced,
+    }
+}
+
 pub(crate) async fn unreliable_channel_task(
     connection: quinn::Connection,
     _: mpsc::Sender<()>,
@@ -310,6 +496,11 @@ pub(crate) async fn unreliable_channel_task(
     mut channel_close_recv: mpsc::Receiver<()>,
     mut bytes_to_channel_recv: mpsc::Receiver<Bytes>,
 ) {
+    let mut max_payload_size = connection
+        .max_datagram_size()
+        .unwrap_or(DEFAULT_MAX_DATAGRAM_SIZE);
+    let mut msg_id: u16 = 0;
+
     tokio::select! {
         _ = close_recv.recv() => {
             trace!("Unreliable Channel task received a close signal")
@@ -319,33 +510,105 @@ pub(crate) async fn unreliable_channel_task(
         }
         _ = async {
             while let Some(msg_bytes) = bytes_to_channel_recv.recv().await {
-                if let Err(err) = connection.send_datagram(msg_bytes) {
-                    error!("Error while sending message on Unreliable Channel, {}", err);
-                    match err {
-                        SendDatagramError::UnsupportedByPeer => (),
-                        SendDatagramError::Disabled => (),
-                        SendDatagramError::TooLarge => (),
-                        SendDatagramError::ConnectionLost(_) => {
-                            from_channels_send.send(
-                                ChannelAsyncMessage::LostConnection)
-                                .await
-                                .expect("Failed to signal connection lost from channels");
-                        },
-                    }
-
-                }
+                send_unreliable_message(
+                    &connection,
+                    &from_channels_send,
+                    msg_bytes,
+                    &mut max_payload_size,
+                    |header_type| build_datagram_header(header_type, msg_id),
+                    true
+                ).await;
+                msg_id += 1;
             }
         } => {
             trace!("Unreliable Channel task ended")
         }
     };
     while let Ok(msg_bytes) = bytes_to_channel_recv.try_recv() {
-        if let Err(err) = connection.send_datagram(msg_bytes) {
-            error!(
-                "Error while sending a remaining message on Unreliable Channel, {}",
-                err
-            );
+        send_unreliable_message(
+            &connection,
+            &from_channels_send,
+            msg_bytes,
+            &mut max_payload_size,
+            |header_type| build_datagram_header(header_type, msg_id),
+            false,
+        )
+        .await;
+        msg_id += 1;
+    }
+}
+
+fn build_sequenced_datagram_header(
+    header_type: DatagramHeaderType,
+    channel_id: MultiChannelId,
+    msg_id: u16,
+) -> DatagramHeader {
+    match header_type {
+        DatagramHeaderType::FirstFrag(frag_count) => DatagramHeader::FirstFragmentSequenced {
+            id: msg_id,
+            channel_id,
+            frag_count,
+        },
+        DatagramHeaderType::Frag(fragment) => DatagramHeader::FragmentSequenced {
+            id: msg_id,
+            channel_id,
+            fragment,
+        },
+        DatagramHeaderType::Complete => DatagramHeader::CompleteSequenced {
+            id: msg_id,
+            channel_id,
+        },
+    }
+}
+
+pub(crate) async fn sequenced_unreliable_channel_task(
+    connection: quinn::Connection,
+    channel_id: MultiChannelId,
+    _: mpsc::Sender<()>,
+    from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
+    mut close_recv: broadcast::Receiver<()>,
+    mut channel_close_recv: mpsc::Receiver<()>,
+    mut bytes_to_channel_recv: mpsc::Receiver<Bytes>,
+) {
+    let mut msg_id: u16 = 0;
+    let mut max_payload_size = connection
+        .max_datagram_size()
+        .unwrap_or(DEFAULT_MAX_DATAGRAM_SIZE);
+
+    tokio::select! {
+        _ = close_recv.recv() => {
+            trace!("Unreliable Channel task received a close signal")
         }
+        _ = channel_close_recv.recv() => {
+            trace!("Unreliable Channel task received a channel close signal")
+        }
+        _ = async {
+            while let Some(msg_bytes) = bytes_to_channel_recv.recv().await {
+                send_unreliable_message(
+                    &connection,
+                    &from_channels_send,
+                    msg_bytes,
+                    &mut max_payload_size,
+                    |header_type| build_sequenced_datagram_header(header_type,channel_id, msg_id),
+                    true
+                ).await;
+                msg_id += 1;
+            }
+        } => {
+            trace!("Unreliable Channel task ended")
+        }
+    };
+    while let Ok(msg_bytes) = bytes_to_channel_recv.try_recv() {
+        send_unreliable_message(
+            &connection,
+            &from_channels_send,
+            msg_bytes,
+            &mut max_payload_size,
+            |header_type| build_sequenced_datagram_header(header_type, channel_id, msg_id),
+            false,
+        )
+        .await;
+        msg_id += 1;
     }
 }
 
