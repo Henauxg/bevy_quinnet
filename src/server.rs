@@ -251,7 +251,7 @@ impl Endpoint {
     }
 
     pub fn send_message<T: serde::Serialize>(
-        &mut self,
+        &self,
         client_id: ClientId,
         message: T,
     ) -> Result<(), QuinnetError> {
@@ -262,7 +262,7 @@ impl Endpoint {
     }
 
     pub fn send_message_on<T: serde::Serialize>(
-        &mut self,
+        &self,
         client_id: ClientId,
         channel_id: ChannelId,
         message: T,
@@ -273,7 +273,7 @@ impl Endpoint {
         }
     }
 
-    pub fn try_send_message<T: serde::Serialize>(&mut self, client_id: ClientId, message: T) {
+    pub fn try_send_message<T: serde::Serialize>(&self, client_id: ClientId, message: T) {
         match self.send_message(client_id, message) {
             Ok(_) => {}
             Err(err) => error!("try_send_message: {}", err),
@@ -281,7 +281,7 @@ impl Endpoint {
     }
 
     pub fn try_send_message_on<T: serde::Serialize>(
-        &mut self,
+        &self,
         client_id: ClientId,
         channel_id: ChannelId,
         message: T,
