@@ -179,6 +179,9 @@ impl ClientConnection {
     }
 }
 
+/// Endpoint
+///
+/// Function on Endpoint that don't specify a channel will use a channel of type [`ChannelType::OrderedReliable`] created at setup.
 pub struct Endpoint {
     clients: HashMap<ClientId, ClientConnection>,
     last_gen_client_id: ClientId,
@@ -198,6 +201,10 @@ impl Endpoint {
         self.clients.keys().cloned().collect()
     }
 
+    /// Attempt to deserialise a message into type `T`.
+    ///
+    /// Will return [`Err`] if the bytes accumulated from the client aren't deserializable to T.
+    /// This could be from `T` not being what the client sent, or because the server has not received enough bytes to fully deserialize the message.
     pub fn receive_message_from<T: serde::de::DeserializeOwned>(
         &mut self,
         client_id: ClientId,
@@ -211,6 +218,7 @@ impl Endpoint {
         }
     }
 
+    /// [`Endpoint::receive_message_from`] that logs the error instead of returning a result.
     pub fn try_receive_message_from<T: serde::de::DeserializeOwned>(
         &mut self,
         client_id: ClientId,
@@ -224,6 +232,7 @@ impl Endpoint {
         }
     }
 
+    /// Attempt to read bytes received from the specified client.
     pub fn receive_payload_from(
         &mut self,
         client_id: ClientId,
@@ -240,6 +249,7 @@ impl Endpoint {
         }
     }
 
+    /// [`Endpoint::receive_payload_from`] that logs the error instead of returning a result.
     pub fn try_receive_payload_from(&mut self, client_id: ClientId) -> Option<Bytes> {
         match self.receive_payload_from(client_id) {
             Ok(payload) => payload,
@@ -250,6 +260,7 @@ impl Endpoint {
         }
     }
 
+    /// Queue a message to be sent to the specified client on the default channel.
     pub fn send_message<T: serde::Serialize>(
         &self,
         client_id: ClientId,
@@ -261,6 +272,7 @@ impl Endpoint {
         }
     }
 
+    /// Queue a message to be sent to the specified client on the specified channel.
     pub fn send_message_on<T: serde::Serialize>(
         &self,
         client_id: ClientId,
@@ -273,6 +285,7 @@ impl Endpoint {
         }
     }
 
+    /// [`Endpoint::send_message`] that logs the error instead of returning a result.
     pub fn try_send_message<T: serde::Serialize>(&self, client_id: ClientId, message: T) {
         match self.send_message(client_id, message) {
             Ok(_) => {}
@@ -280,6 +293,7 @@ impl Endpoint {
         }
     }
 
+    /// [`Endpoint::send_message_on`] that logs the error instead of returning a result.
     pub fn try_send_message_on<T: serde::Serialize>(
         &self,
         client_id: ClientId,
@@ -376,6 +390,7 @@ impl Endpoint {
         }
     }
 
+    /// Sends the payload to all connected clients on the default channel.
     pub fn broadcast_payload<T: Into<Bytes> + Clone>(
         &self,
         payload: T,
@@ -386,6 +401,7 @@ impl Endpoint {
         }
     }
 
+    /// Sends the payload to all connected clients on the specified channel.
     pub fn broadcast_payload_on<T: Into<Bytes> + Clone>(
         &self,
         channel_id: ChannelId,
