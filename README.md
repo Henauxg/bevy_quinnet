@@ -95,10 +95,10 @@ This is a bird-eye view of the features/tasks that will probably be worked on ne
 fn start_connection(client: ResMut<Client>) {
     client
         .open_connection(
-            ClientConfigurationData::new(
-                "127.0.0.1".to_string(),
+            ClientConfigurationData::from_ips(
+                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                 6000,
-                "0.0.0.0".to_string(),
+                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
                 0,
             ),
             CertificateVerificationMode::SkipVerification,
@@ -143,7 +143,7 @@ fn handle_server_messages(
 fn start_listening(mut server: ResMut<Server>) {
     server
         .start_endpoint(
-            ServerConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string()),
+            ServerConfigurationData::from_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000),
             CertificateRetrievalMode::GenerateSelfSigned,
         )
         .unwrap();
@@ -258,7 +258,9 @@ On the server:
 
 ```rust
     // To generate a new self-signed certificate on each startup 
-    server.start_endpoint(/*...*/, CertificateRetrievalMode::GenerateSelfSigned);
+    server.start_endpoint(/*...*/, CertificateRetrievalMode::GenerateSelfSigned { 
+        server_hostname: "127.0.0.1".to_string(),
+    });
     // To load a pre-existing one from files
     server.start_endpoint(/*...*/, CertificateRetrievalMode::LoadFromFile {
         cert_file: "./certificates.pem".into(),
@@ -269,6 +271,7 @@ On the server:
         cert_file: "./certificates.pem".into(),
         key_file: "./privkey.pem".into(),
         save_on_disk: true, // To persist on disk if generated
+        server_hostname: "127.0.0.1".to_string(),
     });
 ```
 
