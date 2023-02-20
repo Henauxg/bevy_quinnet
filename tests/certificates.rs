@@ -8,7 +8,7 @@ use bevy_quinnet::{
         Client, QuinnetClientPlugin, DEFAULT_KNOWN_HOSTS_FILE,
     },
     server::{
-        certificate::CertificateRetrievalMode, QuinnetServerPlugin, Server, ServerConfigurationData,
+        certificate::CertificateRetrievalMode, QuinnetServerPlugin, Server, ServerConfiguration,
     },
 };
 
@@ -72,7 +72,7 @@ fn trust_on_first_use() {
         let mut server = server_app.world.resource_mut::<Server>();
         let (server_cert, _) = server
             .start_endpoint(
-                ServerConfigurationData::new(SERVER_HOST.to_string(), port, "0.0.0.0".to_string()),
+                ServerConfiguration::from_ip("0.0.0.0".parse().unwrap(), port),
                 CertificateRetrievalMode::LoadFromFile {
                     cert_file: TEST_CERT_FILE.to_string(),
                     key_file: TEST_KEY_FILE.to_string(),
@@ -130,7 +130,7 @@ fn trust_on_first_use() {
         );
         assert_eq!(
             cert_info.server_name.to_string(),
-            SERVER_HOST.to_string(),
+            SERVER_IP.to_string(),
             "The server name should match the one we configured"
         );
 
@@ -200,8 +200,10 @@ fn trust_on_first_use() {
         .world
         .resource_mut::<Server>()
         .start_endpoint(
-            ServerConfigurationData::new(SERVER_HOST.to_string(), port, "0.0.0.0".to_string()),
-            CertificateRetrievalMode::GenerateSelfSigned,
+            ServerConfiguration::from_ip(LOCAL_BIND_IP, port),
+            CertificateRetrievalMode::GenerateSelfSigned {
+                server_hostname: SERVER_IP.to_string(),
+            },
         )
         .unwrap();
 
@@ -270,7 +272,7 @@ fn trust_on_first_use() {
         );
         assert_eq!(
             interaction_cert_info.server_name.to_string(),
-            SERVER_HOST.to_string(),
+            SERVER_IP.to_string(),
             "The server name in the certificate interaction event should be the server we want to connect to"
         );
         assert_eq!(

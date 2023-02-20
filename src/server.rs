@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    net::SocketAddr,
+    net::{AddrParseError, IpAddr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -52,49 +52,75 @@ pub struct ConnectionLostEvent {
     pub id: ClientId,
 }
 
-/// Configuration of the server, used when the server starts
-///
-/// # Examples
-///
-/// ```
-/// use bevy_quinnet::server::ServerConfigurationData;
-/// let config = ServerConfigurationData::new(
-///             "127.0.0.1".to_string(),
-///             6000,
-///             "0.0.0.0".to_string());
-/// ```
+/// Configuration of the server, used when the server starts an Endpoint
 #[derive(Debug, Deserialize, Clone)]
-pub struct ServerConfigurationData {
-    host: String,
-    port: u16,
-    local_bind_host: String,
+pub struct ServerConfiguration {
+    local_bind_addr: SocketAddr,
 }
 
-impl ServerConfigurationData {
-    /// Creates a new ServerConfigurationData
+impl ServerConfiguration {
+    /// Creates a new ServerConfiguration
     ///
     /// # Arguments
     ///
-    /// * `host` - Address of the server
-    /// * `port` - Port that the server is listening on
-    /// * `local_bind_host` - Local address to bind to, which should usually be a wildcard address like `0.0.0.0` or `[::]`, which allow communication with any reachable IPv4 or IPv6 address. See [`quinn::endpoint::Endpoint`] for more precision
+    /// * `local_bind_addr_str` - Local address and port to bind to separated by `:`. The address should usually be a wildcard like `0.0.0.0` (for an IPv4) or `[::]` (for an IPv6), which allow communication with any reachable IPv4 or IPv6 address. See [`std::net::SocketAddrV4`] and [`std::net::SocketAddrV6`] or [`quinn::endpoint::Endpoint`] for more precision.
     ///
     /// # Examples
     ///
+    /// Listen on port 6000, on an IPv4 endpoint, for all incoming IPs.
     /// ```
-    /// use bevy_quinnet::server::ServerConfigurationData;
-    /// let config = ServerConfigurationData::new(
-    ///         "127.0.0.1".to_string(),
-    ///         6000,
-    ///         "0.0.0.0".to_string(),
-    ///     );
+    /// use bevy_quinnet::server::ServerConfiguration;
+    /// let config = ServerConfiguration::from_string("0.0.0.0:6000");
     /// ```
-    pub fn new(host: String, port: u16, local_bind_host: String) -> Self {
+    /// Listen on port 6000, on an IPv6 endpoint, for all incoming IPs.
+    /// ```
+    /// use bevy_quinnet::server::ServerConfiguration;
+    /// let config = ServerConfiguration::from_string("[::]:6000");
+    /// ```
+    pub fn from_string(local_bind_addr_str: &str) -> Result<Self, AddrParseError> {
+        let local_bind_addr = local_bind_addr_str.parse()?;
+        Ok(Self { local_bind_addr })
+    }
+
+    /// Creates a new ServerConfiguration
+    ///
+    /// # Arguments
+    ///
+    /// * `local_bind_ip` - Local IP address to bind to. The address should usually be a wildcard like `0.0.0.0` (for an IPv4) or `0:0:0:0:0:0:0:0` (for an IPv6), which allow communication with any reachable IPv4 or IPv6 address. See [`std::net::Ipv4Addr`] and [`std::net::Ipv6Addr`] for more precision.
+    /// * `local_bind_port` - Local port to bind to.
+    ///
+    /// # Examples
+    ///
+    /// Listen on port 6000, on an IPv4 endpoint, for all incoming IPs.
+    /// ```
+    /// use bevy_quinnet::server::ServerConfiguration;
+    /// let config = ServerConfiguration::from_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000);
+    /// ```
+    pub fn from_ip(local_bind_ip: IpAddr, local_bind_port: u16) -> Self {
         Self {
-            host,
-            port,
-            local_bind_host,
+            local_bind_addr: SocketAddr::new(local_bind_ip, local_bind_port),
         }
+    }
+
+    /// Creates a new ServerConfiguration
+    ///
+    /// # Arguments
+    ///
+    /// * `local_bind_addr` - Local address and port to bind to.
+    /// See [`std::net::SocketAddrV4`] and [`std::net::SocketAddrV6`] for more precision.
+    ///
+    /// # Examples
+    ///
+    /// Listen on port 6000, on an IPv4 endpoint, for all incoming IPs.
+    /// ```
+    /// use bevy_quinnet::server::ServerConfiguration;
+    /// use std::{net::{IpAddr, Ipv4Addr, SocketAddr}};
+    /// let config = ServerConfiguration::from_addr(
+    ///           SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000),
+    ///       );
+    /// ```
+    pub fn from_addr(local_bind_addr: SocketAddr) -> Self {
+        Self { local_bind_addr }
     }
 }
 
@@ -635,19 +661,16 @@ impl Server {
         self.endpoint.as_mut()
     }
 
-    /// Starts a new endpoint with the given [ServerConfigurationData] and [CertificateRetrievalMode] and opens the default channels.
+    /// Starts a new endpoint with the given [ServerConfiguration] and [CertificateRetrievalMode] and opens the default channels.
     ///
     /// Returns a tuple of the [ServerCertificate] generated or loaded, and the default [ChannelId]
     pub fn start_endpoint(
         &mut self,
-        config: ServerConfigurationData,
+        config: ServerConfiguration,
         cert_mode: CertificateRetrievalMode,
     ) -> Result<(ServerCertificate, ChannelId), QuinnetError> {
-        let server_adr_str = format!("{}:{}", config.local_bind_host, config.port);
-        let server_addr = server_adr_str.parse::<SocketAddr>()?;
-
         // Endpoint configuration
-        let server_cert = retrieve_certificate(&config.host, cert_mode)?;
+        let server_cert = retrieve_certificate(cert_mode)?;
         let mut server_config = ServerConfig::with_single_cert(
             server_cert.cert_chain.clone(),
             server_cert.priv_key.clone(),
@@ -661,12 +684,12 @@ impl Server {
         let (endpoint_close_send, endpoint_close_recv) =
             broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
-        info!("Starting endpoint on: {} ...", server_adr_str);
+        info!("Starting endpoint on: {} ...", config.local_bind_addr);
 
         self.runtime.spawn(async move {
             endpoint_task(
                 server_config,
-                server_addr,
+                config.local_bind_addr,
                 to_sync_server_send.clone(),
                 endpoint_close_recv,
             )

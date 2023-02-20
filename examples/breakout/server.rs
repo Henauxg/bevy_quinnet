@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap};
 
 use bevy::{
     prelude::{
@@ -9,9 +9,7 @@ use bevy::{
     transform::TransformBundle,
 };
 use bevy_quinnet::{
-    server::{
-        certificate::CertificateRetrievalMode, ConnectionEvent, Server, ServerConfigurationData,
-    },
+    server::{certificate::CertificateRetrievalMode, ConnectionEvent, Server, ServerConfiguration},
     shared::{channel::ChannelId, ClientId},
 };
 
@@ -19,8 +17,8 @@ use crate::{
     protocol::{ClientMessage, PaddleInput, ServerMessage},
     BrickId, Velocity, WallLocation, BALL_SIZE, BALL_SPEED, BOTTOM_WALL, BRICK_SIZE,
     GAP_BETWEEN_BRICKS, GAP_BETWEEN_BRICKS_AND_SIDES, GAP_BETWEEN_PADDLE_AND_BRICKS,
-    GAP_BETWEEN_PADDLE_AND_FLOOR, LEFT_WALL, PADDLE_PADDING, PADDLE_SIZE, PADDLE_SPEED, RIGHT_WALL,
-    SERVER_HOST, SERVER_PORT, TIME_STEP, TOP_WALL, WALL_THICKNESS,
+    GAP_BETWEEN_PADDLE_AND_FLOOR, LEFT_WALL, LOCAL_BIND_IP, PADDLE_PADDING, PADDLE_SIZE,
+    PADDLE_SPEED, RIGHT_WALL, SERVER_HOST, SERVER_PORT, TIME_STEP, TOP_WALL, WALL_THICKNESS,
 };
 
 const GAP_BETWEEN_PADDLE_AND_BALL: f32 = 35.;
@@ -81,12 +79,10 @@ struct WallBundle {
 pub(crate) fn start_listening(mut server: ResMut<Server>) {
     server
         .start_endpoint(
-            ServerConfigurationData::new(
-                SERVER_HOST.to_string(),
-                SERVER_PORT,
-                "0.0.0.0".to_string(),
-            ),
-            CertificateRetrievalMode::GenerateSelfSigned,
+            ServerConfiguration::from_ip(LOCAL_BIND_IP, SERVER_PORT),
+            CertificateRetrievalMode::GenerateSelfSigned {
+                server_hostname: SERVER_HOST.to_string(),
+            },
         )
         .unwrap();
 }

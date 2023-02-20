@@ -24,7 +24,8 @@ use bevy_quinnet::{
 use crate::{
     protocol::{ClientMessage, PaddleInput, ServerMessage},
     BrickId, CollisionEvent, CollisionSound, GameState, Score, Velocity, WallLocation, BALL_SIZE,
-    BALL_SPEED, BRICK_SIZE, GAP_BETWEEN_BRICKS, PADDLE_SIZE, SERVER_HOST, SERVER_PORT, TIME_STEP,
+    BALL_SPEED, BRICK_SIZE, GAP_BETWEEN_BRICKS, LOCAL_BIND_IP, PADDLE_SIZE, SERVER_HOST,
+    SERVER_PORT, TIME_STEP,
 };
 
 const SCOREBOARD_FONT_SIZE: f32 = 40.0;
@@ -91,14 +92,13 @@ struct WallBundle {
     #[bundle]
     sprite_bundle: SpriteBundle,
 }
-
 pub(crate) fn start_connection(mut client: ResMut<Client>) {
     client
         .open_connection(
-            ConnectionConfiguration::new(
-                SERVER_HOST.to_string(),
+            ConnectionConfiguration::from_ips(
+                SERVER_HOST.parse().unwrap(),
                 SERVER_PORT,
-                "0.0.0.0".to_string(),
+                LOCAL_BIND_IP,
                 0,
             ),
             CertificateVerificationMode::SkipVerification,
