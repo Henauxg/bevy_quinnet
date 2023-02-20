@@ -1,4 +1,9 @@
-use std::{collections::HashMap, error::Error, net::SocketAddr, sync::Arc};
+use std::{
+    collections::HashMap,
+    error::Error,
+    net::{AddrParseError, IpAddr, SocketAddr},
+    sync::Arc,
+};
 
 use bevy::prelude::{error, info};
 use bytes::Bytes;
@@ -45,10 +50,9 @@ pub struct ConnectionLostEvent {
 /// Configuration of a client connection, used when connecting to a server
 #[derive(Debug, Deserialize, Clone)]
 pub struct ConnectionConfiguration {
-    server_host: String,
-    server_port: u16,
-    local_bind_host: String,
-    local_bind_port: u16,
+    server_addr: SocketAddr,
+    server_hostname: String,
+    local_bind_addr: SocketAddr,
 }
 
 impl ConnectionConfiguration {
@@ -56,33 +60,133 @@ impl ConnectionConfiguration {
     ///
     /// # Arguments
     ///
-    /// * `server_host` - Address of the server
-    /// * `server_port` - Port that the server is listening on
-    /// * `local_bind_host` - Local address to bind to, which should usually be a wildcard address like `0.0.0.0` or `[::]`, which allow communication with any reachable IPv4 or IPv6 address. See [`quinn::endpoint::Endpoint`] for more precision
-    /// * `local_bind_port` - Local port to bind to. Use 0 to get an OS-assigned port.. See [`quinn::endpoint::Endpoint`] for more precision
+    /// * `server_addr_str` - IP address and port of the server
+    /// * `local_bind_addr_str` - Local address and port to bind to separated by `:`. The address should usually be a wildcard like `0.0.0.0` (for an IPv4) or `[::]` (for an IPv6), which allow communication with any reachable IPv4 or IPv6 address. See [`std::net::SocketAddrV4`] and [`std::net::SocketAddrV6`] or [`quinn::endpoint::Endpoint`] for more precision. For the local port to bind to, use 0 to get an OS-assigned port.
     ///
     /// # Examples
     ///
+    /// Connect to an IPv4 server hosted on localhost (127.0.0.1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
     /// ```
     /// use bevy_quinnet::client::connection::ConnectionConfiguration;
-    /// let config = ConnectionConfiguration::new(
-    ///         "127.0.0.1".to_string(),
-    ///         6000,
-    ///         "0.0.0.0".to_string(),
-    ///         0,
-    ///     );
+    /// let config = ConnectionConfiguration::from_strings(
+    ///                 "127.0.0.1:6000",
+    ///                 "0.0.0.0:0"
+    ///             );
     /// ```
-    pub fn new(
-        server_host: String,
+    /// Connect to an IPv6 server hosted on localhost (::1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
+    /// ```
+    /// use bevy_quinnet::client::connection::ConnectionConfiguration;
+    /// let config = ConnectionConfiguration::from_strings(
+    ///                 "[::1]:6000",
+    ///                 "[::]:0"
+    ///             );
+    /// ```
+    pub fn from_strings(
+        server_addr_str: &str,
+        local_bind_addr_str: &str,
+    ) -> Result<Self, AddrParseError> {
+        let server_addr = server_addr_str.parse()?;
+        let local_bind_addr = local_bind_addr_str.parse()?;
+        Ok(Self::from_addrs(server_addr, local_bind_addr))
+    }
+
+    /// Same as [`ConnectionConfiguration::from_strings`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
+    pub fn from_strings_with_name(
+        server_addr_str: &str,
+        server_hostname: String,
+        local_bind_addr_str: &str,
+    ) -> Result<Self, AddrParseError> {
+        Ok(Self::from_addrs_with_name(
+            server_addr_str.parse()?,
+            server_hostname,
+            local_bind_addr_str.parse()?,
+        ))
+    }
+
+    /// Creates a new ConnectionConfiguration
+    ///
+    /// # Arguments
+    ///
+    /// * `server_ip` - IP address of the server
+    /// * `server_port` - Port of the server
+    /// * `local_bind_ip` - Local IP address to bind to. The address should usually be a wildcard like `0.0.0.0` (for an IPv4) or `0:0:0:0:0:0:0:0` (for an IPv6), which allow communication with any reachable IPv4 or IPv6 address. See [`std::net::Ipv4Addr`] and [`std::net::Ipv6Addr`] for more precision.
+    /// * `local_bind_port` - Local port to bind to. Use 0 to get an OS-assigned port.
+    ///
+    /// # Examples
+    ///
+    /// Connect to an IPv4 server hosted on localhost (127.0.0.1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
+    /// ```
+    /// use bevy_quinnet::client::connection::ConnectionConfiguration;
+    /// let config = ConnectionConfiguration::from_ips(
+    ///                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+    ///                 6000,
+    ///                 IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+    ///                 0
+    ///             );
+    /// ```
+    pub fn from_ips(
+        server_ip: IpAddr,
         server_port: u16,
-        local_bind_host: String,
+        local_bind_ip: IpAddr,
         local_bind_port: u16,
     ) -> Self {
+        Self::from_addrs(
+            SocketAddr::new(server_ip, server_port),
+            SocketAddr::new(local_bind_ip, local_bind_port),
+        )
+    }
+
+    /// Same as [`ConnectionConfiguration::from_ips`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
+    pub fn from_ips_with_name(
+        server_ip: IpAddr,
+        server_port: u16,
+        server_hostname: String,
+        local_bind_ip: IpAddr,
+        local_bind_port: u16,
+    ) -> Self {
+        Self::from_addrs_with_name(
+            SocketAddr::new(server_ip, server_port),
+            server_hostname,
+            SocketAddr::new(local_bind_ip, local_bind_port),
+        )
+    }
+
+    /// Creates a new ConnectionConfiguration
+    ///
+    /// # Arguments
+    ///
+    /// * `server_addr` - IP address and port of the server
+    /// * `local_bind_addr` - Local address and port to bind to. For the local port to bind to, use 0 to get an OS-assigned port.
+    ///
+    /// # Examples
+    ///
+    /// Connect to an IPv4 server hosted on localhost (127.0.0.1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
+    /// ```
+    /// use bevy_quinnet::client::connection::ConnectionConfiguration;
+    /// use std::{net::{IpAddr, Ipv4Addr, SocketAddr}};
+    /// let config = ConnectionConfiguration::from_addrs(
+    ///        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6000),
+    ///        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0),
+    ///    );
+    /// ```
+    pub fn from_addrs(server_addr: SocketAddr, local_bind_addr: SocketAddr) -> Self {
         Self {
-            server_host,
-            server_port,
-            local_bind_host,
-            local_bind_port,
+            server_addr,
+            server_hostname: server_addr.ip().to_string(),
+            local_bind_addr,
+        }
+    }
+
+    /// Same as [`ConnectionConfiguration::from_addrs`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
+    pub fn from_addrs_with_name(
+        server_addr: SocketAddr,
+        server_hostname: String,
+        local_bind_addr: SocketAddr,
+    ) -> Self {
+        Self {
+            server_addr,
+            server_hostname,
+            local_bind_addr,
         }
     }
 }
@@ -380,28 +484,20 @@ pub(crate) async fn connection_task(
     close_recv: broadcast::Receiver<()>,
     bytes_from_server_send: mpsc::Sender<Bytes>,
 ) {
-    let server_adr_str = format!("{}:{}", config.server_host, config.server_port);
-    let srv_host = config.server_host.clone();
-    let local_bind_adr = format!("{}:{}", config.local_bind_host, config.local_bind_port);
-
     info!(
         "Connection {} trying to connect to server on: {} ...",
-        connection_id, server_adr_str
+        connection_id, config.server_addr
     );
-
-    let server_addr: SocketAddr = server_adr_str
-        .parse()
-        .expect("Failed to parse server address");
 
     let client_cfg = configure_client(cert_mode, to_sync_client_send.clone())
         .expect("Failed to configure client");
 
-    let mut endpoint = Endpoint::client(local_bind_adr.parse().unwrap())
-        .expect("Failed to create client endpoint");
+    let mut endpoint =
+        Endpoint::client(config.local_bind_addr).expect("Failed to create client endpoint");
     endpoint.set_default_client_config(client_cfg);
 
     let connection = endpoint
-        .connect(server_addr, &srv_host) // TODO Clean: error handling
+        .connect(config.server_addr, &config.server_hostname)
         .expect("Failed to connect: configuration error")
         .await;
     match connection {

@@ -11,8 +11,8 @@ use crate::shared::{CertificateFingerprint, QuinnetError};
 /// Represents the origin of a certificate.
 #[derive(Debug, Clone)]
 pub enum CertOrigin {
-    /// Indicates that the certificate was generated. The `server_host` field contains the hostname used when generating the certificate.
-    Generated { server_host: String },
+    /// Indicates that the certificate was generated. The `server_hostname` field contains the hostname used when generating the certificate.
+    Generated { server_hostname: String },
     /// Indicates that the certificate was loaded from a file.
     Loaded,
 }
@@ -20,16 +20,17 @@ pub enum CertOrigin {
 /// How the server should retrieve its certificate.
 #[derive(Debug, Clone)]
 pub enum CertificateRetrievalMode {
-    /// The server will always generate a new self-signed certificate when starting up
-    GenerateSelfSigned,
-    /// Try to load cert & key from files.
+    /// The server will always generate a new self-signed certificate when starting up, using `server_hostname` as the subject of the certificate.
+    GenerateSelfSigned { server_hostname: String },
+    /// Try to load cert & key from files `cert_file``and `key_file`.
     LoadFromFile { cert_file: String, key_file: String },
-    /// Try to load cert & key from files.
-    /// If the files do not exist, generate a self-signed certificate, and optionally save it to disk.
+    /// Try to load cert & key from files `cert_file``and `key_file`.
+    /// If the files do not exist, generate a self-signed certificate using `server_hostname` as the subject of the certificate. Optionally save it to disk if `save_on_disk` is enabled.
     LoadFromFileOrGenerateSelfSigned {
         cert_file: String,
         key_file: String,
         save_on_disk: bool,
+        server_hostname: String,
     },
 }
 
@@ -111,12 +112,11 @@ fn generate_self_signed_certificate(
 }
 
 pub(crate) fn retrieve_certificate(
-    server_host: &String,
     cert_mode: CertificateRetrievalMode,
 ) -> Result<ServerCertificate, QuinnetError> {
     match cert_mode {
-        CertificateRetrievalMode::GenerateSelfSigned => {
-            let (server_cert, _rcgen_cert) = generate_self_signed_certificate(server_host)?;
+        CertificateRetrievalMode::GenerateSelfSigned { server_hostname } => {
+            let (server_cert, _rcgen_cert) = generate_self_signed_certificate(&server_hostname)?;
             trace!("Generatied a new self-signed certificate");
             Ok(server_cert)
         }
@@ -132,6 +132,7 @@ pub(crate) fn retrieve_certificate(
             save_on_disk,
             cert_file,
             key_file,
+            server_hostname,
         } => {
             if Path::new(&cert_file).exists() && Path::new(&key_file).exists() {
                 let server_cert = read_certs_from_files(&cert_file, &key_file)?;
@@ -139,7 +140,7 @@ pub(crate) fn retrieve_certificate(
                 Ok(server_cert)
             } else {
                 warn!("{} and/or {} do not exist, could not load existing certificate. Generating a new self-signed certificate.", cert_file, key_file);
-                let (server_cert, rcgen_cert) = generate_self_signed_certificate(server_host)?;
+                let (server_cert, rcgen_cert) = generate_self_signed_certificate(&server_hostname)?;
                 if save_on_disk {
                     write_certs_to_files(&rcgen_cert, &cert_file, &key_file)?;
                     trace!("Successfuly saved cert and key to files");
