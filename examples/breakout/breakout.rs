@@ -1,6 +1,8 @@
 //! A simplified implementation of the classic game "Breakout".
 //! => Original example by Bevy, modified for Bevy Quinnet to add a 2 players versus mode.
 
+use std::net::{IpAddr, Ipv4Addr};
+
 use bevy::{ecs::schedule::ShouldRun, prelude::*, time::FixedTimestep};
 use bevy_quinnet::{
     client::QuinnetClientPlugin,
@@ -13,6 +15,7 @@ mod protocol;
 mod server;
 
 const SERVER_HOST: &str = "127.0.0.1";
+const LOCAL_BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 const SERVER_PORT: u16 = 6000;
 
 // Defines the amount of time that should elapse between each physics step.

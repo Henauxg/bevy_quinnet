@@ -4,7 +4,7 @@ use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use bevy_quinnet::{
     server::{
         certificate::CertificateRetrievalMode, ConnectionLostEvent, Endpoint, QuinnetServerPlugin,
-        Server, ServerConfigurationData,
+        Server, ServerConfiguration,
     },
     shared::{channel::ChannelId, ClientId},
 };
@@ -116,8 +116,10 @@ fn handle_disconnect(endpoint: &mut Endpoint, users: &mut ResMut<Users>, client_
 fn start_listening(mut server: ResMut<Server>) {
     server
         .start_endpoint(
-            ServerConfigurationData::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string()),
-            CertificateRetrievalMode::GenerateSelfSigned,
+            ServerConfiguration::from_string("0.0.0.0:6000").unwrap(),
+            CertificateRetrievalMode::GenerateSelfSigned {
+                server_hostname: "127.0.0.1".to_string(),
+            },
         )
         .unwrap();
 }

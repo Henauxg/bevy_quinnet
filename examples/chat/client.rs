@@ -120,7 +120,7 @@ fn start_terminal_listener(mut commands: Commands) {
 fn start_connection(mut client: ResMut<Client>) {
     client
         .open_connection(
-            ConnectionConfiguration::new("127.0.0.1".to_string(), 6000, "0.0.0.0".to_string(), 0),
+            ConnectionConfiguration::from_strings("127.0.0.1:6000", "0.0.0.0:0").unwrap(),
             CertificateVerificationMode::SkipVerification,
         )
         .unwrap();
