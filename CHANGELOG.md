@@ -1,5 +1,16 @@
 # Changelog
 
+## Version 0.4.0-dev
+
+- [client]: Fix IPv6 handling.
+  - Remove `ConnectionConfiguration::new`
+  - Add `ConnectionConfiguration::from_strings`, `ConnectionConfiguration::from_ips` and `ConnectionConfiguration::from_addrs`
+- [server]: Fix IPv6 handling.
+  - Rename `ServerConfigurationData` to `ServerConfiguration`.
+  - Remove `ServerConfiguration::new`
+  - Add `ServerConfiguration::from_string`, `ServerConfiguration::from_ip` and `ServerConfiguration::from_addr`
+  - Add `server_hostname` to `CertificateRetrievalMode::GenerateSelfSigned` and `CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned`
+
 ## Version 0.3.0 (2023-01-20)
 
 ### Added
