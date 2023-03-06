@@ -304,8 +304,10 @@ impl Plugin for QuinnetClientPlugin {
             .add_event::<CertTrustUpdateEvent>()
             .add_event::<CertConnectionAbortEvent>()
             // StartupStage::PreStartup so that resources created in commands are available to default startup_systems
-            .add_startup_system_to_stage(StartupStage::PreStartup, create_client)
-            .add_system_to_stage(CoreStage::PreUpdate, update_sync_client);
+            //.add_startup_system(StartupStage::PreStartup, create_client)
+            //.add_system(CoreStage::PreUpdate, update_sync_client);
+            .add_system(create_client.in_base_set(StartupSet::PreStartup))
+            .add_system(update_sync_client.in_base_set(CoreSet::PreUpdate));
 
         if app.world.get_resource_mut::<AsyncRuntime>().is_none() {
             app.insert_resource(AsyncRuntime(

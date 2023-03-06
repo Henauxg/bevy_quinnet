@@ -935,8 +935,8 @@ impl Plugin for QuinnetServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ConnectionEvent>()
             .add_event::<ConnectionLostEvent>()
-            .add_startup_system_to_stage(StartupStage::PreStartup, create_server)
-            .add_system_to_stage(CoreStage::PreUpdate, update_sync_server);
+            .add_startup_system(create_server.in_base_set(StartupSet::PreStartup))
+            .add_system(update_sync_server.in_base_set(CoreSet::PreUpdate));
 
         if app.world.get_resource_mut::<AsyncRuntime>().is_none() {
             app.insert_resource(AsyncRuntime(
