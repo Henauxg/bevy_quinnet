@@ -116,6 +116,7 @@ impl ConnectionConfiguration {
     ///
     /// Connect to an IPv4 server hosted on localhost (127.0.0.1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
     /// ```
+    /// use std::net::{IpAddr, Ipv4Addr};
     /// use bevy_quinnet::client::connection::ConnectionConfiguration;
     /// let config = ConnectionConfiguration::from_ips(
     ///                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),

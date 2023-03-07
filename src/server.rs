@@ -93,6 +93,7 @@ impl ServerConfiguration {
     ///
     /// Listen on port 6000, on an IPv4 endpoint, for all incoming IPs.
     /// ```
+    /// use std::net::{IpAddr, Ipv4Addr};
     /// use bevy_quinnet::server::ServerConfiguration;
     /// let config = ServerConfiguration::from_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000);
     /// ```
