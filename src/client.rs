@@ -65,7 +65,31 @@ pub struct Client {
     default_connection_id: Option<ConnectionId>,
 }
 
+impl FromWorld for Client {
+    fn from_world(world: &mut World) -> Self {
+        if world.get_resource::<AsyncRuntime>().is_none() {
+            let async_runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            world.insert_resource(AsyncRuntime(async_runtime));
+        };
+
+        let runtime = world.resource::<AsyncRuntime>();
+        Client::new(runtime.handle().clone())
+    }
+}
+
 impl Client {
+    fn new(runtime_handle: tokio::runtime::Handle) -> Self {
+        Self {
+            connections: HashMap::new(),
+            runtime: runtime_handle,
+            last_gen_id: 0,
+            default_connection_id: None,
+        }
+    }
+
     /// Returns the default connection or None.
     pub fn get_connection(&self) -> Option<&Connection> {
         match self.default_connection_id {
@@ -279,20 +303,18 @@ fn update_sync_client(
     }
 }
 
-fn create_client(mut commands: Commands, runtime: Res<AsyncRuntime>) {
-    commands.insert_resource(Client {
-        connections: HashMap::new(),
-        runtime: runtime.handle().clone(),
-        last_gen_id: 0,
-        default_connection_id: None,
-    });
+pub struct QuinnetClientPlugin {
+    /// In order to have more control and only do the strict necessary, which is registering systems and events in the Bevy schedule, `initialize_later` can be set to `true`. This will prevent the plugin from initializing the `Client` Resource.
+    /// Client systems are scheduled to only run if the `Client` resource exists.
+    /// A Bevy command to create the resource `commands.init_resource::<Client>();` can be done later on, when needed.
+    pub initialize_later: bool,
 }
-
-pub struct QuinnetClientPlugin {}
 
 impl Default for QuinnetClientPlugin {
     fn default() -> Self {
-        Self {}
+        Self {
+            initialize_later: false,
+        }
     }
 }
 
@@ -302,18 +324,16 @@ impl Plugin for QuinnetClientPlugin {
             .add_event::<ConnectionLostEvent>()
             .add_event::<CertInteractionEvent>()
             .add_event::<CertTrustUpdateEvent>()
-            .add_event::<CertConnectionAbortEvent>()
-            // StartupStage::PreStartup so that resources created in commands are available to default startup_systems
-            .add_startup_system_to_stage(StartupStage::PreStartup, create_client)
-            .add_system_to_stage(CoreStage::PreUpdate, update_sync_client);
+            .add_event::<CertConnectionAbortEvent>();
 
-        if app.world.get_resource_mut::<AsyncRuntime>().is_none() {
-            app.insert_resource(AsyncRuntime(
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap(),
-            ));
+        if !self.initialize_later {
+            app.init_resource::<Client>();
         }
+
+        app.add_system(
+            update_sync_client
+                .in_base_set(CoreSet::PreUpdate)
+                .run_if(resource_exists::<Client>()),
+        );
     }
 }
