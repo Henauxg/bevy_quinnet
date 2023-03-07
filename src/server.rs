@@ -206,6 +206,8 @@ impl ClientConnection {
     }
 }
 
+/// By default, when starting an [Endpoint], Quinnet creates 1 channel instance of each [ChannelType], each with their own [ChannelId].
+/// Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelType::OrderedReliable] channel.
 pub struct Endpoint {
     clients: HashMap<ClientId, ClientConnection>,
     last_gen_client_id: ClientId,
@@ -225,6 +227,10 @@ impl Endpoint {
         self.clients.keys().cloned().collect()
     }
 
+    /// Attempt to deserialise a message into type `T`.
+    ///
+    /// Will return [`Err`] if the bytes accumulated from the client aren't deserializable to T.
+    /// /// Will also return [`Err`] if this client is disconnected.
     pub fn receive_message_from<T: serde::de::DeserializeOwned>(
         &mut self,
         client_id: ClientId,
@@ -238,6 +244,7 @@ impl Endpoint {
         }
     }
 
+    /// [`Endpoint::receive_message_from`] that logs the error instead of returning a result.
     pub fn try_receive_message_from<T: serde::de::DeserializeOwned>(
         &mut self,
         client_id: ClientId,
@@ -251,6 +258,7 @@ impl Endpoint {
         }
     }
 
+    /// Attempt to receive a full payload sent by the specified client.
     pub fn receive_payload_from(
         &mut self,
         client_id: ClientId,
@@ -267,6 +275,7 @@ impl Endpoint {
         }
     }
 
+    /// [`Endpoint::receive_payload_from`] that logs the error instead of returning a result.
     pub fn try_receive_payload_from(&mut self, client_id: ClientId) -> Option<Bytes> {
         match self.receive_payload_from(client_id) {
             Ok(payload) => payload,
@@ -277,6 +286,7 @@ impl Endpoint {
         }
     }
 
+    /// Queue a message to be sent to the specified client on the default channel.
     pub fn send_message<T: serde::Serialize>(
         &self,
         client_id: ClientId,
@@ -288,6 +298,7 @@ impl Endpoint {
         }
     }
 
+    /// Queue a message to be sent to the specified client on the specified channel.
     pub fn send_message_on<T: serde::Serialize>(
         &self,
         client_id: ClientId,
@@ -300,6 +311,7 @@ impl Endpoint {
         }
     }
 
+    /// [`Endpoint::send_message`] that logs the error instead of returning a result.
     pub fn try_send_message<T: serde::Serialize>(&self, client_id: ClientId, message: T) {
         match self.send_message(client_id, message) {
             Ok(_) => {}
@@ -307,6 +319,7 @@ impl Endpoint {
         }
     }
 
+    /// [`Endpoint::send_message_on`] that logs the error instead of returning a result.
     pub fn try_send_message_on<T: serde::Serialize>(
         &self,
         client_id: ClientId,
@@ -403,6 +416,7 @@ impl Endpoint {
         }
     }
 
+    /// Sends the payload to all connected clients on the default channel.
     pub fn broadcast_payload<T: Into<Bytes> + Clone>(
         &self,
         payload: T,
@@ -413,6 +427,7 @@ impl Endpoint {
         }
     }
 
+    /// Sends the payload to all connected clients on the specified channel.
     pub fn broadcast_payload_on<T: Into<Bytes> + Clone>(
         &self,
         channel_id: ChannelId,
@@ -536,11 +551,9 @@ impl Endpoint {
 
     /// Opens a channel of the requested [ChannelType] and returns its [ChannelId].
     ///
-    /// By default, when starting an [Endpoint], Quinnet creates 1 channel instance of each [ChannelType], each with their own [ChannelId]. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelType::OrderedReliable] channel.
-    ///
     /// If no channels were previously opened, the opened channel will be the new default channel.
     ///
-    /// Can fail if the Endpoint is closed.
+    /// Can fail if the Endpoint is closed. See [Endpoint] for the defautl channels.
     pub fn open_channel(&mut self, channel_type: ChannelType) -> Result<ChannelId, QuinnetError> {
         let channel_id = get_channel_id_from_type(channel_type, || {
             self.last_gen_id += 1;
