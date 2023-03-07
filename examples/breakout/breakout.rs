@@ -56,6 +56,12 @@ enum GameState {
     Running,
 }
 
+#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
+pub enum GameSystems {
+    HostSystems,
+    ClientSystems,
+}
+
 #[derive(Component, Deref, DerefMut)]
 struct Velocity(Vec2);
 
@@ -110,10 +116,6 @@ fn server_is_listening(server: Res<Server>) -> bool {
     server.is_listening()
 }
 
-fn game_is_running(current_state: Res<State<GameState>>) -> bool {
-    current_state.0 == GameState::Running
-}
-
 fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
@@ -128,12 +130,13 @@ fn main() {
         .insert_resource(client::NetworkMapping::default())
         .insert_resource(client::BricksMapping::default());
 
-    // Main menu
+    // ------ Main menu
     app.add_system(bevy::window::close_on_esc)
         .add_system(client::setup_main_menu.in_schedule(OnEnter(GameState::MainMenu)))
         .add_system(client::handle_menu_buttons.in_set(OnUpdate(GameState::MainMenu)))
         .add_system(client::teardown_main_menu.in_schedule(OnExit(GameState::MainMenu)));
-    // Hosting a server on a client
+
+    // ------ Hosting a server on a client
     app.add_systems(
         (server::start_listening, client::start_connection)
             .in_schedule(OnEnter(GameState::HostingLobby)),
@@ -146,13 +149,18 @@ fn main() {
         )
             .in_set(OnUpdate(GameState::HostingLobby)),
     );
-    // or just Joining as a client
+
+    // ------ or just Joining as a client
     app.add_system(client::start_connection.in_schedule(OnEnter(GameState::JoiningLobby)))
         .add_system(client::handle_server_messages.in_set(OnUpdate(GameState::JoiningLobby)));
-    // Running the game.
-    // Every app is a client
-    app.add_system(client::setup_breakout.in_schedule(OnEnter(GameState::Running)))
-        .add_systems(
+
+    // ------ Running the game.
+
+    // ------ Every app is a client
+    app.add_system(client::setup_breakout.in_schedule(OnEnter(GameState::Running)));
+    app.edit_schedule(CoreSchedule::FixedUpdate, |schedule| {
+        schedule.configure_set(GameSystems::ClientSystems.run_if(in_state(GameState::Running)));
+        schedule.add_systems(
             (
                 client::handle_server_messages.before(client::apply_velocity),
                 client::apply_velocity,
@@ -160,21 +168,27 @@ fn main() {
                 client::update_scoreboard,
                 client::play_collision_sound,
             )
-                .distributive_run_if(game_is_running)
-                .in_schedule(CoreSchedule::FixedUpdate),
+                .in_set(GameSystems::ClientSystems),
         );
-    // But hosting apps are also a server
-    app.add_systems(
-        (
-            server::handle_client_messages.before(server::update_paddles),
-            server::update_paddles.before(server::check_for_collisions),
-            server::apply_velocity.before(server::check_for_collisions),
-            server::check_for_collisions,
-        )
-            .distributive_run_if(server_is_listening)
-            .distributive_run_if(game_is_running)
-            .in_schedule(CoreSchedule::FixedUpdate),
-    );
+    });
+
+    // ------ But hosting apps are also a server
+    app.edit_schedule(CoreSchedule::FixedUpdate, |schedule| {
+        schedule.configure_set(
+            GameSystems::HostSystems
+                .run_if(in_state(GameState::Running))
+                .run_if(server_is_listening),
+        );
+        schedule.add_systems(
+            (
+                server::handle_client_messages.before(server::update_paddles),
+                server::update_paddles.before(server::check_for_collisions),
+                server::apply_velocity.before(server::check_for_collisions),
+                server::check_for_collisions,
+            )
+                .in_set(GameSystems::HostSystems),
+        );
+    });
 
     app.run();
 }
