@@ -1,7 +1,15 @@
 # Changelog
 
-## Version 0.4.0-dev
+## Version 0.4.0 (2023-03-07)
 
+- Update Bevy to 0.10
+- [client]: Add missing `try_send_message_on` and `try_send_payload_on` in `connection`
+- Internal improvements to channels and server's `send_group_message`
+- `AsyncRuntime` is now pub
+- [client & server] In order to have more control over plugin initialization and only do the strict necessary, which is registering systems and events in the Bevy schedule, `.add_plugin(QuinnetClient/ServerPlugin { initialize_later: true })` can now be used, which will not create the Client/Server `Resource` immediately.
+  - A command such as `commands.init_resource::<Client/Server>();` can be used later on when needed.
+  - Client & server plugins systems are scheduled to only run if their respective resource exists.
+  - Their respective `Resource` can be removed through a command at runtime.
 - [client]: Fix IPv6 handling.
   - Remove `ConnectionConfiguration::new`
   - Add `ConnectionConfiguration::from_strings`, `ConnectionConfiguration::from_ips` and `ConnectionConfiguration::from_addrs`
