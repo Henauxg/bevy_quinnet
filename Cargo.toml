@@ -12,7 +12,7 @@ readme = "README.md"
 exclude = ["assets/"]
 
 [dependencies]
-bevy = { version = "0.9.0", default-features = false, features = [] }
+bevy = { version = "0.10.0", default-features = false, features = [] }
 rustls = { version = "0.20.6", default-features = false, features = ["quic", "dangerous_configuration"] }
 rustls-pemfile = "1.0.1"
 ring = "0.16.20"
@@ -30,7 +30,7 @@ base64 = "0.13.1"
 thiserror = "1.0.37"
 
 [dev-dependencies]
-bevy = { version = "0.9.0", default-features = false, features = ["bevy_asset", "bevy_audio", "vorbis", "bevy_winit", "render"] }
+bevy = { version = "0.10.0", default-features = false, features = ["bevy_asset", "bevy_audio", "vorbis", "bevy_winit", "bevy_render", "bevy_sprite", "bevy_ui", "bevy_text", "bevy_core_pipeline"] }
 rand = "0.8.5"
 
 [[example]]
