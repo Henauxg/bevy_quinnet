@@ -3,7 +3,7 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 
-use bevy::{ecs::schedule::ShouldRun, prelude::*, time::FixedTimestep};
+use bevy::prelude::*;
 use bevy_quinnet::{
     client::QuinnetClientPlugin,
     server::{QuinnetServerPlugin, Server},
@@ -47,8 +47,9 @@ const GAP_BETWEEN_BRICKS: f32 = 5.0;
 // These values are lower bounds, as the number of bricks is computed
 const GAP_BETWEEN_BRICKS_AND_SIDES: f32 = 20.0;
 
-#[derive(Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Default, Clone, Eq, PartialEq, Debug, Hash, States)]
 enum GameState {
+    #[default]
     MainMenu,
     HostingLobby,
     JoiningLobby,
@@ -105,90 +106,75 @@ impl WallLocation {
     }
 }
 
+fn server_is_listening(server: Res<Server>) -> bool {
+    server.is_listening()
+}
+
+fn game_is_running(current_state: Res<State<GameState>>) -> bool {
+    current_state.0 == GameState::Running
+}
+
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins)
         .add_plugin(QuinnetServerPlugin::default())
-        .add_plugin(QuinnetClientPlugin::default())
-        .add_event::<CollisionEvent>()
-        .add_state(GameState::MainMenu)
-        // Resources
-        .insert_resource(ClearColor(BACKGROUND_COLOR))
+        .add_plugin(QuinnetClientPlugin::default());
+    app.add_event::<CollisionEvent>();
+    app.add_state::<GameState>();
+    app.insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(server::Players::default())
         .insert_resource(client::Scoreboard { score: 0 })
         .insert_resource(client::ClientData::default())
         .insert_resource(client::NetworkMapping::default())
-        .insert_resource(client::BricksMapping::default())
-        // Main menu
-        .add_system_set(
-            SystemSet::on_enter(GameState::MainMenu).with_system(client::setup_main_menu),
+        .insert_resource(client::BricksMapping::default());
+
+    // Main menu
+    app.add_system(bevy::window::close_on_esc)
+        .add_system(client::setup_main_menu.in_schedule(OnEnter(GameState::MainMenu)))
+        .add_system(client::handle_menu_buttons.in_set(OnUpdate(GameState::MainMenu)))
+        .add_system(client::teardown_main_menu.in_schedule(OnExit(GameState::MainMenu)));
+    // Hosting a server on a client
+    app.add_systems(
+        (server::start_listening, client::start_connection)
+            .in_schedule(OnEnter(GameState::HostingLobby)),
+    )
+    .add_systems(
+        (
+            server::handle_client_messages,
+            server::handle_server_events,
+            client::handle_server_messages,
         )
-        .add_system_set(
-            SystemSet::on_update(GameState::MainMenu).with_system(client::handle_menu_buttons),
+            .in_set(OnUpdate(GameState::HostingLobby)),
+    );
+    // or just Joining as a client
+    app.add_system(client::start_connection.in_schedule(OnEnter(GameState::JoiningLobby)))
+        .add_system(client::handle_server_messages.in_set(OnUpdate(GameState::JoiningLobby)));
+    // Running the game.
+    // Every app is a client
+    app.add_system(client::setup_breakout.in_schedule(OnEnter(GameState::Running)))
+        .add_systems(
+            (
+                client::handle_server_messages.before(client::apply_velocity),
+                client::apply_velocity,
+                client::move_paddle,
+                client::update_scoreboard,
+                client::play_collision_sound,
+            )
+                .distributive_run_if(game_is_running)
+                .in_schedule(CoreSchedule::FixedUpdate),
+        );
+    // But hosting apps are also a server
+    app.add_systems(
+        (
+            server::handle_client_messages.before(server::update_paddles),
+            server::update_paddles.before(server::check_for_collisions),
+            server::apply_velocity.before(server::check_for_collisions),
+            server::check_for_collisions,
         )
-        .add_system_set(
-            SystemSet::on_exit(GameState::MainMenu).with_system(client::teardown_main_menu),
-        )
-        // Hosting a server on a client
-        .add_system_set(
-            SystemSet::on_enter(GameState::HostingLobby)
-                .with_system(server::start_listening)
-                .with_system(client::start_connection),
-        )
-        .add_system_set(
-            SystemSet::on_update(GameState::HostingLobby)
-                .with_system(server::handle_client_messages)
-                .with_system(server::handle_server_events)
-                .with_system(client::handle_server_messages),
-        )
-        // or just Joining as a client
-        .add_system_set(
-            SystemSet::on_enter(GameState::JoiningLobby).with_system(client::start_connection),
-        )
-        .add_system_set(
-            SystemSet::on_update(GameState::JoiningLobby)
-                .with_system(client::handle_server_messages),
-        )
-        // Running the game.
-        // Every app is a client
-        .add_system_set(SystemSet::on_enter(GameState::Running).with_system(client::setup_breakout))
-        .add_system_set(
-            SystemSet::new()
-                // https://github.com/bevyengine/bevy/issues/1839
-                // Run on a fixed Timestep,on all clients, in GameState::Running
-                .with_run_criteria(FixedTimestep::step(TIME_STEP as f64).pipe(
-                    |In(input): In<ShouldRun>, state: Res<State<GameState>>| match state.current() {
-                        GameState::Running => input,
-                        _ => ShouldRun::No,
-                    },
-                ))
-                .with_system(client::handle_server_messages.before(client::apply_velocity))
-                .with_system(client::apply_velocity)
-                .with_system(client::move_paddle)
-                .with_system(client::update_scoreboard)
-                .with_system(client::play_collision_sound.after(client::handle_server_messages)),
-        )
-        // But hosting apps are also a server
-        .add_system_set(
-            SystemSet::new()
-                // https://github.com/bevyengine/bevy/issues/1839
-                // Run on a fixed Timestep, only for the hosting client, in GameState::Running
-                .with_run_criteria(FixedTimestep::step(TIME_STEP as f64).pipe(
-                    |In(input): In<ShouldRun>,
-                     state: Res<State<GameState>>,
-                     server: Res<Server>| match state.current() {
-                        GameState::Running => match server.is_listening() {
-                            true => input,
-                            false => ShouldRun::No,
-                        },
-                        _ => ShouldRun::No,
-                    },
-                ))
-                .with_system(server::handle_client_messages.before(server::update_paddles))
-                .with_system(server::update_paddles.before(server::check_for_collisions))
-                .with_system(server::apply_velocity.before(server::check_for_collisions))
-                .with_system(server::check_for_collisions),
-        )
-        .add_system(bevy::window::close_on_esc)
-        .run();
+            .distributive_run_if(server_is_listening)
+            .distributive_run_if(game_is_running)
+            .in_schedule(CoreSchedule::FixedUpdate),
+    );
+
+    app.run();
 }

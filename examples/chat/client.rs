@@ -8,8 +8,8 @@ use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
     log::LogPlugin,
     prelude::{
-        info, warn, App, Commands, CoreStage, Deref, DerefMut, EventReader, EventWriter, Res,
-        ResMut, Resource,
+        info, warn, App, Commands, CoreSet, Deref, DerefMut, EventReader, EventWriter,
+        IntoSystemConfig, Res, ResMut, Resource,
     },
 };
 use bevy_quinnet::{
@@ -128,7 +128,10 @@ fn start_connection(mut client: ResMut<Client>) {
     // You can already send message(s) even before being connected, they will be buffered. In this example we will wait for a ConnectionEvent.
 }
 
-fn handle_client_events(connection_events: EventReader<ConnectionEvent>, client: ResMut<Client>) {
+fn handle_client_events(
+    mut connection_events: EventReader<ConnectionEvent>,
+    client: ResMut<Client>,
+) {
     if !connection_events.is_empty() {
         // We are connected
         let username: String = rand::thread_rng()
@@ -160,7 +163,7 @@ fn main() {
         .add_system(handle_terminal_messages)
         .add_system(handle_server_messages)
         .add_system(handle_client_events)
-        // CoreStage::PostUpdate so that AppExit events generated in the previous stage are available
-        .add_system_to_stage(CoreStage::PostUpdate, on_app_exit)
+        // CoreSet::PostUpdate so that AppExit events generated in the previous stage are available
+        .add_system(on_app_exit.in_base_set(CoreSet::PostUpdate))
         .run();
 }

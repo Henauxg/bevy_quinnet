@@ -4,8 +4,8 @@ use bevy::{
     prelude::{
         default, AssetServer, Audio, BuildChildren, Bundle, Button, ButtonBundle, Camera2dBundle,
         Changed, Color, Commands, Component, DespawnRecursiveExt, Entity, EventReader, EventWriter,
-        Input, KeyCode, Local, PlaybackSettings, Query, Res, ResMut, Resource, State, TextBundle,
-        Transform, Vec2, Vec3, With, Without,
+        Input, KeyCode, Local, NextState, PlaybackSettings, Query, Res, ResMut, Resource,
+        TextBundle, Transform, Vec2, Vec3, With, Without,
     },
     sprite::{Sprite, SpriteBundle},
     text::{Text, TextSection, TextStyle},
@@ -194,7 +194,7 @@ pub(crate) fn handle_server_messages(
     mut client: ResMut<Client>,
     mut client_data: ResMut<ClientData>,
     mut entity_mapping: ResMut<NetworkMapping>,
-    mut game_state: ResMut<State<GameState>>,
+    mut next_state: ResMut<NextState<GameState>>,
     mut paddles: Query<&mut Transform, With<Paddle>>,
     mut balls: Query<(&mut Transform, &mut Velocity, &mut Sprite), (With<Ball>, Without<Paddle>)>,
     mut bricks: ResMut<BricksMapping>,
@@ -240,7 +240,7 @@ pub(crate) fn handle_server_messages(
                 rows,
                 columns,
             } => spawn_bricks(&mut commands, &mut bricks, offset, rows, columns),
-            ServerMessage::StartGame {} => game_state.set(GameState::Running).unwrap(),
+            ServerMessage::StartGame {} => next_state.set(GameState::Running),
             ServerMessage::BrickDestroyed {
                 by_client_id,
                 brick_id,
@@ -324,7 +324,7 @@ pub(crate) fn update_scoreboard(
 }
 
 pub(crate) fn play_collision_sound(
-    collision_events: EventReader<CollisionEvent>,
+    mut collision_events: EventReader<CollisionEvent>,
     audio: Res<Audio>,
     sound: Res<CollisionSound>,
 ) {
@@ -392,15 +392,15 @@ pub(crate) fn handle_menu_buttons(
         (&Interaction, &mut BackgroundColor, &MenuItem),
         (Changed<Interaction>, With<Button>),
     >,
-    mut game_state: ResMut<State<GameState>>,
+    mut next_state: ResMut<NextState<GameState>>,
 ) {
     for (interaction, mut color, item) in &mut interaction_query {
         match *interaction {
             Interaction::Clicked => {
                 *color = PRESSED_BUTTON_COLOR.into();
                 match item {
-                    MenuItem::Host => game_state.set(GameState::HostingLobby).unwrap(),
-                    MenuItem::Join => game_state.set(GameState::JoiningLobby).unwrap(),
+                    MenuItem::Host => next_state.set(GameState::HostingLobby),
+                    MenuItem::Join => next_state.set(GameState::JoiningLobby),
                 }
             }
             Interaction::Hovered => {
