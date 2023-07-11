@@ -84,7 +84,7 @@ This is a bird-eye view of the features/tasks that will probably be worked on ne
 ```rust
  App::new()
         // ...
-        .add_plugin(QuinnetClientPlugin::default())
+        .add_plugins(QuinnetClientPlugin::default())
         // ...
         .run();
 ```
@@ -132,7 +132,7 @@ fn handle_server_messages(
 ```rust
  App::new()
         /*...*/
-        .add_plugin(QuinnetServerPlugin::default())
+        .add_plugins(QuinnetServerPlugin::default())
         /*...*/
         .run();
 ```
