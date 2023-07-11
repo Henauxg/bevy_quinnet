@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use bevy::prelude::{error, info};
+use bevy::prelude::{error, info, Event};
 use bytes::Bytes;
 use quinn::{ClientConfig, Endpoint};
 use quinn_proto::ConnectionStats;
@@ -39,10 +39,12 @@ use super::{
 pub type ConnectionId = u64;
 
 /// Connection event raised when the client just connected to the server. Raised in the CoreStage::PreUpdate stage.
+#[derive(Event)]
 pub struct ConnectionEvent {
     pub id: ConnectionId,
 }
 /// ConnectionLost event raised when the client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
+#[derive(Event)]
 pub struct ConnectionLostEvent {
     pub id: ConnectionId,
 }

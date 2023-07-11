@@ -330,10 +330,9 @@ impl Plugin for QuinnetClientPlugin {
             app.init_resource::<Client>();
         }
 
-        app.add_system(
-            update_sync_client
-                .in_base_set(CoreSet::PreUpdate)
-                .run_if(resource_exists::<Client>()),
+        app.add_systems(
+            PreUpdate,
+            update_sync_client.run_if(resource_exists::<Client>()),
         );
     }
 }

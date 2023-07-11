@@ -41,12 +41,14 @@ pub mod certificate;
 pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 
 /// Connection event raised when a client just connected to the server. Raised in the CoreStage::PreUpdate stage.
+#[derive(Event)]
 pub struct ConnectionEvent {
     /// Id of the client who connected
     pub id: ClientId,
 }
 
 /// ConnectionLost event raised when a client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
+#[derive(Event)]
 pub struct ConnectionLostEvent {
     /// Id of the client who lost connection
     pub id: ClientId,
@@ -976,10 +978,9 @@ impl Plugin for QuinnetServerPlugin {
             app.init_resource::<Server>();
         }
 
-        app.add_system(
-            update_sync_server
-                .in_base_set(CoreSet::PreUpdate)
-                .run_if(resource_exists::<Server>()),
+        app.add_systems(
+            PreUpdate,
+            update_sync_server.run_if(resource_exists::<Server>()),
         );
     }
 }
