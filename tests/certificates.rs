@@ -1,6 +1,9 @@
 use std::{fs, path::Path, thread::sleep, time::Duration};
 
-use bevy::{app::ScheduleRunnerPlugin, prelude::App};
+use bevy::{
+    app::ScheduleRunnerPlugin,
+    prelude::{App, Update},
+};
 use bevy_quinnet::{
     client::{
         self,
@@ -51,17 +54,21 @@ fn trust_on_first_use() {
 
     let mut client_app = App::new();
     client_app
-        .add_plugin(ScheduleRunnerPlugin::default())
-        .add_plugin(QuinnetClientPlugin::default())
+        .add_plugins((
+            ScheduleRunnerPlugin::default(),
+            QuinnetClientPlugin::default(),
+        ))
         .insert_resource(ClientTestData::default())
-        .add_system(handle_client_events);
+        .add_systems(Update, handle_client_events);
 
     let mut server_app = App::new();
     server_app
-        .add_plugin(ScheduleRunnerPlugin::default())
-        .add_plugin(QuinnetServerPlugin::default())
+        .add_plugins((
+            ScheduleRunnerPlugin::default(),
+            QuinnetServerPlugin::default(),
+        ))
         .insert_resource(ServerTestData::default())
-        .add_system(handle_server_events);
+        .add_systems(Update, handle_server_events);
 
     // Startup
     client_app.update();

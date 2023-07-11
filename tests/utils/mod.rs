@@ -6,7 +6,7 @@ use std::{
 
 use bevy::{
     app::ScheduleRunnerPlugin,
-    prelude::{App, EventReader, Res, ResMut, Resource},
+    prelude::{App, EventReader, Res, ResMut, Resource, Startup, Update},
 };
 use bevy_quinnet::{
     client::{
@@ -66,22 +66,26 @@ pub const LOCAL_BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 pub fn build_client_app() -> App {
     let mut client_app = App::new();
     client_app
-        .add_plugin(ScheduleRunnerPlugin::default())
-        .add_plugin(QuinnetClientPlugin::default())
+        .add_plugins((
+            ScheduleRunnerPlugin::default(),
+            QuinnetClientPlugin::default(),
+        ))
         .insert_resource(ClientTestData::default())
-        .add_startup_system(start_simple_connection)
-        .add_system(handle_client_events);
+        .add_systems(Startup, start_simple_connection)
+        .add_systems(Update, handle_client_events);
     client_app
 }
 
 pub fn build_server_app() -> App {
     let mut server_app = App::new();
     server_app
-        .add_plugin(ScheduleRunnerPlugin::default())
-        .add_plugin(QuinnetServerPlugin::default())
+        .add_plugins((
+            ScheduleRunnerPlugin::default(),
+            QuinnetServerPlugin::default(),
+        ))
         .insert_resource(ServerTestData::default())
-        .add_startup_system(start_listening)
-        .add_system(handle_server_events);
+        .add_systems(Startup, start_listening)
+        .add_systems(Update, handle_server_events);
     server_app
 }
 
