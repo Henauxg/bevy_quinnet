@@ -2,16 +2,15 @@ use std::collections::HashMap;
 
 use bevy::{
     prelude::{
-        default, AssetServer, Audio, BuildChildren, Bundle, Button, ButtonBundle, Camera2dBundle,
-        Changed, Color, Commands, Component, DespawnRecursiveExt, Entity, EventReader, EventWriter,
-        Input, KeyCode, Local, NextState, PlaybackSettings, Query, Res, ResMut, Resource,
-        TextBundle, Transform, Vec2, Vec3, With, Without,
+        default, AssetServer, AudioBundle, BuildChildren, Bundle, Button, ButtonBundle,
+        Camera2dBundle, Changed, Color, Commands, Component, DespawnRecursiveExt, Entity,
+        EventReader, EventWriter, Input, KeyCode, Local, NextState, PlaybackSettings, Query, Res,
+        ResMut, Resource, TextBundle, Transform, Vec2, Vec3, With, Without,
     },
     sprite::{Sprite, SpriteBundle},
     text::{Text, TextSection, TextStyle},
     ui::{
-        AlignItems, BackgroundColor, Interaction, JustifyContent, PositionType, Size, Style,
-        UiRect, Val,
+        AlignItems, BackgroundColor, Interaction, JustifyContent, PositionType, Style, UiRect, Val,
     },
 };
 use bevy_quinnet::{
@@ -89,7 +88,6 @@ pub(crate) enum MenuItem {
 // This bundle is a collection of the components that define a "wall" in our game
 #[derive(Bundle)]
 struct WallBundle {
-    #[bundle]
     sprite_bundle: SpriteBundle,
 }
 pub(crate) fn start_connection(mut client: ResMut<Client>) {
@@ -324,21 +322,19 @@ pub(crate) fn update_scoreboard(
 }
 
 pub(crate) fn play_collision_sound(
+    mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
-    audio: Res<Audio>,
     sound: Res<CollisionSound>,
 ) {
     // Play a sound once per frame if a collision occurred.
     if !collision_events.is_empty() {
         // This prevents events staying active on the next frame.
         collision_events.clear();
-        audio.play_with_settings(
-            sound.0.clone(),
-            PlaybackSettings {
-                volume: 0.1,
-                ..Default::default()
-            },
-        );
+        commands.spawn(AudioBundle {
+            source: sound.0.clone(),
+            // auto-despawn the entity when playback finishes
+            settings: PlaybackSettings::DESPAWN,
+        });
     }
 }
 
@@ -347,7 +343,8 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
     commands.spawn(Camera2dBundle::default());
 
     let button_style = Style {
-        size: Size::new(Val::Px(150.0), Val::Px(65.0)),
+        width: Val::Px(150.0),
+        height: Val::Px(65.0),
         // center button
         margin: UiRect::all(Val::Auto),
         // horizontally center child text
@@ -396,7 +393,7 @@ pub(crate) fn handle_menu_buttons(
 ) {
     for (interaction, mut color, item) in &mut interaction_query {
         match *interaction {
-            Interaction::Clicked => {
+            Interaction::Pressed => {
                 *color = PRESSED_BUTTON_COLOR.into();
                 match item {
                     MenuItem::Host => next_state.set(GameState::HostingLobby),
@@ -443,11 +440,8 @@ pub(crate) fn setup_breakout(mut commands: Commands, asset_server: Res<AssetServ
         ])
         .with_style(Style {
             position_type: PositionType::Absolute,
-            position: UiRect {
-                top: SCOREBOARD_TEXT_PADDING,
-                left: SCOREBOARD_TEXT_PADDING,
-                ..default()
-            },
+            top: SCOREBOARD_TEXT_PADDING,
+            left: SCOREBOARD_TEXT_PADDING,
             ..default()
         }),
         Score,

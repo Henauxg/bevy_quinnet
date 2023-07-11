@@ -65,7 +65,7 @@ pub enum GameSystems {
 #[derive(Component, Deref, DerefMut)]
 struct Velocity(Vec2);
 
-#[derive(Default)]
+#[derive(Default, Event)]
 struct CollisionEvent;
 
 #[derive(Component)]
@@ -118,9 +118,11 @@ fn server_is_listening(server: Res<Server>) -> bool {
 
 fn main() {
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins)
-        .add_plugin(QuinnetServerPlugin::default())
-        .add_plugin(QuinnetClientPlugin::default());
+    app.add_plugins((
+        DefaultPlugins,
+        QuinnetServerPlugin::default(),
+        QuinnetClientPlugin::default(),
+    ));
     app.add_event::<CollisionEvent>();
     app.add_state::<GameState>();
     app.insert_resource(ClearColor(BACKGROUND_COLOR))
@@ -131,34 +133,41 @@ fn main() {
         .insert_resource(client::BricksMapping::default());
 
     // ------ Main menu
-    app.add_system(bevy::window::close_on_esc)
-        .add_system(client::setup_main_menu.in_schedule(OnEnter(GameState::MainMenu)))
-        .add_system(client::handle_menu_buttons.in_set(OnUpdate(GameState::MainMenu)))
-        .add_system(client::teardown_main_menu.in_schedule(OnExit(GameState::MainMenu)));
+    app.add_systems(Update, bevy::window::close_on_esc)
+        .add_systems(OnEnter(GameState::MainMenu), client::setup_main_menu)
+        .add_systems(
+            Update,
+            client::handle_menu_buttons.run_if(in_state(GameState::MainMenu)),
+        )
+        .add_systems(OnExit(GameState::MainMenu), client::teardown_main_menu);
 
     // ------ Hosting a server on a client
     app.add_systems(
-        (server::start_listening, client::start_connection)
-            .in_schedule(OnEnter(GameState::HostingLobby)),
+        OnEnter(GameState::HostingLobby),
+        (server::start_listening, client::start_connection),
     )
     .add_systems(
+        Update,
         (
             server::handle_client_messages,
             server::handle_server_events,
             client::handle_server_messages,
         )
-            .in_set(OnUpdate(GameState::HostingLobby)),
+            .run_if(in_state(GameState::HostingLobby)),
     );
 
     // ------ or just Joining as a client
-    app.add_system(client::start_connection.in_schedule(OnEnter(GameState::JoiningLobby)))
-        .add_system(client::handle_server_messages.in_set(OnUpdate(GameState::JoiningLobby)));
+    app.add_systems(OnEnter(GameState::JoiningLobby), client::start_connection)
+        .add_systems(
+            Update,
+            client::handle_server_messages.run_if(in_state(GameState::JoiningLobby)),
+        );
 
     // ------ Running the game.
 
     // ------ Every app is a client
-    app.add_system(client::setup_breakout.in_schedule(OnEnter(GameState::Running)));
-    app.edit_schedule(CoreSchedule::FixedUpdate, |schedule| {
+    app.add_systems(OnEnter(GameState::Running), client::setup_breakout);
+    app.edit_schedule(FixedUpdate, |schedule| {
         schedule.configure_set(GameSystems::ClientSystems.run_if(in_state(GameState::Running)));
         schedule.add_systems(
             (
@@ -173,7 +182,7 @@ fn main() {
     });
 
     // ------ But hosting apps are also a server
-    app.edit_schedule(CoreSchedule::FixedUpdate, |schedule| {
+    app.edit_schedule(FixedUpdate, |schedule| {
         schedule.configure_set(
             GameSystems::HostSystems
                 .run_if(in_state(GameState::Running))

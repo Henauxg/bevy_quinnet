@@ -71,7 +71,6 @@ pub(crate) struct Ball {
 
 #[derive(Bundle)]
 struct WallBundle {
-    #[bundle]
     transform_bundle: TransformBundle,
     collider: Collider,
 }
