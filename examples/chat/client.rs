@@ -8,8 +8,8 @@ use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
     log::LogPlugin,
     prelude::{
-        info, warn, App, Commands, CoreSet, Deref, DerefMut, EventReader, EventWriter,
-        IntoSystemConfig, Res, ResMut, Resource,
+        info, warn, App, Commands, Deref, DerefMut, EventReader, EventWriter, PostUpdate, Res,
+        ResMut, Resource, Startup, Update,
     },
 };
 use bevy_quinnet::{
@@ -154,16 +154,22 @@ fn handle_client_events(
 
 fn main() {
     App::new()
-        .add_plugin(ScheduleRunnerPlugin::default())
-        .add_plugin(LogPlugin::default())
-        .add_plugin(QuinnetClientPlugin::default())
+        .add_plugins((
+            ScheduleRunnerPlugin::default(),
+            LogPlugin::default(),
+            QuinnetClientPlugin::default(),
+        ))
         .insert_resource(Users::default())
-        .add_startup_system(start_terminal_listener)
-        .add_startup_system(start_connection)
-        .add_system(handle_terminal_messages)
-        .add_system(handle_server_messages)
-        .add_system(handle_client_events)
+        .add_systems(Startup, (start_terminal_listener, start_connection))
+        .add_systems(
+            Update,
+            (
+                handle_terminal_messages,
+                handle_server_messages,
+                handle_client_events,
+            ),
+        )
         // CoreSet::PostUpdate so that AppExit events generated in the previous stage are available
-        .add_system(on_app_exit.in_base_set(CoreSet::PostUpdate))
+        .add_systems(PostUpdate, on_app_exit)
         .run();
 }

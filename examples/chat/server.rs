@@ -126,12 +126,13 @@ fn start_listening(mut server: ResMut<Server>) {
 
 fn main() {
     App::new()
-        .add_plugin(ScheduleRunnerPlugin::default())
-        .add_plugin(LogPlugin::default())
-        .add_plugin(QuinnetServerPlugin::default())
+        .add_plugins((
+            ScheduleRunnerPlugin::default(),
+            LogPlugin::default(),
+            QuinnetServerPlugin::default(),
+        ))
         .insert_resource(Users::default())
-        .add_startup_system(start_listening)
-        .add_system(handle_client_messages)
-        .add_system(handle_server_events)
+        .add_systems(Startup, start_listening)
+        .add_systems(Update, (handle_client_messages, handle_server_events))
         .run();
 }
