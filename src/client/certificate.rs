@@ -259,8 +259,8 @@ impl TofuServerVerification {
                     .unwrap();
                 match block_on(cert_action_recv) {
                     Ok(action) => self.apply_verifier_immediate_action(&action, status, cert_info),
-                    Err(err) => Err(rustls::Error::InvalidCertificateData(format!(
-                        "Failed to receive CertVerifierAction: {}",
+                    Err(err) => Err(rustls::Error::General(format!(
+                        "Failed to receive CertVerifierAction from client: {}",
                         err
                     ))),
                 }
@@ -282,7 +282,7 @@ impl TofuServerVerification {
                         status: status,
                         cert_info,
                     }) {
-                    Ok(_) => Err(rustls::Error::InvalidCertificateData(format!(
+                    Ok(_) => Err(rustls::Error::General(format!(
                         "CertVerifierAction requested to abort the connection"
                     ))),
                     Err(_) => Err(rustls::Error::General(format!(
@@ -339,19 +339,14 @@ impl rustls::client::ServerCertVerifier for TofuServerVerification {
         };
         if let Some(ref known_fingerprint) = cert_info.known_fingerprint {
             if *known_fingerprint == cert_info.fingerprint {
-                status = Some(CertVerificationStatus::TrustedCertificate);
+                status = CertVerificationStatus::TrustedCertificate;
             } else {
-                status = Some(CertVerificationStatus::UntrustedCertificate);
+                status = CertVerificationStatus::UntrustedCertificate;
             }
         } else {
-            status = Some(CertVerificationStatus::UnknownCertificate);
+            status = CertVerificationStatus::UnknownCertificate;
         }
-        match status {
-            Some(status) => self.apply_verifier_behaviour_for_status(status, cert_info),
-            None => Err(rustls::Error::InvalidCertificateData(format!(
-                "Internal error, no CertVerificationStatus"
-            ))),
-        }
+        self.apply_verifier_behaviour_for_status(status, cert_info)
     }
 }
 
