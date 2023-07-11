@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use bevy::{
+    audio::Volume,
     prelude::{
         default, AssetServer, AudioBundle, BuildChildren, Bundle, Button, ButtonBundle,
         Camera2dBundle, Changed, Color, Commands, Component, DespawnRecursiveExt, Entity,
@@ -333,7 +334,7 @@ pub(crate) fn play_collision_sound(
         commands.spawn(AudioBundle {
             source: sound.0.clone(),
             // auto-despawn the entity when playback finishes
-            settings: PlaybackSettings::DESPAWN,
+            settings: PlaybackSettings::DESPAWN.with_volume(Volume::new_relative(0.2)),
         });
     }
 }
