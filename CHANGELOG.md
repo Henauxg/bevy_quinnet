@@ -1,5 +1,12 @@
 # Changelog
 
+## Version 0.5.0 (2023-07-11)
+
+- Update plugins, tests & examples to use Bevy 0.11
+- Update quinn & rustls
+- Update other dependencies: tokio, bytes, rcgen
+- [example:breakout] Reduce the collision sound volume
+
 ## Version 0.4.0 (2023-03-07)
 
 - Update Bevy to 0.10
