@@ -8,9 +8,10 @@ use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
     log::LogPlugin,
     prelude::{
-        info, warn, App, Commands, Deref, DerefMut, EventReader, EventWriter, PostUpdate, Res,
-        ResMut, Resource, Startup, Update,
+        App, Commands, Deref, DerefMut, EventReader, EventWriter, PostUpdate, Res, ResMut,
+        Resource, Startup, Update,
     },
+    utils::tracing::{info, warn},
 };
 use bevy_quinnet::{
     client::{

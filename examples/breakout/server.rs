@@ -108,7 +108,7 @@ pub(crate) fn handle_server_events(
     mut players: ResMut<Players>,
 ) {
     // The server signals us about new connections
-    for client in connection_events.iter() {
+    for client in connection_events.read() {
         // Refuse connection once we already have two players
         if players.map.len() >= 2 {
             server.endpoint_mut().disconnect_client(client.id).unwrap();

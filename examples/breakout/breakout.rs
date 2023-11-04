@@ -168,7 +168,7 @@ fn main() {
     // ------ Every app is a client
     app.add_systems(OnEnter(GameState::Running), client::setup_breakout);
     app.edit_schedule(FixedUpdate, |schedule| {
-        schedule.configure_set(GameSystems::ClientSystems.run_if(in_state(GameState::Running)));
+        schedule.configure_sets(GameSystems::ClientSystems.run_if(in_state(GameState::Running)));
         schedule.add_systems(
             (
                 client::handle_server_messages.before(client::apply_velocity),
@@ -183,7 +183,7 @@ fn main() {
 
     // ------ But hosting apps are also a server
     app.edit_schedule(FixedUpdate, |schedule| {
-        schedule.configure_set(
+        schedule.configure_sets(
             GameSystems::HostSystems
                 .run_if(in_state(GameState::Running))
                 .run_if(server_is_listening),

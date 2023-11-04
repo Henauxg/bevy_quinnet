@@ -85,7 +85,7 @@ fn handle_server_events(
     mut users: ResMut<Users>,
 ) {
     // The server signals us about users that lost connection
-    for client in connection_lost_events.iter() {
+    for client in connection_lost_events.read() {
         handle_disconnect(server.endpoint_mut(), &mut users, client.id);
     }
 }
