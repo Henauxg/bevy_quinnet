@@ -120,14 +120,14 @@ pub fn handle_client_events(
     mut cert_connection_abort_events: EventReader<CertConnectionAbortEvent>,
     mut test_data: ResMut<ClientTestData>,
 ) {
-    for _connected_event in connection_events.iter() {
+    for _connected_event in connection_events.read() {
         test_data.connection_events_received += 1;
     }
-    for trust_update in cert_trust_update_events.iter() {
+    for trust_update in cert_trust_update_events.read() {
         test_data.cert_trust_update_events_received += 1;
         test_data.last_trusted_cert_info = Some(trust_update.cert_info.clone());
     }
-    for cert_interaction in cert_interaction_events.iter() {
+    for cert_interaction in cert_interaction_events.read() {
         test_data.cert_interactions_received += 1;
         test_data.last_cert_interactions_status = Some(cert_interaction.status.clone());
         test_data.last_cert_interactions_info = Some(cert_interaction.info.clone());
@@ -142,7 +142,7 @@ pub fn handle_client_events(
             CertVerificationStatus::TrustedCertificate => todo!(),
         }
     }
-    for connection_abort in cert_connection_abort_events.iter() {
+    for connection_abort in cert_connection_abort_events.read() {
         test_data.cert_verif_connection_abort_events_received += 1;
         test_data.last_abort_cert_status = Some(connection_abort.status.clone());
         test_data.last_abort_cert_info = Some(connection_abort.cert_info.clone());
@@ -153,7 +153,7 @@ pub fn handle_server_events(
     mut connection_events: EventReader<server::ConnectionEvent>,
     mut test_data: ResMut<ServerTestData>,
 ) {
-    for connected_event in connection_events.iter() {
+    for connected_event in connection_events.read() {
         test_data.connection_events_received += 1;
         test_data.last_connected_client_id = Some(connected_event.id);
     }
