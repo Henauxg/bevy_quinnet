@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use bevy::prelude::{trace, warn};
+use bevy::utils::tracing::{trace, warn};
 
 use crate::shared::{CertificateFingerprint, QuinnetError};
 

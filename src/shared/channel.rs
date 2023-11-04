@@ -1,5 +1,5 @@
 use super::QuinnetError;
-use bevy::prelude::{error, trace};
+use bevy::utils::tracing::{error, trace};
 use bytes::Bytes;
 use futures::{sink::SinkExt, StreamExt};
 use quinn::{RecvStream, SendDatagramError, SendStream, VarInt};

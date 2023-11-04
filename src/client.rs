@@ -248,7 +248,7 @@ fn update_sync_client(
     mut cert_connection_abort_events: EventWriter<CertConnectionAbortEvent>,
     mut client: ResMut<Client>,
 ) {
-    for (connection_id, mut connection) in &mut client.connections {
+    for (connection_id, connection) in &mut client.connections {
         while let Ok(message) = connection.from_async_client_recv.try_recv() {
             match message {
                 ClientAsyncMessage::Connected(internal_connection) => {

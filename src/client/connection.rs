@@ -5,7 +5,8 @@ use std::{
     sync::Arc,
 };
 
-use bevy::prelude::{error, info, Event};
+use bevy::prelude::Event;
+use bevy::utils::tracing::{error, info};
 use bytes::Bytes;
 use quinn::{ClientConfig, Endpoint};
 use quinn_proto::ConnectionStats;

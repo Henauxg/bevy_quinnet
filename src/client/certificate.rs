@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bevy::prelude::{warn, Event};
+use bevy::{prelude::Event, utils::tracing::warn};
 use futures::executor::block_on;
 use rustls::ServerName as RustlsServerName;
 use tokio::sync::{mpsc, oneshot};
