@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.6.0 (2023-11-04)
+
+- Update plugins, tests & examples to use Bevy 0.12
+
 ## Version 0.5.0 (2023-07-11)
 
 - Update plugins, tests & examples to use Bevy 0.11
