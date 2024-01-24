@@ -1,9 +1,13 @@
+<div align="center">
+
 [![Bevy tracking](https://img.shields.io/badge/Bevy%20tracking-released%20version-lightblue)](https://github.com/bevyengine/bevy/blob/main/docs/plugins_guidelines.md#main-branch-tracking)
 [![crates.io](https://img.shields.io/crates/v/bevy_quinnet)](https://crates.io/crates/bevy_quinnet)
 
 # Bevy Quinnet
 
-A Client/Server game networking plugin using [QUIC](https://www.chromium.org/quic/), for the Bevy game engine.
+A Client/Server game networking plugin using [QUIC](https://www.chromium.org/quic/), for the [`Bevy`](https://github.com/bevyengine/bevy) engine.
+
+</div>
 
 - [Bevy Quinnet](#bevy-quinnet)
   - [QUIC as a game networking protocol](#quic-as-a-game-networking-protocol)
@@ -309,6 +313,7 @@ Start two clients with `cargo run --example breakout`, "Host" on one and "Join" 
 </details>
 
 Examples can be found in the [examples](examples) directory.
+
 ## Compatible Bevy versions
 
 Compatibility of `bevy_quinnet` versions:
@@ -331,11 +336,11 @@ Thanks to the [Renet](https://github.com/lucaspoffo/renet) crate for the inspira
 
 ## License
 
-bevy-quinnet is free and open source! All code in this repository is dual-licensed under either:
+bevy-quinnet is free and open source. All code in this repository is dual-licensed under either:
 
-* MIT License ([LICENSE-MIT](docs/LICENSE-MIT) or [http://opensource.org/licenses/MIT](http://opensource.org/licenses/MIT))
-* Apache License, Version 2.0 ([LICENSE-APACHE](docs/LICENSE-APACHE) or [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
+* MIT License ([LICENSE-MIT](LICENSE-MIT) or [http://opensource.org/licenses/MIT](http://opensource.org/licenses/MIT))
+* Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
 
-at your option. This means you can select the license you prefer! This dual-licensing approach is the de-facto standard in the Rust ecosystem and there are [very good reasons](https://github.com/bevyengine/bevy/issues/2373) to include both.
+at your option.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
