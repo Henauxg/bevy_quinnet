@@ -11,7 +11,8 @@ use bevy::{
     sprite::{Sprite, SpriteBundle},
     text::{Text, TextSection, TextStyle},
     ui::{
-        AlignItems, BackgroundColor, Interaction, JustifyContent, PositionType, Style, UiRect, Val,
+        node_bundles::NodeBundle, AlignItems, BackgroundColor, Interaction, JustifyContent,
+        PositionType, Style, UiRect, Val,
     },
 };
 use bevy_quinnet::{
@@ -360,28 +361,42 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
         color: BUTTON_TEXT_COLOR,
     };
     commands
-        .spawn((
-            ButtonBundle {
-                style: button_style.clone(),
-                background_color: NORMAL_BUTTON_COLOR.into(),
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Vw(100.0),
+                height: Val::Vh(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
                 ..default()
             },
-            MenuItem::Host,
-        ))
+            background_color: Color::NONE.into(),
+            ..default()
+        })
         .with_children(|parent| {
-            parent.spawn(TextBundle::from_section("Host", text_style.clone()));
-        });
-    commands
-        .spawn((
-            ButtonBundle {
-                style: button_style,
-                background_color: NORMAL_BUTTON_COLOR.into(),
-                ..default()
-            },
-            MenuItem::Join,
-        ))
-        .with_children(|parent| {
-            parent.spawn(TextBundle::from_section("Join", text_style));
+            parent
+                .spawn((
+                    ButtonBundle {
+                        style: button_style.clone(),
+                        background_color: NORMAL_BUTTON_COLOR.into(),
+                        ..default()
+                    },
+                    MenuItem::Host,
+                ))
+                .with_children(|parent| {
+                    parent.spawn(TextBundle::from_section("Host", text_style.clone()));
+                });
+            parent
+                .spawn((
+                    ButtonBundle {
+                        style: button_style,
+                        background_color: NORMAL_BUTTON_COLOR.into(),
+                        ..default()
+                    },
+                    MenuItem::Join,
+                ))
+                .with_children(|parent| {
+                    parent.spawn(TextBundle::from_section("Join", text_style));
+                });
         });
 }
 
