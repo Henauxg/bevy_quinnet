@@ -2,7 +2,6 @@ use std::{fmt, io, net::AddrParseError, sync::PoisonError};
 
 use crate::client::connection::ConnectionId;
 use bevy::prelude::{Deref, DerefMut, Resource};
-use rcgen::RcgenError;
 use tokio::runtime::Runtime;
 
 use self::channel::ChannelId;
@@ -25,7 +24,7 @@ pub enum QuinnetError {
     #[error("IP/Socket address is invalid")]
     InvalidAddress(#[from] AddrParseError),
     #[error("Failed to generate a self-signed certificate")]
-    CertificateGenerationFailed(#[from] RcgenError),
+    CertificateGenerationFailed(#[from] rcgen::Error),
     #[error("Client with id `{0}` is unknown")]
     UnknownClient(ClientId),
     #[error("Client with id `{0}` is already disconnected")]
