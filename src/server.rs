@@ -919,15 +919,19 @@ fn update_sync_server(
             match message {
                 ServerAsyncMessage::ClientConnected(connection) => {
                     match endpoint.handle_connection(connection) {
-                        Ok(client_id) => connection_events.send(ConnectionEvent { id: client_id }),
-                        Err(_) => error!("Failed to handle connection of a client"),
+                        Ok(client_id) => {
+                            connection_events.send(ConnectionEvent { id: client_id });
+                        }
+                        Err(_) => {
+                            error!("Failed to handle connection of a client");
+                        }
                     };
                 }
                 ServerAsyncMessage::ClientConnectionClosed(client_id, _) => {
                     match endpoint.clients.contains_key(&client_id) {
                         true => {
                             endpoint.try_disconnect_client(client_id);
-                            connection_lost_events.send(ConnectionLostEvent { id: client_id })
+                            connection_lost_events.send(ConnectionLostEvent { id: client_id });
                         }
                         false => (),
                     }
@@ -942,7 +946,7 @@ fn update_sync_server(
                     ChannelAsyncMessage::LostConnection => {
                         if !lost_clients.contains(client_id) {
                             lost_clients.insert(*client_id);
-                            connection_lost_events.send(ConnectionLostEvent { id: *client_id })
+                            connection_lost_events.send(ConnectionLostEvent { id: *client_id });
                         }
                     }
                 }
@@ -980,7 +984,7 @@ impl Plugin for QuinnetServerPlugin {
 
         app.add_systems(
             PreUpdate,
-            update_sync_server.run_if(resource_exists::<Server>()),
+            update_sync_server.run_if(resource_exists::<Server>),
         );
     }
 }

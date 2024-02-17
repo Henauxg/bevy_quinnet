@@ -29,7 +29,8 @@ const PADDLE_SPEED: f32 = 500.0;
 // How close can the paddle get to the wall
 const PADDLE_PADDING: f32 = 10.0;
 
-const BALL_SIZE: Vec3 = Vec3::new(30.0, 30.0, 0.0);
+const BALL_DIAMETER: f32 = 30.;
+const BALL_SIZE: Vec3 = Vec3::new(BALL_DIAMETER, BALL_DIAMETER, 0.0);
 const BALL_SPEED: f32 = 400.0;
 
 const WALL_THICKNESS: f32 = 10.0;
@@ -124,7 +125,7 @@ fn main() {
         QuinnetClientPlugin::default(),
     ));
     app.add_event::<CollisionEvent>();
-    app.add_state::<GameState>();
+    app.init_state::<GameState>();
     app.insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(server::Players::default())
         .insert_resource(client::Scoreboard { score: 0 })

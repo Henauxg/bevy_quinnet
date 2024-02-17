@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 use bevy::{
     audio::Volume,
+    input::ButtonInput,
     prelude::{
         default, AssetServer, AudioBundle, BuildChildren, Bundle, Button, ButtonBundle,
         Camera2dBundle, Changed, Color, Commands, Component, DespawnRecursiveExt, Entity,
-        EventReader, EventWriter, Input, KeyCode, Local, NextState, PlaybackSettings, Query, Res,
-        ResMut, Resource, TextBundle, Transform, Vec2, Vec3, With, Without,
+        EventReader, EventWriter, KeyCode, Local, NextState, PlaybackSettings, Query, Res, ResMut,
+        Resource, TextBundle, Transform, Vec2, Vec3, With, Without,
     },
     sprite::{Sprite, SpriteBundle},
     text::{Text, TextSection, TextStyle},
@@ -291,16 +292,16 @@ pub(crate) struct PaddleState {
 
 pub(crate) fn move_paddle(
     client: Res<Client>,
-    keyboard_input: Res<Input<KeyCode>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     mut local: Local<PaddleState>,
 ) {
     let mut paddle_input = PaddleInput::None;
 
-    if keyboard_input.pressed(KeyCode::Left) {
+    if keyboard_input.pressed(KeyCode::ArrowLeft) {
         paddle_input = PaddleInput::Left;
     }
 
-    if keyboard_input.pressed(KeyCode::Right) {
+    if keyboard_input.pressed(KeyCode::ArrowRight) {
         paddle_input = PaddleInput::Right;
     }
 
@@ -335,7 +336,7 @@ pub(crate) fn play_collision_sound(
         commands.spawn(AudioBundle {
             source: sound.0.clone(),
             // auto-despawn the entity when playback finishes
-            settings: PlaybackSettings::DESPAWN.with_volume(Volume::new_relative(0.2)),
+            settings: PlaybackSettings::DESPAWN.with_volume(Volume::new(0.2)),
         });
     }
 }

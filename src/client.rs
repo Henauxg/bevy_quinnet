@@ -332,7 +332,7 @@ impl Plugin for QuinnetClientPlugin {
 
         app.add_systems(
             PreUpdate,
-            update_sync_client.run_if(resource_exists::<Client>()),
+            update_sync_client.run_if(resource_exists::<Client>),
         );
     }
 }
