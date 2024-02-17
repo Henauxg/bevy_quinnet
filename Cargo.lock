@@ -682,7 +682,7 @@ dependencies = [
  "quinn-proto",
  "rand",
  "rcgen",
- "ring 0.16.20",
+ "ring 0.17.7",
  "rustls",
  "rustls-pemfile",
  "serde",
