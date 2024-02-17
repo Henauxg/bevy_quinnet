@@ -1,5 +1,15 @@
 # Changelog
 
+## Version 0.7.0 (2024-02-18)
+
+- Update plugins, tests & examples to use Bevy 0.13
+- Update Tokio to 1.36
+- Update Bytes to 1.5
+- Update ring to 0.17.7
+- Update rcgen to 0.12.1
+- Fix breakout example UI (by [protofarer](https://github.com/protofarer))
+- Fix minor code documentation
+
 ## Version 0.6.0 (2023-11-04)
 
 - Update plugins, tests & examples to use Bevy 0.12
