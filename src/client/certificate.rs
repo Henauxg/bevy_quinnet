@@ -170,8 +170,8 @@ pub enum CertVerifierAction {
     AbortConnection,
     /// Accept the server's certificate and continue the connection, but discard the certificate's info. They will not be stored nor available as an event.
     TrustOnce,
-    /// Accept the server's certificate and continue the connection. A [`CertificateUpdateEvent`] will be raised containing the certificate's info.
-    /// If the certificate store ([`KnownHosts`]) is a file, this action also adds the certificate's info to the store file. Else it is up to the user to update its own store with the content of [`CertificateUpdateEvent`].
+    /// Accept the server's certificate and continue the connection. A [`CertTrustUpdateEvent`] will be raised containing the certificate's info.
+    /// If the certificate store ([`KnownHosts`]) is a file, this action also adds the certificate's info to the store file. Else it is up to the user to update its own store with the content of [`CertTrustUpdateEvent`].
     TrustAndStore,
 }
 
