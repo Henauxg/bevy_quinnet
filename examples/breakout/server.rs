@@ -10,11 +10,11 @@ use bevy::{
 };
 use bevy_quinnet::{
     server::{certificate::CertificateRetrievalMode, ConnectionEvent, Server, ServerConfiguration},
-    shared::{channel::ChannelId, ClientId},
+    shared::ClientId,
 };
 
 use crate::{
-    protocol::{ClientMessage, PaddleInput, ServerMessage},
+    protocol::{ClientMessage, PaddleInput, ServerChannel, ServerMessage},
     BrickId, Velocity, WallLocation, BALL_DIAMETER, BALL_SIZE, BALL_SPEED, BOTTOM_WALL, BRICK_SIZE,
     GAP_BETWEEN_BRICKS, GAP_BETWEEN_BRICKS_AND_SIDES, GAP_BETWEEN_PADDLE_AND_BRICKS,
     GAP_BETWEEN_PADDLE_AND_FLOOR, LEFT_WALL, LOCAL_BIND_IP, PADDLE_PADDING, PADDLE_SIZE,
@@ -82,6 +82,7 @@ pub(crate) fn start_listening(mut server: ResMut<Server>) {
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_HOST.to_string(),
             },
+            ServerChannel::channels_configuration(),
         )
         .unwrap();
 }
@@ -89,7 +90,8 @@ pub(crate) fn start_listening(mut server: ResMut<Server>) {
 pub(crate) fn handle_client_messages(mut server: ResMut<Server>, mut players: ResMut<Players>) {
     let endpoint = server.endpoint_mut();
     for client_id in endpoint.clients() {
-        while let Some(message) = endpoint.try_receive_message_from::<ClientMessage>(client_id) {
+        while let Some((_, message)) = endpoint.try_receive_message_from::<ClientMessage>(client_id)
+        {
             match message {
                 ClientMessage::PaddleInput { input } => {
                     if let Some(player) = players.map.get_mut(&client_id) {
@@ -155,7 +157,7 @@ pub(crate) fn update_paddles(
 
                 server.endpoint().try_send_group_message_on(
                     players.map.keys().into_iter(),
-                    ChannelId::Unreliable,
+                    ServerChannel::PaddleUpdates,
                     ServerMessage::PaddleMoved {
                         entity: paddle_entity,
                         position: paddle_transform.translation,
@@ -195,7 +197,7 @@ pub(crate) fn check_for_collisions(
                     commands.entity(collider_entity).despawn();
 
                     endpoint.try_broadcast_message_on(
-                        ChannelId::UnorderedReliable,
+                        ServerChannel::GameEvents,
                         ServerMessage::BrickDestroyed {
                             by_client_id: ball.last_hit_by,
                             brick_id: brick.0,
@@ -227,7 +229,7 @@ pub(crate) fn check_for_collisions(
                 }
 
                 endpoint.try_broadcast_message_on(
-                    ChannelId::UnorderedReliable,
+                    ServerChannel::GameEvents,
                     ServerMessage::BallCollided {
                         owner_client_id: ball.last_hit_by,
                         entity: ball_entity,
@@ -268,8 +270,9 @@ fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &Re
     {
         let paddle = spawn_paddle(commands, *client_id, &position);
         endpoint
-            .send_group_message(
+            .send_group_message_on(
                 players.map.keys().into_iter(),
+                ServerChannel::GameSetup,
                 ServerMessage::SpawnPaddle {
                     owner_client_id: *client_id,
                     entity: paddle,
@@ -287,8 +290,9 @@ fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &Re
     {
         let ball = spawn_ball(commands, *client_id, position, direction);
         endpoint
-            .send_group_message(
+            .send_group_message_on(
                 players.map.keys().into_iter(),
+                ServerChannel::GameSetup,
                 ServerMessage::SpawnBall {
                     owner_client_id: *client_id,
                     entity: ball,

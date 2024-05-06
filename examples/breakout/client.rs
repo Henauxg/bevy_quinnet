@@ -24,7 +24,7 @@ use bevy_quinnet::{
 };
 
 use crate::{
-    protocol::{ClientMessage, PaddleInput, ServerMessage},
+    protocol::{ClientChannel, ClientMessage, PaddleInput, ServerMessage},
     BrickId, CollisionEvent, CollisionSound, GameState, Score, Velocity, WallLocation, BALL_SIZE,
     BALL_SPEED, BRICK_SIZE, GAP_BETWEEN_BRICKS, LOCAL_BIND_IP, PADDLE_SIZE, SERVER_HOST,
     SERVER_PORT, TIME_STEP,
@@ -103,6 +103,7 @@ pub(crate) fn start_connection(mut client: ResMut<Client>) {
                 0,
             ),
             CertificateVerificationMode::SkipVerification,
+            ClientChannel::channels_configuration(),
         )
         .unwrap();
 }
@@ -202,7 +203,7 @@ pub(crate) fn handle_server_messages(
     mut scoreboard: ResMut<Scoreboard>,
     mut collision_events: EventWriter<CollisionEvent>,
 ) {
-    while let Some(message) = client
+    while let Some((_, message)) = client
         .connection_mut()
         .try_receive_message::<ServerMessage>()
     {
@@ -306,11 +307,12 @@ pub(crate) fn move_paddle(
     }
 
     if local.current_input != paddle_input {
-        client
-            .connection()
-            .try_send_message(ClientMessage::PaddleInput {
+        client.connection().try_send_message_on(
+            ClientChannel::PaddleCommands,
+            ClientMessage::PaddleInput {
                 input: paddle_input.clone(),
-            });
+            },
+        );
         local.current_input = paddle_input;
     }
 }

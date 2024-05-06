@@ -1,5 +1,8 @@
 use bevy::prelude::{Entity, Vec2, Vec3};
-use bevy_quinnet::shared::ClientId;
+use bevy_quinnet::shared::{
+    channels::{ChannelId, ChannelType, ChannelsConfiguration},
+    ClientId,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::BrickId;
@@ -55,4 +58,41 @@ pub(crate) enum ServerMessage {
         entity: Entity,
         position: Vec3,
     },
+}
+
+#[repr(u8)]
+pub enum ClientChannel {
+    PaddleCommands,
+}
+impl Into<ChannelId> for ClientChannel {
+    fn into(self) -> ChannelId {
+        self as ChannelId
+    }
+}
+impl ClientChannel {
+    pub fn channels_configuration() -> ChannelsConfiguration {
+        ChannelsConfiguration::from_types(vec![ChannelType::OrderedReliable]).unwrap()
+    }
+}
+
+#[repr(u8)]
+pub enum ServerChannel {
+    GameSetup,
+    GameEvents,
+    PaddleUpdates,
+}
+impl Into<ChannelId> for ServerChannel {
+    fn into(self) -> ChannelId {
+        self as ChannelId
+    }
+}
+impl ServerChannel {
+    pub fn channels_configuration() -> ChannelsConfiguration {
+        ChannelsConfiguration::from_types(vec![
+            ChannelType::OrderedReliable,
+            ChannelType::UnorderedReliable,
+            ChannelType::Unreliable,
+        ])
+        .unwrap()
+    }
 }
