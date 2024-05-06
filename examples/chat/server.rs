@@ -6,7 +6,7 @@ use bevy_quinnet::{
         certificate::CertificateRetrievalMode, ConnectionLostEvent, Endpoint, QuinnetServerPlugin,
         Server, ServerConfiguration,
     },
-    shared::{channel::ChannelId, ClientId},
+    shared::{channels::ChannelsConfiguration, ClientId},
 };
 
 use protocol::{ClientMessage, ServerMessage};
@@ -21,7 +21,8 @@ struct Users {
 fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) {
     let endpoint = server.endpoint_mut();
     for client_id in endpoint.clients() {
-        while let Some(message) = endpoint.try_receive_message_from::<ClientMessage>(client_id) {
+        while let Some((_, message)) = endpoint.try_receive_message_from::<ClientMessage>(client_id)
+        {
             match message {
                 ClientMessage::Join { name } => {
                     if users.names.contains_key(&client_id) {
@@ -65,9 +66,8 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
                         users.names.get(&client_id),
                         message
                     );
-                    endpoint.try_send_group_message_on(
+                    endpoint.try_send_group_message(
                         users.names.keys().into_iter(),
-                        ChannelId::UnorderedReliable,
                         ServerMessage::ChatMessage {
                             client_id: client_id,
                             message: message,
@@ -120,6 +120,7 @@ fn start_listening(mut server: ResMut<Server>) {
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: "127.0.0.1".to_string(),
             },
+            ChannelsConfiguration::default(),
         )
         .unwrap();
 }

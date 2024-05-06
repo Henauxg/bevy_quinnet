@@ -19,7 +19,7 @@ use bevy_quinnet::{
         connection::{ConnectionConfiguration, ConnectionEvent},
         Client, QuinnetClientPlugin,
     },
-    shared::ClientId,
+    shared::{channels::ChannelsConfiguration, ClientId},
 };
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::sync::mpsc;
@@ -49,7 +49,7 @@ pub fn on_app_exit(app_exit_events: EventReader<AppExit>, client: Res<Client>) {
 }
 
 fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<Client>) {
-    while let Some(message) = client
+    while let Some((_, message)) = client
         .connection_mut()
         .try_receive_message::<ServerMessage>()
     {
@@ -123,6 +123,7 @@ fn start_connection(mut client: ResMut<Client>) {
         .open_connection(
             ConnectionConfiguration::from_strings("127.0.0.1:6000", "0.0.0.0:0").unwrap(),
             CertificateVerificationMode::SkipVerification,
+            ChannelsConfiguration::default(),
         )
         .unwrap();
 
