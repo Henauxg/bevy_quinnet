@@ -1,6 +1,6 @@
 use bevy::utils::tracing::trace;
-use bytes::{Buf, Bytes};
-use std::{fmt::Display, io::Cursor};
+use bytes::Bytes;
+use std::fmt::Display;
 use tokio::sync::{
     broadcast,
     mpsc::{self},
@@ -19,14 +19,14 @@ pub(crate) async fn unreliable_channel_receiver_task<T: Display>(
             trace!("Listener for unreliable datagrams with id {} received a close signal", task_id)
         }
         _ = async {
-            while let Ok(msg_bytes) = connection.read_datagram().await {
+            while let Ok(mut msg_bytes) = connection.read_datagram().await {
                 if msg_bytes.len() <= CHANNEL_ID_LEN {
                     continue;
                 }
-                let mut msg = Cursor::new(&msg_bytes);
-                let channel_id = msg.get_u8();
+                let payload = msg_bytes.split_off(1).into();
+                let channel_id = msg_bytes[0];
                 // TODO Clean: error handling
-                bytes_incoming_send.send((channel_id, msg_bytes.into())).await.unwrap();
+                bytes_incoming_send.send((channel_id, payload)).await.unwrap();
             }
         } => {
             trace!("Listener for unreliable datagrams with id {} ended", task_id)
