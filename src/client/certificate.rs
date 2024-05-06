@@ -13,7 +13,7 @@ use futures::executor::block_on;
 use rustls::ServerName as RustlsServerName;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::shared::{CertificateFingerprint, QuinnetError};
+use crate::shared::{certificate::CertificateFingerprint, error::QuinnetError};
 
 use super::{ClientAsyncMessage, ConnectionId, DEFAULT_KNOWN_HOSTS_FILE};
 

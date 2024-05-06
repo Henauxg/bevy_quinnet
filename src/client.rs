@@ -19,8 +19,9 @@ use tokio::{
 };
 
 use crate::shared::{
-    channel::{ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelType},
-    AsyncRuntime, InternalConnectionRef, QuinnetError, DEFAULT_KILL_MESSAGE_QUEUE_SIZE,
+    channels::{ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelsConfiguration},
+    error::QuinnetError,
+    AsyncRuntime, InternalConnectionRef, DEFAULT_KILL_MESSAGE_QUEUE_SIZE,
     DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
@@ -140,16 +141,17 @@ impl Client {
         self.connections.iter_mut()
     }
 
-    /// Open a connection to a server with the given [ConnectionConfiguration] and [CertificateVerificationMode]. The connection will raise an event when fully connected, see [ConnectionEvent]
+    /// Open a connection to a server with the given [ConnectionConfiguration], [CertificateVerificationMode] and [ChannelsConfiguration]. The connection will raise an event when fully connected, see [ConnectionEvent]
     ///
-    /// Returns the [ConnectionId], and the default [ChannelId]
+    /// Returns the [ConnectionId]
     pub fn open_connection(
         &mut self,
         config: ConnectionConfiguration,
         cert_mode: CertificateVerificationMode,
-    ) -> Result<(ConnectionId, ChannelId), QuinnetError> {
+        channels_config: ChannelsConfiguration,
+    ) -> Result<ConnectionId, QuinnetError> {
         let (bytes_from_server_send, bytes_from_server_recv) =
-            mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
+            mpsc::channel::<(ChannelId, Bytes)>(DEFAULT_MESSAGE_QUEUE_SIZE);
 
         let (to_sync_client_send, from_async_client_recv) =
             mpsc::channel::<ClientAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
@@ -169,9 +171,9 @@ impl Client {
             from_channels_recv,
         );
         // Create default channels
-        let ordered_reliable_id = connection.open_channel(ChannelType::OrderedReliable)?;
-        connection.open_channel(ChannelType::UnorderedReliable)?;
-        connection.open_channel(ChannelType::Unreliable)?;
+        for channel_type in channels_config.configs() {
+            connection.open_channel(*channel_type)?;
+        }
 
         self.last_gen_id += 1;
         let connection_id = self.last_gen_id;
@@ -195,7 +197,7 @@ impl Client {
             .await
         });
 
-        Ok((connection_id, ordered_reliable_id))
+        Ok(connection_id)
     }
 
     /// Set the default connection

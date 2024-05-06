@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     net::{AddrParseError, IpAddr, SocketAddr},
     sync::Arc,
     time::Duration,
@@ -24,12 +24,12 @@ use tokio::{
 use crate::{
     server::certificate::retrieve_certificate,
     shared::{
-        channel::{
-            channels_task, get_channel_id_from_type, reliable_receiver_task,
-            unreliable_receiver_task, Channel, ChannelAsyncMessage, ChannelId, ChannelSyncMessage,
-            ChannelType, MultiChannelId,
+        channels::{
+            spawn_recv_channels_tasks, spawn_send_channels_tasks, Channel, ChannelAsyncMessage,
+            ChannelId, ChannelSyncMessage, ChannelType, ChannelsConfiguration,
         },
-        AsyncRuntime, ClientId, InternalConnectionRef, QuinnetError, DEFAULT_KEEP_ALIVE_INTERVAL_S,
+        error::QuinnetError,
+        AsyncRuntime, ClientId, InternalConnectionRef, DEFAULT_KEEP_ALIVE_INTERVAL_S,
         DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
     },
 };
@@ -141,8 +141,9 @@ pub(crate) enum ServerSyncMessage {
 #[derive(Debug)]
 pub struct ClientConnection {
     connection_handle: InternalConnectionRef,
-    channels: HashMap<ChannelId, Channel>,
-    bytes_from_client_recv: mpsc::Receiver<Bytes>,
+
+    channels: Vec<Option<Channel>>,
+    bytes_from_client_recv: mpsc::Receiver<(ChannelId, Bytes)>,
     close_sender: broadcast::Sender<()>,
 
     pub(crate) to_connection_send: mpsc::Sender<ServerSyncMessage>,
@@ -155,15 +156,20 @@ impl ClientConnection {
     /// Before trully closing, the channel will wait for all buffered messages to be properly sent according to the channel type.
     /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
     pub(crate) fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), QuinnetError> {
-        match self.channels.remove(&channel_id) {
-            Some(channel) => channel.close(),
-            None => Err(QuinnetError::UnknownChannel(channel_id)),
+        if (channel_id as usize) < self.channels.len() {
+            match self.channels[channel_id as usize].take() {
+                Some(channel) => channel.close(),
+                None => Err(QuinnetError::ChannelClosed),
+            }
+        } else {
+            Err(QuinnetError::UnknownChannel(channel_id))
         }
     }
 
     pub(crate) fn create_channel(
         &mut self,
         channel_id: ChannelId,
+        channel_type: ChannelType,
     ) -> Result<ChannelId, QuinnetError> {
         let (bytes_to_channel_send, bytes_to_channel_recv) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
@@ -174,12 +180,21 @@ impl ClientConnection {
             .to_channels_send
             .try_send(ChannelSyncMessage::CreateChannel {
                 channel_id,
+                channel_type,
                 bytes_to_channel_recv,
                 channel_close_recv,
             }) {
             Ok(_) => {
-                let channel = Channel::new(bytes_to_channel_send, channel_close_send);
-                self.channels.insert(channel_id, channel);
+                let channel = Some(Channel::new(bytes_to_channel_send, channel_close_send));
+                if (channel_id as usize) < self.channels.len() {
+                    self.channels[channel_id as usize] = channel;
+                } else {
+                    for _ in self.channels.len()..channel_id as usize {
+                        self.channels.push(None);
+                    }
+                    self.channels.push(channel);
+                }
+
                 Ok(channel_id)
             }
             Err(err) => match err {
@@ -214,9 +229,9 @@ pub struct Endpoint {
     clients: HashMap<ClientId, ClientConnection>,
     last_gen_client_id: ClientId,
 
-    channels: HashSet<ChannelId>,
+    opened_channels: HashMap<ChannelId, ChannelType>,
+    available_channel_ids: BTreeSet<ChannelId>,
     default_channel: Option<ChannelId>,
-    last_gen_id: MultiChannelId,
 
     close_sender: broadcast::Sender<()>,
 
@@ -224,6 +239,21 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
+    fn new(
+        endpoint_close_send: broadcast::Sender<()>,
+        from_async_server_recv: mpsc::Receiver<ServerAsyncMessage>,
+    ) -> Self {
+        Self {
+            clients: HashMap::new(),
+            last_gen_client_id: 0,
+            opened_channels: HashMap::new(),
+            default_channel: None,
+            available_channel_ids: (0..255).collect(),
+            close_sender: endpoint_close_send,
+            from_async_server_recv,
+        }
+    }
+
     /// Returns a vec of all connected client ids
     pub fn clients(&self) -> Vec<ClientId> {
         self.clients.keys().cloned().collect()
@@ -236,10 +266,10 @@ impl Endpoint {
     pub fn receive_message_from<T: serde::de::DeserializeOwned>(
         &mut self,
         client_id: ClientId,
-    ) -> Result<Option<T>, QuinnetError> {
+    ) -> Result<Option<(ChannelId, T)>, QuinnetError> {
         match self.receive_payload_from(client_id)? {
-            Some(payload) => match bincode::deserialize(&payload) {
-                Ok(msg) => Ok(Some(msg)),
+            Some((channel_id, payload)) => match bincode::deserialize(&payload) {
+                Ok(msg) => Ok(Some((channel_id, msg))),
                 Err(_) => Err(QuinnetError::Deserialization),
             },
             None => Ok(None),
@@ -250,7 +280,7 @@ impl Endpoint {
     pub fn try_receive_message_from<T: serde::de::DeserializeOwned>(
         &mut self,
         client_id: ClientId,
-    ) -> Option<T> {
+    ) -> Option<(ChannelId, T)> {
         match self.receive_message_from(client_id) {
             Ok(message) => message,
             Err(err) => {
@@ -264,7 +294,7 @@ impl Endpoint {
     pub fn receive_payload_from(
         &mut self,
         client_id: ClientId,
-    ) -> Result<Option<Bytes>, QuinnetError> {
+    ) -> Result<Option<(ChannelId, Bytes)>, QuinnetError> {
         match self.clients.get_mut(&client_id) {
             Some(client) => match client.bytes_from_client_recv.try_recv() {
                 Ok(msg) => Ok(Some(msg)),
@@ -278,7 +308,7 @@ impl Endpoint {
     }
 
     /// [`Endpoint::receive_payload_from`] that logs the error instead of returning a result.
-    pub fn try_receive_payload_from(&mut self, client_id: ClientId) -> Option<Bytes> {
+    pub fn try_receive_payload_from(&mut self, client_id: ClientId) -> Option<(ChannelId, Bytes)> {
         match self.receive_payload_from(client_id) {
             Ok(payload) => payload,
             Err(err) => {
@@ -437,8 +467,9 @@ impl Endpoint {
     ) -> Result<(), QuinnetError> {
         let payload: Bytes = payload.into();
         for (_, client_connection) in self.clients.iter() {
-            match client_connection.channels.get(&channel_id) {
-                Some(channel) => channel.send_payload(payload.clone())?,
+            match client_connection.channels.get(channel_id as usize) {
+                Some(Some(channel)) => channel.send_payload(payload.clone())?,
+                Some(None) => return Err(QuinnetError::ChannelClosed),
                 None => return Err(QuinnetError::UnknownChannel(channel_id)),
             };
         }
@@ -481,8 +512,9 @@ impl Endpoint {
         payload: T,
     ) -> Result<(), QuinnetError> {
         if let Some(client_connection) = self.clients.get(&client_id) {
-            match client_connection.channels.get(&channel_id) {
-                Some(channel) => channel.send_payload(payload.into()),
+            match client_connection.channels.get(channel_id as usize) {
+                Some(Some(channel)) => channel.send_payload(payload.into()),
+                Some(None) => return Err(QuinnetError::ChannelClosed),
                 None => return Err(QuinnetError::UnknownChannel(channel_id)),
             }
         } else {
@@ -555,15 +587,19 @@ impl Endpoint {
     ///
     /// If no channels were previously opened, the opened channel will be the new default channel.
     ///
-    /// Can fail if the Endpoint is closed. See [Endpoint] for the defautl channels.
+    /// Can fail if the Endpoint is closed.
     pub fn open_channel(&mut self, channel_type: ChannelType) -> Result<ChannelId, QuinnetError> {
-        let channel_id = get_channel_id_from_type(channel_type, || {
-            self.last_gen_id += 1;
-            self.last_gen_id
-        });
-        match self.channels.contains(&channel_id) {
-            true => Ok(channel_id),
-            false => self.create_channel(channel_id),
+        let channel_id = match self.available_channel_ids.pop_first() {
+            Some(channel_id) => channel_id,
+            None => return Err(QuinnetError::MaxChannelsCountReached),
+        };
+        match self.create_channel(channel_id, channel_type) {
+            Ok(channel_id) => Ok(channel_id),
+            Err(err) => {
+                // Reinsert the popped channel id
+                self.available_channel_ids.insert(channel_id);
+                Err(err)
+            }
         }
     }
 
@@ -575,17 +611,18 @@ impl Endpoint {
     ///
     /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
     pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), QuinnetError> {
-        match self.channels.remove(&channel_id) {
-            true => {
+        match self.opened_channels.remove(&channel_id) {
+            Some(_) => {
                 if Some(channel_id) == self.default_channel {
                     self.default_channel = None;
                 }
                 for (_, connection) in self.clients.iter_mut() {
                     connection.close_channel(channel_id)?;
                 }
+                self.available_channel_ids.insert(channel_id);
                 Ok(())
             }
-            false => Err(QuinnetError::UnknownChannel(channel_id)),
+            None => Err(QuinnetError::UnknownChannel(channel_id)),
         }
     }
 
@@ -599,18 +636,16 @@ impl Endpoint {
         self.default_channel
     }
 
-    fn open_default_channels(&mut self) -> Result<ChannelId, QuinnetError> {
-        let ordered_reliable_id = self.open_channel(ChannelType::OrderedReliable)?;
-        self.open_channel(ChannelType::UnorderedReliable)?;
-        self.open_channel(ChannelType::Unreliable)?;
-        Ok(ordered_reliable_id)
-    }
-
-    fn create_channel(&mut self, channel_id: ChannelId) -> Result<ChannelId, QuinnetError> {
+    /// `channel_id` must be an available [ChannelId]
+    fn create_channel(
+        &mut self,
+        channel_id: ChannelId,
+        channel_type: ChannelType,
+    ) -> Result<ChannelId, QuinnetError> {
         for (_, client_connection) in self.clients.iter_mut() {
-            client_connection.create_channel(channel_id)?;
+            client_connection.create_channel(channel_id, channel_type)?;
         }
-        self.channels.insert(channel_id);
+        self.opened_channels.insert(channel_id, channel_type);
         if self.default_channel.is_none() {
             self.default_channel = Some(channel_id);
         }
@@ -628,8 +663,8 @@ impl Endpoint {
         &mut self,
         mut connection: ClientConnection,
     ) -> Result<ClientId, QuinnetError> {
-        for channel_id in self.channels.iter() {
-            if let Err(err) = connection.create_channel(*channel_id) {
+        for (channel_id, channel_type) in self.opened_channels.iter() {
+            if let Err(err) = connection.create_channel(*channel_id, *channel_type) {
                 connection.try_close();
                 return Err(err);
             };
@@ -699,14 +734,15 @@ impl Server {
         self.endpoint.as_mut()
     }
 
-    /// Starts a new endpoint with the given [ServerConfiguration] and [CertificateRetrievalMode] and opens the default channels.
+    /// Starts a new endpoint with the given [ServerConfiguration], [CertificateRetrievalMode] and [ChannelsConfiguration]
     ///
-    /// Returns a tuple of the [ServerCertificate] generated or loaded, and the default [ChannelId]
+    /// Returns the [ServerCertificate] generated or loaded
     pub fn start_endpoint(
         &mut self,
         config: ServerConfiguration,
         cert_mode: CertificateRetrievalMode,
-    ) -> Result<(ServerCertificate, ChannelId), QuinnetError> {
+        channels_config: ChannelsConfiguration,
+    ) -> Result<ServerCertificate, QuinnetError> {
         // Endpoint configuration
         let server_cert = retrieve_certificate(cert_mode)?;
         let mut server_config = ServerConfig::with_single_cert(
@@ -734,24 +770,19 @@ impl Server {
             .await;
         });
 
-        let mut endpoint = Endpoint {
-            clients: HashMap::new(),
-            last_gen_client_id: 0,
-            channels: HashSet::new(),
-            default_channel: None,
-            last_gen_id: 0,
-            close_sender: endpoint_close_send,
-            from_async_server_recv,
-        };
-        let ordered_reliable_id = endpoint.open_default_channels()?;
+        let mut endpoint = Endpoint::new(endpoint_close_send, from_async_server_recv);
+        for channel_type in channels_config.configs() {
+            endpoint.open_channel(*channel_type)?;
+        }
+
         self.endpoint = Some(endpoint);
 
-        Ok((server_cert, ordered_reliable_id))
+        Ok(server_cert)
     }
 
     /// Closes the endpoint and all the connections associated with it
     ///
-    /// Returns `QuinnetError::EndpointAlreadyClosed` if the endpoint is already closed
+    /// Returns [`QuinnetError::EndpointAlreadyClosed`] if the endpoint is already closed
     pub fn stop_endpoint(&mut self) -> Result<(), QuinnetError> {
         match self.endpoint.take() {
             Some(mut endpoint) => {
@@ -805,13 +836,13 @@ async fn endpoint_task(
 }
 
 async fn client_connection_task(
-    connection: quinn::Connection,
+    connection_handle: quinn::Connection,
     to_sync_server_send: mpsc::Sender<ServerAsyncMessage>,
 ) {
     let (client_close_send, client_close_recv) =
         broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
     let (bytes_from_client_send, bytes_from_client_recv) =
-        mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
+        mpsc::channel::<(ChannelId, Bytes)>(DEFAULT_MESSAGE_QUEUE_SIZE);
     let (to_connection_send, mut from_sync_server_recv) =
         mpsc::channel::<ServerSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
     let (from_channels_send, from_channels_recv) =
@@ -822,8 +853,8 @@ async fn client_connection_task(
     // Signal the sync server of this new connection
     to_sync_server_send
         .send(ServerAsyncMessage::ClientConnected(ClientConnection {
-            connection_handle: connection.clone(),
-            channels: HashMap::new(),
+            connection_handle: connection_handle.clone(),
+            channels: Vec::new(),
             bytes_from_client_recv,
             close_sender: client_close_send.clone(),
             to_connection_send,
@@ -838,17 +869,17 @@ async fn client_connection_task(
         Some(ServerSyncMessage::ClientConnectedAck(Some(client_id))) => {
             info!(
                 "New connection from {}, client_id: {}",
-                connection.remote_address(),
+                connection_handle.remote_address(),
                 client_id
             );
 
             // Spawn a task to listen for the underlying connection being closed
             {
-                let conn = connection.clone();
+                let conn = connection_handle.clone();
                 let to_sync_server = to_sync_server_send.clone();
                 tokio::spawn(async move {
                     let conn_err = conn.closed().await;
-                    info!("Client {} connection closed: {}", client_id, conn_err);
+                    info!("Connection {} closed: {}", client_id, conn_err);
                     // If we requested the connection to close, channel may have been closed already.
                     if !to_sync_server.is_closed() {
                         to_sync_server
@@ -856,55 +887,29 @@ async fn client_connection_task(
                                 client_id, conn_err,
                             ))
                             .await
-                            .expect("Failed to signal connection lost to sync server");
+                            .expect("Failed to signal connection lost in async connection");
                     }
                 });
             };
 
-            // Spawn a task to listen for streams opened by this client
-            {
-                let connection_handle = connection.clone();
-                let client_close_recv = client_close_recv.resubscribe();
-                let bytes_incoming_send = bytes_from_client_send.clone();
-                tokio::spawn(async move {
-                    reliable_receiver_task(
-                        client_id,
-                        connection_handle,
-                        client_close_recv,
-                        bytes_incoming_send,
-                    )
-                    .await
-                });
-            }
+            spawn_recv_channels_tasks(
+                connection_handle.clone(),
+                client_id,
+                client_close_recv.resubscribe(),
+                bytes_from_client_send,
+            );
 
-            // Spawn a task to listen for datagrams sent by this client
-            {
-                let connection_handle = connection.clone();
-                let client_close_recv = client_close_recv.resubscribe();
-                let bytes_incoming_send = bytes_from_client_send.clone();
-                tokio::spawn(async move {
-                    unreliable_receiver_task(
-                        client_id,
-                        connection_handle,
-                        client_close_recv,
-                        bytes_incoming_send,
-                    )
-                    .await
-                });
-            }
-
-            // Spawn a task to handle send channels for this client
-            tokio::spawn(async move {
-                channels_task(
-                    connection,
-                    client_close_recv,
-                    to_channels_recv,
-                    from_channels_send,
-                )
-                .await
-            });
+            spawn_send_channels_tasks(
+                connection_handle,
+                client_close_recv,
+                to_channels_recv,
+                from_channels_send,
+            );
         }
-        _ => info!("Connection from {} refused", connection.remote_address()),
+        _ => info!(
+            "Connection from {} refused",
+            connection_handle.remote_address()
+        ),
     }
 }
 

@@ -6,7 +6,7 @@ use std::{
 
 use bevy::utils::tracing::{trace, warn};
 
-use crate::shared::{CertificateFingerprint, QuinnetError};
+use crate::shared::{certificate::CertificateFingerprint, error::QuinnetError};
 
 /// Represents the origin of a certificate.
 #[derive(Debug, Clone)]
