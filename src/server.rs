@@ -331,10 +331,10 @@ impl Endpoint {
     }
 
     /// Queue a message to be sent to the specified client on the specified channel.
-    pub fn send_message_on<T: serde::Serialize>(
+    pub fn send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &self,
         client_id: ClientId,
-        channel_id: ChannelId,
+        channel_id: C,
         message: T,
     ) -> Result<(), QuinnetError> {
         match bincode::serialize(&message) {
@@ -352,10 +352,10 @@ impl Endpoint {
     }
 
     /// [`Endpoint::send_message_on`] that logs the error instead of returning a result.
-    pub fn try_send_message_on<T: serde::Serialize>(
+    pub fn try_send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &self,
         client_id: ClientId,
-        channel_id: ChannelId,
+        channel_id: C,
         message: T,
     ) {
         match self.send_message_on(client_id, channel_id, message) {
@@ -375,12 +375,18 @@ impl Endpoint {
         }
     }
 
-    pub fn send_group_message_on<'a, I: Iterator<Item = &'a ClientId>, T: serde::Serialize>(
+    pub fn send_group_message_on<
+        'a,
+        I: Iterator<Item = &'a ClientId>,
+        T: serde::Serialize,
+        C: Into<ChannelId>,
+    >(
         &self,
         client_ids: I,
-        channel_id: ChannelId,
+        channel_id: C,
         message: T,
     ) -> Result<(), QuinnetError> {
+        let channel_id = channel_id.into();
         match bincode::serialize(&message) {
             Ok(payload) => {
                 let bytes = Bytes::from(payload);
@@ -404,10 +410,15 @@ impl Endpoint {
         }
     }
 
-    pub fn try_send_group_message_on<'a, I: Iterator<Item = &'a ClientId>, T: serde::Serialize>(
+    pub fn try_send_group_message_on<
+        'a,
+        I: Iterator<Item = &'a ClientId>,
+        T: serde::Serialize,
+        C: Into<ChannelId>,
+    >(
         &self,
         client_ids: I,
-        channel_id: ChannelId,
+        channel_id: C,
         message: T,
     ) {
         match self.send_group_message_on(client_ids, channel_id, message) {
@@ -423,9 +434,9 @@ impl Endpoint {
         }
     }
 
-    pub fn broadcast_message_on<T: serde::Serialize>(
+    pub fn broadcast_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &self,
-        channel_id: ChannelId,
+        channel_id: C,
         message: T,
     ) -> Result<(), QuinnetError> {
         match bincode::serialize(&message) {
@@ -441,7 +452,11 @@ impl Endpoint {
         }
     }
 
-    pub fn try_broadcast_message_on<T: serde::Serialize>(&self, channel_id: ChannelId, message: T) {
+    pub fn try_broadcast_message_on<T: serde::Serialize, C: Into<ChannelId>>(
+        &self,
+        channel_id: C,
+        message: T,
+    ) {
         match self.broadcast_message_on(channel_id, message) {
             Ok(_) => {}
             Err(err) => error!("try_broadcast_message: {}", err),
@@ -460,12 +475,13 @@ impl Endpoint {
     }
 
     /// Sends the payload to all connected clients on the specified channel.
-    pub fn broadcast_payload_on<T: Into<Bytes> + Clone>(
+    pub fn broadcast_payload_on<T: Into<Bytes> + Clone, C: Into<ChannelId>>(
         &self,
-        channel_id: ChannelId,
+        channel_id: C,
         payload: T,
     ) -> Result<(), QuinnetError> {
         let payload: Bytes = payload.into();
+        let channel_id = channel_id.into();
         for (_, client_connection) in self.clients.iter() {
             match client_connection.channels.get(channel_id as usize) {
                 Some(Some(channel)) => channel.send_payload(payload.clone())?,
@@ -483,9 +499,9 @@ impl Endpoint {
         }
     }
 
-    pub fn try_broadcast_payload_on<T: Into<Bytes> + Clone>(
+    pub fn try_broadcast_payload_on<T: Into<Bytes> + Clone, C: Into<ChannelId>>(
         &self,
-        channel_id: ChannelId,
+        channel_id: C,
         payload: T,
     ) {
         match self.broadcast_payload_on(channel_id, payload) {
@@ -505,12 +521,13 @@ impl Endpoint {
         }
     }
 
-    pub fn send_payload_on<T: Into<Bytes>>(
+    pub fn send_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &self,
         client_id: ClientId,
-        channel_id: ChannelId,
+        channel_id: C,
         payload: T,
     ) -> Result<(), QuinnetError> {
+        let channel_id = channel_id.into();
         if let Some(client_connection) = self.clients.get(&client_id) {
             match client_connection.channels.get(channel_id as usize) {
                 Some(Some(channel)) => channel.send_payload(payload.into()),
@@ -529,10 +546,10 @@ impl Endpoint {
         }
     }
 
-    pub fn try_send_payload_on<T: Into<Bytes>>(
+    pub fn try_send_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &self,
         client_id: ClientId,
-        channel_id: ChannelId,
+        channel_id: C,
         payload: T,
     ) {
         match self.send_payload_on(client_id, channel_id, payload) {

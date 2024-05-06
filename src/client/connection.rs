@@ -272,11 +272,12 @@ impl Connection {
         }
     }
 
-    pub fn send_message_on<T: serde::Serialize>(
+    pub fn send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &self,
-        channel_id: ChannelId,
+        channel_id: C,
         message: T,
     ) -> Result<(), QuinnetError> {
+        let channel_id = channel_id.into();
         match &self.state {
             ConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
             _ => match self.channels.get(channel_id as usize) {
@@ -299,7 +300,11 @@ impl Connection {
     }
 
     /// Same as [Connection::send_message_on] but will log the error instead of returning it
-    pub fn try_send_message_on<T: serde::Serialize>(&self, channel_id: ChannelId, message: T) {
+    pub fn try_send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
+        &self,
+        channel_id: C,
+        message: T,
+    ) {
         match self.send_message_on(channel_id, message) {
             Ok(_) => {}
             Err(err) => error!("try_send_message_on: {}", err),
@@ -313,11 +318,12 @@ impl Connection {
         }
     }
 
-    pub fn send_payload_on<T: Into<Bytes>>(
+    pub fn send_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &self,
-        channel_id: ChannelId,
+        channel_id: C,
         payload: T,
     ) -> Result<(), QuinnetError> {
+        let channel_id = channel_id.into();
         match &self.state {
             ConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
             _ => match self.channels.get(channel_id as usize) {
@@ -337,7 +343,11 @@ impl Connection {
     }
 
     /// Same as [Connection::send_payload_on] but will log the error instead of returning it
-    pub fn try_send_payload_on<T: Into<Bytes>>(&self, channel_id: ChannelId, payload: T) {
+    pub fn try_send_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
+        &self,
+        channel_id: C,
+        payload: T,
+    ) {
         match self.send_payload_on(channel_id, payload) {
             Ok(_) => {}
             Err(err) => error!("try_send_payload_on: {}", err),
