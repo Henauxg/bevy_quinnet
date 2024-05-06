@@ -24,6 +24,7 @@ mod reliable;
 mod unreliable;
 
 pub type ChannelId = u8;
+pub const MAX_CHANNEL_COUNT: usize = u8::MAX as usize + 1;
 
 pub(crate) const CHANNEL_ID_LEN: usize = 1;
 pub(crate) const PROTOCOL_HEADER_LEN: usize = CHANNEL_ID_LEN;
@@ -109,16 +110,20 @@ impl ChannelsConfiguration {
         }
     }
 
-    // pub fn from_types(
-    //     channel_types: Vec<ChannelType>,
-    // ) -> Result<ChannelsConfiguration, QuinnetError> {
-    //     Self {
-    //         channels: channel_types,
-    //     }
-    // }
+    pub fn from_types(
+        channel_types: Vec<ChannelType>,
+    ) -> Result<ChannelsConfiguration, QuinnetError> {
+        if channel_types.len() > MAX_CHANNEL_COUNT {
+            Err(QuinnetError::MaxChannelsCountReached)
+        } else {
+            Ok(Self {
+                channels: channel_types,
+            })
+        }
+    }
 
     pub fn add(&mut self, channel_type: ChannelType) -> Option<ChannelId> {
-        if self.channels.len() <= u8::MAX as usize {
+        if self.channels.len() < MAX_CHANNEL_COUNT {
             self.channels.push(channel_type);
             Some((self.channels.len() - 1) as u8)
         } else {
