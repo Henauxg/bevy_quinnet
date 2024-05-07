@@ -196,8 +196,25 @@ impl ConnectionConfiguration {
 }
 
 /// Current state of a client connection
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum ConnectionState {
+    Connecting,
+    Connected,
+    Disconnected,
+}
+impl From<&InternalConnectionState> for ConnectionState {
+    fn from(internal_conn: &InternalConnectionState) -> Self {
+        match internal_conn {
+            InternalConnectionState::Connecting => ConnectionState::Connecting,
+            InternalConnectionState::Connected(_) => ConnectionState::Connected,
+            InternalConnectionState::Disconnected => ConnectionState::Disconnected,
+        }
+    }
+}
+
+/// Current state of a client connection
 #[derive(Debug)]
-pub(crate) enum ConnectionState {
+pub(crate) enum InternalConnectionState {
     Connecting,
     Connected(InternalConnectionRef),
     Disconnected,
@@ -205,7 +222,7 @@ pub(crate) enum ConnectionState {
 
 #[derive(Debug)]
 pub struct Connection {
-    pub(crate) state: ConnectionState,
+    pub(crate) state: InternalConnectionState,
 
     channels: Vec<Option<Channel>>,
     available_channel_ids: BTreeSet<ChannelId>,
@@ -228,7 +245,7 @@ impl Connection {
         from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
     ) -> Self {
         Self {
-            state: ConnectionState::Connecting,
+            state: InternalConnectionState::Connecting,
             channels: Vec::new(),
             default_channel: None,
             available_channel_ids: (0..255).collect(),
@@ -279,7 +296,7 @@ impl Connection {
     ) -> Result<(), QuinnetError> {
         let channel_id = channel_id.into();
         match &self.state {
-            ConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
+            InternalConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
             _ => match self.channels.get(channel_id as usize) {
                 Some(Some(channel)) => match bincode::serialize(&message) {
                     Ok(payload) => channel.send_payload(payload.into()),
@@ -325,7 +342,7 @@ impl Connection {
     ) -> Result<(), QuinnetError> {
         let channel_id = channel_id.into();
         match &self.state {
-            ConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
+            InternalConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
             _ => match self.channels.get(channel_id as usize) {
                 Some(Some(channel)) => channel.send_payload(payload.into()),
                 Some(None) => Err(QuinnetError::ChannelClosed),
@@ -356,7 +373,7 @@ impl Connection {
 
     pub fn receive_payload(&mut self) -> Result<Option<(ChannelId, Bytes)>, QuinnetError> {
         match &self.state {
-            ConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
+            InternalConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
             _ => match self.bytes_from_server_recv.try_recv() {
                 Ok(msg_payload) => Ok(Some(msg_payload)),
                 Err(err) => match err {
@@ -381,9 +398,9 @@ impl Connection {
     /// Immediately prevents new messages from being sent on the connection and signal the connection to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
     pub(crate) fn disconnect(&mut self) -> Result<(), QuinnetError> {
         match &self.state {
-            ConnectionState::Disconnected => Ok(()),
+            &InternalConnectionState::Disconnected => Ok(()),
             _ => {
-                self.state = ConnectionState::Disconnected;
+                self.state = InternalConnectionState::Disconnected;
                 match self.close_sender.send(()) {
                     Ok(_) => Ok(()),
                     Err(_) => {
@@ -402,17 +419,15 @@ impl Connection {
         }
     }
 
-    pub fn is_connected(&self) -> bool {
-        match self.state {
-            ConnectionState::Connected(_) => true,
-            _ => false,
-        }
+    /// Returns the current [ConnectionState] of the connection
+    pub fn state(&self) -> ConnectionState {
+        (&self.state).into()
     }
 
     /// Returns statistics about the current connection if connected.
     pub fn stats(&self) -> Option<ConnectionStats> {
         match &self.state {
-            ConnectionState::Connected(connection) => Some(connection.stats()),
+            InternalConnectionState::Connected(connection) => Some(connection.stats()),
             _ => None,
         }
     }

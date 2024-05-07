@@ -32,7 +32,7 @@ use self::{
     },
     connection::{
         connection_task, Connection, ConnectionConfiguration, ConnectionEvent, ConnectionId,
-        ConnectionLostEvent, ConnectionState,
+        ConnectionLostEvent, InternalConnectionState,
     },
 };
 
@@ -254,11 +254,11 @@ fn update_sync_client(
         while let Ok(message) = connection.from_async_client_recv.try_recv() {
             match message {
                 ClientAsyncMessage::Connected(internal_connection) => {
-                    connection.state = ConnectionState::Connected(internal_connection);
+                    connection.state = InternalConnectionState::Connected(internal_connection);
                     connection_events.send(ConnectionEvent { id: *connection_id });
                 }
                 ClientAsyncMessage::ConnectionClosed(_) => match connection.state {
-                    ConnectionState::Disconnected => (),
+                    InternalConnectionState::Disconnected => (),
                     _ => {
                         connection.try_disconnect();
                         connection_lost_events.send(ConnectionLostEvent { id: *connection_id });
@@ -294,7 +294,7 @@ fn update_sync_client(
         while let Ok(message) = connection.from_channels_recv.try_recv() {
             match message {
                 ChannelAsyncMessage::LostConnection => match connection.state {
-                    ConnectionState::Disconnected => (),
+                    InternalConnectionState::Disconnected => (),
                     _ => {
                         connection.try_disconnect();
                         connection_lost_events.send(ConnectionLostEvent { id: *connection_id });
