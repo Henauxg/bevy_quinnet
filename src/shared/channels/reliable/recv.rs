@@ -11,7 +11,7 @@ use tokio_util::codec::FramedRead;
 
 use crate::shared::channels::{
     reliable::{codec::QuinnetProtocolCodecDecoder, DEFAULT_MAX_RELIABLE_FRAME_LEN},
-    ChannelId,
+    ChannelId, CHANNEL_ID_LEN,
 };
 
 pub(crate) async fn reliable_channels_receiver_task<T: Display>(
@@ -66,6 +66,6 @@ async fn reliable_stream_receiver_task(
 fn decode_incoming_reliable_message(mut msg_bytes: BytesMut) -> (ChannelId, Bytes) {
     let mut msg = Cursor::new(&msg_bytes);
     let channel_id = msg.get_u8();
-    let payload = msg_bytes.split_off(1).into();
+    let payload = msg_bytes.split_off(CHANNEL_ID_LEN).into();
     (channel_id, payload)
 }
