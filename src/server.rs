@@ -1010,3 +1010,13 @@ impl Plugin for QuinnetServerPlugin {
         );
     }
 }
+
+/// Returns true if the following conditions are all true:
+/// - the server Resource exists
+/// - its endpoint is opened.
+pub fn server_listening(server: Option<Res<Server>>) -> bool {
+    match server {
+        Some(server) => server.is_listening(),
+        None => false,
+    }
+}

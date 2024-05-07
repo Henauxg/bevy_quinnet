@@ -32,7 +32,7 @@ use self::{
     },
     connection::{
         connection_task, Connection, ConnectionConfiguration, ConnectionEvent, ConnectionId,
-        ConnectionLostEvent, InternalConnectionState,
+        ConnectionLostEvent, ConnectionState, InternalConnectionState,
     },
 };
 
@@ -88,6 +88,30 @@ impl Client {
             runtime: runtime_handle,
             last_gen_id: 0,
             default_connection_id: None,
+        }
+    }
+
+    /// Returns true if the default connection is connecting.
+    pub fn is_connecting(&self) -> bool {
+        match self.get_connection() {
+            Some(connection) => connection.state() == ConnectionState::Connecting,
+            None => false,
+        }
+    }
+
+    /// Returns true if the default connection is connected.
+    pub fn is_connected(&self) -> bool {
+        match self.get_connection() {
+            Some(connection) => connection.state() == ConnectionState::Connected,
+            None => false,
+        }
+    }
+
+    /// Returns true if the default connection is diconnected.
+    pub fn is_disconnected(&self) -> bool {
+        match self.get_connection() {
+            Some(connection) => connection.state() == ConnectionState::Disconnected,
+            None => false,
         }
     }
 
@@ -337,4 +361,51 @@ impl Plugin for QuinnetClientPlugin {
             update_sync_client.run_if(resource_exists::<Client>),
         );
     }
+}
+
+/// Returns true if the following conditions are all true:
+/// - the client Resource exists
+/// - its default connection is connecting.
+pub fn client_connecting(client: Option<Res<Client>>) -> bool {
+    match client {
+        Some(client) => client.is_connecting(),
+        None => false,
+    }
+}
+
+/// Returns true if the following conditions are all true:
+/// - the client Resource exists
+/// - its default connection is connected.
+pub fn client_connected(client: Option<Res<Client>>) -> bool {
+    match client {
+        Some(client) => client.is_connected(),
+        None => false,
+    }
+}
+
+/// Returns true if the following conditions are all true:
+/// - the client Resource exists and its default connection is connected
+/// - the previous condition was false during the previous update
+pub fn client_just_connected(mut last_connected: Local<bool>, client: Option<Res<Client>>) -> bool {
+    let connected = client.map(|client| client.is_connected()).unwrap_or(false);
+
+    let just_connected = !*last_connected && connected;
+    *last_connected = connected;
+    just_connected
+}
+
+/// Returns true if the following conditions are all true:
+/// - the client Resource does not exists or its default connection is disconnected
+/// - the previous condition was false during the previous update
+pub fn client_just_disconnected(
+    mut last_connected: Local<bool>,
+    client: Option<Res<Client>>,
+) -> bool {
+    let disconnected = client
+        .map(|client| client.is_disconnected())
+        .unwrap_or(true);
+
+    let just_disconnected = *last_connected && disconnected;
+    *last_connected = !disconnected;
+    just_disconnected
 }
