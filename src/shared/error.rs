@@ -1,6 +1,6 @@
 use std::{io, net::AddrParseError, sync::PoisonError};
 
-use crate::client::connection::ConnectionId;
+use crate::client::connection::ConnectionLocalId;
 
 use super::{channels::ChannelId, ClientId};
 
@@ -16,7 +16,7 @@ pub enum QuinnetError {
     #[error("Client with id `{0}` is already disconnected")]
     ClientAlreadyDisconnected(ClientId),
     #[error("Connection with id `{0}` is unknown")]
-    UnknownConnection(ConnectionId),
+    UnknownConnection(ConnectionLocalId),
     #[error("Connection is 'disconnected'")]
     ConnectionClosed,
     #[error("Connection is already closed")]

@@ -236,6 +236,26 @@ pub struct Endpoint {
     close_sender: broadcast::Sender<()>,
 
     pub(crate) from_async_server_recv: mpsc::Receiver<ServerAsyncMessage>,
+
+    stats: EndpointStats,
+}
+
+#[derive(Default)]
+pub struct EndpointStats {
+    received_messages_count: u64,
+    connect_count: u32,
+    disconnect_count: u32,
+}
+impl EndpointStats {
+    pub fn received_messages_count(&self) -> u64 {
+        self.received_messages_count
+    }
+    pub fn connect_count(&self) -> u32 {
+        self.connect_count
+    }
+    pub fn disconnect_count(&self) -> u32 {
+        self.disconnect_count
+    }
 }
 
 impl Endpoint {
@@ -251,6 +271,7 @@ impl Endpoint {
             available_channel_ids: (0..255).collect(),
             close_sender: endpoint_close_send,
             from_async_server_recv,
+            stats: default(),
         }
     }
 
@@ -297,7 +318,10 @@ impl Endpoint {
     ) -> Result<Option<(ChannelId, Bytes)>, QuinnetError> {
         match self.clients.get_mut(&client_id) {
             Some(client) => match client.bytes_from_client_recv.try_recv() {
-                Ok(msg) => Ok(Some(msg)),
+                Ok(msg) => {
+                    self.stats.received_messages_count += 1;
+                    Ok(Some(msg))
+                }
                 Err(err) => match err {
                     TryRecvError::Empty => Ok(None),
                     TryRecvError::Disconnected => Err(QuinnetError::InternalChannelClosed),
@@ -584,7 +608,7 @@ impl Endpoint {
         }
     }
 
-    /// Calls disconnect_client on all onnected clients
+    /// Calls disconnect_client on all connected clients
     pub fn disconnect_all_clients(&mut self) -> Result<(), QuinnetError> {
         for client_id in self.clients.keys().cloned().collect::<Vec<ClientId>>() {
             self.disconnect_client(client_id)?;
@@ -593,11 +617,15 @@ impl Endpoint {
     }
 
     /// Returns statistics about a client if connected.
-    pub fn stats(&self, client_id: ClientId) -> Option<ConnectionStats> {
+    pub fn connection_stats(&self, client_id: ClientId) -> Option<ConnectionStats> {
         match &self.clients.get(&client_id) {
             Some(client) => Some(client.connection_handle.stats()),
             None => None,
         }
+    }
+
+    pub fn endpoint_stats(&self) -> &EndpointStats {
+        &self.stats
     }
 
     /// Opens a channel of the requested [ChannelType] and returns its [ChannelId].
@@ -942,6 +970,7 @@ fn update_sync_server(
                 ServerAsyncMessage::ClientConnected(connection) => {
                     match endpoint.handle_connection(connection) {
                         Ok(client_id) => {
+                            endpoint.stats.connect_count += 1;
                             connection_events.send(ConnectionEvent { id: client_id });
                         }
                         Err(_) => {
@@ -952,6 +981,7 @@ fn update_sync_server(
                 ServerAsyncMessage::ClientConnectionClosed(client_id, _) => {
                     match endpoint.clients.contains_key(&client_id) {
                         true => {
+                            endpoint.stats.disconnect_count += 1;
                             endpoint.try_disconnect_client(client_id);
                             connection_lost_events.send(ConnectionLostEvent { id: client_id });
                         }

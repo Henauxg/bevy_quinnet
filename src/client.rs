@@ -31,7 +31,7 @@ use self::{
         CertVerificationStatus, CertVerifierAction, CertificateVerificationMode,
     },
     connection::{
-        connection_task, Connection, ConnectionConfiguration, ConnectionEvent, ConnectionId,
+        connection_task, Connection, ConnectionConfiguration, ConnectionEvent, ConnectionLocalId,
         ConnectionLostEvent, ConnectionState, InternalConnectionState,
     },
 };
@@ -61,9 +61,9 @@ pub(crate) enum ClientAsyncMessage {
 #[derive(Resource)]
 pub struct Client {
     runtime: runtime::Handle,
-    connections: HashMap<ConnectionId, Connection>,
-    last_gen_id: ConnectionId,
-    default_connection_id: Option<ConnectionId>,
+    connections: HashMap<ConnectionLocalId, Connection>,
+    connection_local_id_gen: ConnectionLocalId,
+    default_connection_id: Option<ConnectionLocalId>,
 }
 
 impl FromWorld for Client {
@@ -86,7 +86,7 @@ impl Client {
         Self {
             connections: HashMap::new(),
             runtime: runtime_handle,
-            last_gen_id: 0,
+            connection_local_id_gen: 0,
             default_connection_id: None,
         }
     }
@@ -146,34 +146,34 @@ impl Client {
     }
 
     /// Returns the requested connection.
-    pub fn get_connection_by_id(&self, id: ConnectionId) -> Option<&Connection> {
+    pub fn get_connection_by_id(&self, id: ConnectionLocalId) -> Option<&Connection> {
         self.connections.get(&id)
     }
 
     /// Returns the requested connection as mut.
-    pub fn get_connection_mut_by_id(&mut self, id: ConnectionId) -> Option<&mut Connection> {
+    pub fn get_connection_mut_by_id(&mut self, id: ConnectionLocalId) -> Option<&mut Connection> {
         self.connections.get_mut(&id)
     }
 
     /// Returns an iterator over all connections
-    pub fn connections(&self) -> Iter<ConnectionId, Connection> {
+    pub fn connections(&self) -> Iter<ConnectionLocalId, Connection> {
         self.connections.iter()
     }
 
     /// Returns an iterator over all connections as muts
-    pub fn connections_mut(&mut self) -> IterMut<ConnectionId, Connection> {
+    pub fn connections_mut(&mut self) -> IterMut<ConnectionLocalId, Connection> {
         self.connections.iter_mut()
     }
 
     /// Open a connection to a server with the given [ConnectionConfiguration], [CertificateVerificationMode] and [ChannelsConfiguration]. The connection will raise an event when fully connected, see [ConnectionEvent]
     ///
-    /// Returns the [ConnectionId]
+    /// Returns the [ConnectionLocalId]
     pub fn open_connection(
         &mut self,
         config: ConnectionConfiguration,
         cert_mode: CertificateVerificationMode,
         channels_config: ChannelsConfiguration,
-    ) -> Result<ConnectionId, QuinnetError> {
+    ) -> Result<ConnectionLocalId, QuinnetError> {
         let (bytes_from_server_send, bytes_from_server_recv) =
             mpsc::channel::<(ChannelId, Bytes)>(DEFAULT_MESSAGE_QUEUE_SIZE);
 
@@ -199,17 +199,17 @@ impl Client {
             connection.open_channel(*channel_type)?;
         }
 
-        self.last_gen_id += 1;
-        let connection_id = self.last_gen_id;
-        self.connections.insert(connection_id, connection);
+        let connection_local_id = self.connection_local_id_gen;
+        self.connection_local_id_gen += 1;
+        self.connections.insert(connection_local_id, connection);
         if self.default_connection_id.is_none() {
-            self.default_connection_id = Some(connection_id);
+            self.default_connection_id = Some(connection_local_id);
         }
 
         // Async connection
         self.runtime.spawn(async move {
             connection_task(
-                connection_id,
+                connection_local_id,
                 config,
                 cert_mode,
                 to_sync_client_send,
@@ -221,16 +221,16 @@ impl Client {
             .await
         });
 
-        Ok(connection_id)
+        Ok(connection_local_id)
     }
 
     /// Set the default connection
-    pub fn set_default_connection(&mut self, connection_id: ConnectionId) {
+    pub fn set_default_connection(&mut self, connection_id: ConnectionLocalId) {
         self.default_connection_id = Some(connection_id);
     }
 
     /// Get the default Connection Id
-    pub fn get_default_connection(&self) -> Option<ConnectionId> {
+    pub fn get_default_connection(&self) -> Option<ConnectionLocalId> {
         self.default_connection_id
     }
 
@@ -239,7 +239,10 @@ impl Client {
     /// Closign a connection immediately prevents new messages from being sent on the connection and signal it to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
     ///
     /// This may fail if no [Connection] if found for connection_id, or if the [Connection] is already closed.
-    pub fn close_connection(&mut self, connection_id: ConnectionId) -> Result<(), QuinnetError> {
+    pub fn close_connection(
+        &mut self,
+        connection_id: ConnectionLocalId,
+    ) -> Result<(), QuinnetError> {
         match self.connections.remove(&connection_id) {
             Some(mut connection) => {
                 if Some(connection_id) == self.default_connection_id {
@@ -257,7 +260,7 @@ impl Client {
             .connections
             .keys()
             .cloned()
-            .collect::<Vec<ConnectionId>>()
+            .collect::<Vec<ConnectionLocalId>>()
         {
             self.close_connection(connection_id)?;
         }

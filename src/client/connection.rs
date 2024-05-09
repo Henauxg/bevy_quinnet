@@ -37,17 +37,17 @@ use super::{
     ClientAsyncMessage,
 };
 
-pub type ConnectionId = u64;
+pub type ConnectionLocalId = u64;
 
 /// Connection event raised when the client just connected to the server. Raised in the CoreStage::PreUpdate stage.
 #[derive(Event)]
 pub struct ConnectionEvent {
-    pub id: ConnectionId,
+    pub id: ConnectionLocalId,
 }
 /// ConnectionLost event raised when the client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
 #[derive(Event)]
 pub struct ConnectionLostEvent {
-    pub id: ConnectionId,
+    pub id: ConnectionLocalId,
 }
 
 /// Configuration of a client connection, used when connecting to a server
@@ -234,6 +234,9 @@ pub struct Connection {
     pub(crate) from_async_client_recv: mpsc::Receiver<ClientAsyncMessage>,
     pub(crate) to_channels_send: mpsc::Sender<ChannelSyncMessage>,
     pub(crate) from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
+
+    /// Quinnet stats
+    received_messages_count: u64,
 }
 
 impl Connection {
@@ -251,6 +254,7 @@ impl Connection {
             available_channel_ids: (0..255).collect(),
             bytes_from_server_recv,
             close_sender,
+            received_messages_count: 0,
             from_async_client_recv,
             to_channels_send,
             from_channels_recv,
@@ -375,7 +379,10 @@ impl Connection {
         match &self.state {
             InternalConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
             _ => match self.bytes_from_server_recv.try_recv() {
-                Ok(msg_payload) => Ok(Some(msg_payload)),
+                Ok(msg_payload) => {
+                    self.received_messages_count += 1;
+                    Ok(Some(msg_payload))
+                }
                 Err(err) => match err {
                     TryRecvError::Empty => Ok(None),
                     TryRecvError::Disconnected => Err(QuinnetError::InternalChannelClosed),
@@ -425,11 +432,15 @@ impl Connection {
     }
 
     /// Returns statistics about the current connection if connected.
-    pub fn stats(&self) -> Option<ConnectionStats> {
+    pub fn connection_stats(&self) -> Option<ConnectionStats> {
         match &self.state {
             InternalConnectionState::Connected(connection) => Some(connection.stats()),
             _ => None,
         }
+    }
+
+    pub fn received_messages_count(&self) -> u64 {
+        self.received_messages_count
     }
 
     /// Opens a channel of the requested [ChannelType] and returns its [ChannelId].
@@ -531,7 +542,7 @@ impl Connection {
 }
 
 pub(crate) async fn connection_task(
-    connection_id: ConnectionId,
+    connection_id: ConnectionLocalId,
     config: ConnectionConfiguration,
     cert_mode: CertificateVerificationMode,
     to_sync_client_send: mpsc::Sender<ClientAsyncMessage>,
