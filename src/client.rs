@@ -91,7 +91,7 @@ impl Client {
         }
     }
 
-    /// Returns true if the default connection is connecting.
+    /// Returns true if the default connection exists and is connecting.
     pub fn is_connecting(&self) -> bool {
         match self.get_connection() {
             Some(connection) => connection.state() == ConnectionState::Connecting,
@@ -99,7 +99,7 @@ impl Client {
         }
     }
 
-    /// Returns true if the default connection is connected.
+    /// Returns true if the default connection exists and is connected.
     pub fn is_connected(&self) -> bool {
         match self.get_connection() {
             Some(connection) => connection.state() == ConnectionState::Connected,
@@ -107,11 +107,11 @@ impl Client {
         }
     }
 
-    /// Returns true if the default connection is diconnected.
+    /// Returns true if the default connection does not exists or is disconnected.
     pub fn is_disconnected(&self) -> bool {
         match self.get_connection() {
             Some(connection) => connection.state() == ConnectionState::Disconnected,
-            None => false,
+            None => true,
         }
     }
 
