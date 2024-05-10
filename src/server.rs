@@ -45,14 +45,14 @@ pub mod certificate;
 pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 
 /// Connection event raised when a client just connected to the server. Raised in the CoreStage::PreUpdate stage.
-#[derive(Event)]
+#[derive(Event, Debug, Copy, Clone)]
 pub struct ConnectionEvent {
     /// Id of the client who connected
     pub id: ClientId,
 }
 
 /// ConnectionLost event raised when a client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
-#[derive(Event)]
+#[derive(Event, Debug, Copy, Clone)]
 pub struct ConnectionLostEvent {
     /// Id of the client who lost connection
     pub id: ClientId,
