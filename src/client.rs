@@ -31,8 +31,9 @@ use self::{
         CertVerificationStatus, CertVerifierAction, CertificateVerificationMode,
     },
     connection::{
-        connection_task, Connection, ConnectionConfiguration, ConnectionEvent, ConnectionLocalId,
-        ConnectionLostEvent, ConnectionState, InternalConnectionState,
+        connection_task, Connection, ConnectionConfiguration, ConnectionEvent,
+        ConnectionFailedEvent, ConnectionLocalId, ConnectionLostEvent, ConnectionState,
+        InternalConnectionState,
     },
 };
 
@@ -45,6 +46,7 @@ pub const DEFAULT_KNOWN_HOSTS_FILE: &str = "quinnet/known_hosts";
 #[derive(Debug)]
 pub(crate) enum ClientAsyncMessage {
     Connected(InternalConnectionRef, Option<ClientId>),
+    ConnectionFailed(ConnectionError),
     ConnectionClosed(ConnectionError),
     CertificateInteractionRequest {
         status: CertVerificationStatus,
@@ -271,6 +273,7 @@ impl QuinnetClient {
 // Receive messages from the async client tasks and update the sync client.
 pub fn update_sync_client(
     mut connection_events: EventWriter<ConnectionEvent>,
+    mut connection_failed_events: EventWriter<ConnectionFailedEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
     mut certificate_interaction_events: EventWriter<CertInteractionEvent>,
     mut cert_trust_update_events: EventWriter<CertTrustUpdateEvent>,
@@ -286,6 +289,13 @@ pub fn update_sync_client(
                     connection_events.send(ConnectionEvent {
                         id: *connection_id,
                         client_id,
+                    });
+                }
+                ClientAsyncMessage::ConnectionFailed(err) => {
+                    connection.state = InternalConnectionState::Disconnected;
+                    connection_failed_events.send(ConnectionFailedEvent {
+                        id: *connection_id,
+                        err,
                     });
                 }
                 ClientAsyncMessage::ConnectionClosed(_) => match connection.state {
@@ -354,6 +364,7 @@ impl Default for QuinnetClientPlugin {
 impl Plugin for QuinnetClientPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<ConnectionEvent>()
+            .add_event::<ConnectionFailedEvent>()
             .add_event::<ConnectionLostEvent>()
             .add_event::<CertInteractionEvent>()
             .add_event::<CertTrustUpdateEvent>()

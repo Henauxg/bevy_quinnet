@@ -8,7 +8,7 @@ use std::{
 use bevy::prelude::Event;
 use bevy::utils::tracing::{error, info};
 use bytes::Bytes;
-use quinn::{ClientConfig, Endpoint};
+use quinn::{ClientConfig, ConnectionError, Endpoint};
 use quinn_proto::ConnectionStats;
 
 use serde::Deserialize;
@@ -43,18 +43,33 @@ use super::{
     ClientAsyncMessage,
 };
 
+/// Alias type for a local id of a connection
 pub type ConnectionLocalId = u64;
 
 /// Connection event raised when the client just connected to the server. Raised in the CoreStage::PreUpdate stage.
 #[derive(Event)]
 pub struct ConnectionEvent {
+    /// Local id of the connection
     pub id: ConnectionLocalId,
+    /// If present, id of the client on the server.
+    ///
+    /// Only available when the `shared-client-id` fetaure is enabled.
     pub client_id: Option<ClientId>,
+}
+
+/// Connection event raised when the client failed to connect to the server. Raised in the CoreStage::PreUpdate stage.
+#[derive(Event)]
+pub struct ConnectionFailedEvent {
+    /// Local id of the connection which failed to connect
+    pub id: ConnectionLocalId,
+    /// Error raised during the connection
+    pub err: ConnectionError,
 }
 
 /// ConnectionLost event raised when the client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
 #[derive(Event)]
 pub struct ConnectionLostEvent {
+    /// Local id of the connection
     pub id: ConnectionLocalId,
 }
 
@@ -583,10 +598,17 @@ pub(crate) async fn connection_task(
         .expect("Failed to connect: configuration error")
         .await;
     match connection {
-        Err(e) => error!(
-            "Connection {}, error while connecting: {}",
-            connection_id, e
-        ),
+        Err(e) => {
+            error!(
+                "Connection {}, error while connecting: {}",
+                connection_id, e
+            );
+            // Signal connection failure
+            to_sync_client_send
+                .send(ClientAsyncMessage::ConnectionFailed(e))
+                .await
+                .expect("Failed to signal connection failure to sync client");
+        }
         Ok(connection_handle) => {
             // Spawn a task to listen for the underlying connection being closed
             {
@@ -600,7 +622,7 @@ pub(crate) async fn connection_task(
                         to_sync_client
                             .send(ClientAsyncMessage::ConnectionClosed(conn_err))
                             .await
-                            .expect("Failed to signal connection lost in async connection");
+                            .expect("Failed to signal connection closed in async connection");
                     }
                 })
             };
