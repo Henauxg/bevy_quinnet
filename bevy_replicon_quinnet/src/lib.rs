@@ -83,7 +83,6 @@ impl RepliconQuinnetServerPlugin {
             while let Some((channel_id, message)) =
                 endpoint.try_receive_payload_from(client_id.get())
             {
-                info!("Server receiving packet");
                 replicon_server.insert_received(client_id, channel_id, message);
             }
         }
@@ -97,7 +96,6 @@ impl RepliconQuinnetServerPlugin {
             return;
         };
         for (client_id, channel_id, message) in replicon_server.drain_sent() {
-            info!("Server sent packet");
             endpoint.try_send_payload_on(client_id.get(), channel_id, message);
         }
     }
@@ -159,7 +157,6 @@ impl RepliconQuinnetClientPlugin {
         };
 
         while let Some((channel_id, message)) = connection.try_receive_payload() {
-            info!("Client Received packet");
             replicon_client.insert_received(channel_id, message);
         }
     }
@@ -169,7 +166,6 @@ impl RepliconQuinnetClientPlugin {
             return;
         };
         for (channel_id, message) in replicon_client.drain_sent() {
-            info!("Client sending packet");
             connection.try_send_payload_on(channel_id, message);
         }
     }
