@@ -21,8 +21,8 @@ use tokio::{
 use crate::shared::{
     channels::{ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelsConfiguration},
     error::QuinnetError,
-    AsyncRuntime, ClientId, InternalConnectionRef, DEFAULT_KILL_MESSAGE_QUEUE_SIZE,
-    DEFAULT_MESSAGE_QUEUE_SIZE,
+    AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncUpdate,
+    DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
 use self::{
@@ -269,7 +269,7 @@ impl Client {
 }
 
 // Receive messages from the async client tasks and update the sync client.
-fn update_sync_client(
+pub fn update_sync_client(
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
     mut certificate_interaction_events: EventWriter<CertInteractionEvent>,
@@ -365,7 +365,9 @@ impl Plugin for QuinnetClientPlugin {
 
         app.add_systems(
             PreUpdate,
-            update_sync_client.run_if(resource_exists::<Client>),
+            update_sync_client
+                .in_set(QuinnetSyncUpdate)
+                .run_if(resource_exists::<Client>),
         );
     }
 }

@@ -29,8 +29,8 @@ use crate::{
             ChannelId, ChannelSyncMessage, ChannelType, ChannelsConfiguration,
         },
         error::QuinnetError,
-        AsyncRuntime, ClientId, InternalConnectionRef, DEFAULT_KEEP_ALIVE_INTERVAL_S,
-        DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+        AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncUpdate,
+        DEFAULT_KEEP_ALIVE_INTERVAL_S, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
     },
 };
 
@@ -970,7 +970,7 @@ async fn client_connection_task(
 }
 
 // Receive messages from the async server tasks and update the sync server.
-fn update_sync_server(
+pub fn update_sync_server(
     mut server: ResMut<Server>,
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
@@ -1047,7 +1047,9 @@ impl Plugin for QuinnetServerPlugin {
 
         app.add_systems(
             PreUpdate,
-            update_sync_server.run_if(resource_exists::<Server>),
+            update_sync_server
+                .in_set(QuinnetSyncUpdate)
+                .run_if(resource_exists::<Server>),
         );
     }
 }
