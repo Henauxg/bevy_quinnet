@@ -18,16 +18,19 @@ A Client/Server game networking plugin using [QUIC](https://www.chromium.org/qui
     - [Server](#server)
   - [Channels](#channels)
   - [Certificates and server authentication](#certificates-and-server-authentication)
-  - [Logs](#logs)
+  - [Replicon integration](#replicon-integration)
   - [Examples](#examples)
   - [Compatible Bevy versions](#compatible-bevy-versions)
-  - [Limitations](#limitations)
+  - [Misc](#misc)
+    - [Cargo features](#cargo-features)
+    - [Logs](#logs)
+    - [Limitations](#limitations)
   - [Credits](#credits)
   - [License](#license)
 
 ## QUIC as a game networking protocol
 
-QUIC was really attractive to me as a game networking protocol because most of the hard-work is done by the protocol specification and the implementation (here [Quinn](https://github.com/quinn-rs/quinn)). No need to reinvent the wheel once again on error-prones subjects such as a UDP reliability wrapper, some encryption & authentication mechanisms, congestion-control, and so on.
+QUIC was really attractive to me as a game networking protocol because most of the hard-work is done by the protocol specification and the implementation (here [Quinn](https://github.com/quinn-rs/quinn)). No need to reinvent the wheel once again on error-prones subjects such as a UDP reliability wrapper, encryption & authentication mechanisms, congestion-control, and so on.
 
 Most of the features proposed by the big networking libs are supported by default through QUIC. As an example, here is the list of features presented in [GameNetworkingSockets](https://github.com/ValveSoftware/GameNetworkingSockets):
 
@@ -106,6 +109,7 @@ fn start_connection(client: ResMut<Client>) {
                 0,
             ),
             CertificateVerificationMode::SkipVerification,
+            ChannelsConfiguration::default(),
         );
     
     // When trully connected, you will receive a ConnectionEvent
@@ -149,6 +153,7 @@ fn start_listening(mut server: ResMut<Server>) {
         .start_endpoint(
             ServerConfigurationData::from_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000),
             CertificateRetrievalMode::GenerateSelfSigned,
+            ChannelsConfiguration::default(),
         )
         .unwrap();
 }
@@ -281,10 +286,6 @@ On the server:
 
 See more about certificates in the [certificates readme](docs/Certificates.md)
 
-## Logs
-
-For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatbook.github.io/features/log.html).
-
 ## Examples
 
 <details>
@@ -314,22 +315,36 @@ Start two clients with `cargo run --example breakout`, "Host" on one and "Join" 
 
 Examples can be found in the [examples](examples) directory.
 
+## Replicon integration
+
+Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/projectharmonia/bevy_replicon) with the provided [`bevy_replicon_quinnet`](https://github.com/Henauxg/bevy_quinnet/tree/main/bevy_replicon_quinnet). See its own [README](https://github.com/Henauxg/bevy_quinnet/tree/main/bevy_replicon_quinnet/README.md) for more information.
+
 ## Compatible Bevy versions
 
-Compatibility of `bevy_quinnet` versions:
+| bevy_quinnet | bevy |
+| :----------- | :--- |
+| 0.7          | 0.13 |
+| 0.6          | 0.12 |
+| 0.5          | 0.11 |
+| 0.4          | 0.10 |
+| 0.2-0.3      | 0.9  |
+| 0.1          | 0.8  |
 
-| `bevy_quinnet` | `bevy` |
-| :------------- | :----- |
-| `0.7`          | `0.13` |
-| `0.6`          | `0.12` |
-| `0.5`          | `0.11` |
-| `0.4`          | `0.10` |
-| `0.2`-`0.3`    | `0.9`  |
-| `0.1`          | `0.8`  |
+## Misc
 
-## Limitations
+### Cargo features
 
-* QUIC is not available in a Browser (used in browsers but not exposed as an API). For now I would rather wait on [WebTransport](https://web.dev/webtransport/)("QUIC" on the Web) than hack on WebRTC data channels.
+*Find the list and description in [cargo.toml](Cargo.toml)*
+
+- `shared-client-id` *[default]*: When a new client connects to the server, the server sends its `ClientId` to the client. The client will consider himself `Connected` once it receives this id. When not enabled, the client does not know its `ClientId` on the server.
+
+### Logs
+
+For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatbook.github.io/features/log.html).
+
+### Limitations
+
+* QUIC is not available directly in a Browser (used in browsers but not exposed as an API). For now I would rather wait on [WebTransport](https://web.dev/webtransport/)("QUIC" on the Web) than hack on WebRTC data channels.
 
 ## Credits
 
@@ -337,7 +352,7 @@ Thanks to the [Renet](https://github.com/lucaspoffo/renet) crate for the inspira
 
 ## License
 
-bevy-quinnet is free and open source. All code in this repository is dual-licensed under either:
+This crate is free and open source. All code in this repository is dual-licensed under either:
 
 * MIT License ([LICENSE-MIT](LICENSE-MIT) or [http://opensource.org/licenses/MIT](http://opensource.org/licenses/MIT))
 * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
