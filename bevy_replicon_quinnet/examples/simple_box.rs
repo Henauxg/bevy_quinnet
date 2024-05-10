@@ -12,9 +12,9 @@ use bevy::{
 };
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, connection::ConnectionConfiguration, Client,
+        certificate::CertificateVerificationMode, connection::ConnectionConfiguration, QuinnetClient,
     },
-    server::{certificate::CertificateRetrievalMode, Server, ServerConfiguration},
+    server::{certificate::CertificateRetrievalMode, QuinnetServer, ServerConfiguration},
 };
 use bevy_replicon::prelude::*;
 use bevy_replicon_quinnet::{ChannelsConfigurationExt, RepliconQuinnetPlugins};
@@ -67,8 +67,8 @@ impl SimpleBoxPlugin {
         mut commands: Commands,
         cli: Res<Cli>,
         channels: Res<RepliconChannels>,
-        mut server: ResMut<Server>,
-        mut client: ResMut<Client>,
+        mut server: ResMut<QuinnetServer>,
+        mut client: ResMut<QuinnetClient>,
     ) -> Result<(), Box<dyn Error>> {
         match *cli {
             Cli::SinglePlayer => {

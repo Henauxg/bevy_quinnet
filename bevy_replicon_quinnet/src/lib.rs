@@ -4,8 +4,8 @@ Provides integration for [`bevy_replicon`](https://docs.rs/bevy_replicon) for [`
 
 use bevy::{app::PluginGroupBuilder, prelude::*};
 use bevy_quinnet::{
-    client::{Client, QuinnetClientPlugin},
-    server::{QuinnetServerPlugin, Server},
+    client::{QuinnetClient, QuinnetClientPlugin},
+    server::{QuinnetServerPlugin, QuinnetServer},
     shared::{
         channels::{ChannelType, ChannelsConfiguration},
         QuinnetSyncUpdate,
@@ -73,7 +73,7 @@ impl RepliconQuinnetServerPlugin {
 
     fn receive_packets(
         connected_clients: Res<ConnectedClients>,
-        mut quinnet_server: ResMut<Server>,
+        mut quinnet_server: ResMut<QuinnetServer>,
         mut replicon_server: ResMut<RepliconServer>,
     ) {
         let Some(endpoint) = quinnet_server.get_endpoint_mut() else {
@@ -89,7 +89,7 @@ impl RepliconQuinnetServerPlugin {
     }
 
     fn send_packets(
-        mut quinnet_server: ResMut<Server>,
+        mut quinnet_server: ResMut<QuinnetServer>,
         mut replicon_server: ResMut<RepliconServer>,
     ) {
         let Some(endpoint) = quinnet_server.get_endpoint_mut() else {
@@ -139,7 +139,7 @@ impl RepliconQuinnetClientPlugin {
         client.set_status(RepliconClientStatus::Connecting);
     }
 
-    fn set_connected(mut client: ResMut<RepliconClient>, quinnet_client: Res<Client>) {
+    fn set_connected(mut client: ResMut<RepliconClient>, quinnet_client: Res<QuinnetClient>) {
         let client_id = match quinnet_client.connection().client_id() {
             Some(id) => Some(ClientId::new(id)),
             None => None,
@@ -149,7 +149,7 @@ impl RepliconQuinnetClientPlugin {
     }
 
     fn receive_packets(
-        mut quinnet_client: ResMut<Client>,
+        mut quinnet_client: ResMut<QuinnetClient>,
         mut replicon_client: ResMut<RepliconClient>,
     ) {
         let Some(connection) = quinnet_client.get_connection_mut() else {
@@ -161,7 +161,7 @@ impl RepliconQuinnetClientPlugin {
         }
     }
 
-    fn send_packets(quinnet_client: ResMut<Client>, mut replicon_client: ResMut<RepliconClient>) {
+    fn send_packets(quinnet_client: ResMut<QuinnetClient>, mut replicon_client: ResMut<RepliconClient>) {
         let Some(connection) = quinnet_client.get_connection() else {
             return;
         };

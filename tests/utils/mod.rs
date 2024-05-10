@@ -17,10 +17,10 @@ use bevy_quinnet::{
             CertificateVerificationMode,
         },
         connection::ConnectionConfiguration,
-        Client, QuinnetClientPlugin,
+        QuinnetClient, QuinnetClientPlugin,
     },
     server::{
-        self, certificate::CertificateRetrievalMode, QuinnetServerPlugin, Server,
+        self, certificate::CertificateRetrievalMode, QuinnetServer, QuinnetServerPlugin,
         ServerConfiguration,
     },
     shared::{
@@ -93,7 +93,7 @@ pub fn default_client_configuration(port: u16) -> ConnectionConfiguration {
     ConnectionConfiguration::from_ips(SERVER_IP, port, LOCAL_BIND_IP, 0)
 }
 
-pub fn start_simple_connection(mut client: ResMut<Client>, port: Res<Port>) {
+pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port>) {
     client
         .open_connection(
             default_client_configuration(port.0),
@@ -103,7 +103,7 @@ pub fn start_simple_connection(mut client: ResMut<Client>, port: Res<Port>) {
         .unwrap();
 }
 
-pub fn start_listening(mut server: ResMut<Server>, port: Res<Port>) {
+pub fn start_listening(mut server: ResMut<QuinnetServer>, port: Res<Port>) {
     server
         .start_endpoint(
             ServerConfiguration::from_ip(LOCAL_BIND_IP, port.0),
@@ -183,7 +183,7 @@ pub fn wait_for_client_connected(client_app: &mut App, server_app: &mut App) -> 
     loop {
         client_app.update();
         server_app.update();
-        if client_app.world.resource::<Client>().is_connected() {
+        if client_app.world.resource::<QuinnetClient>().is_connected() {
             break;
         }
     }
@@ -195,7 +195,7 @@ pub fn wait_for_client_connected(client_app: &mut App, server_app: &mut App) -> 
 }
 
 pub fn get_default_client_channel(app: &App) -> ChannelId {
-    let client = app.world.resource::<Client>();
+    let client = app.world.resource::<QuinnetClient>();
     client
         .connection()
         .get_default_channel()
@@ -203,7 +203,7 @@ pub fn get_default_client_channel(app: &App) -> ChannelId {
 }
 
 pub fn get_default_server_channel(app: &App) -> ChannelId {
-    let server = app.world.resource::<Server>();
+    let server = app.world.resource::<QuinnetServer>();
     server
         .endpoint()
         .get_default_channel()
@@ -211,7 +211,7 @@ pub fn get_default_server_channel(app: &App) -> ChannelId {
 }
 
 pub fn close_client_channel(channel_id: ChannelId, app: &mut App) {
-    let mut client = app.world.resource_mut::<Client>();
+    let mut client = app.world.resource_mut::<QuinnetClient>();
     client
         .connection_mut()
         .close_channel(channel_id)
@@ -219,7 +219,7 @@ pub fn close_client_channel(channel_id: ChannelId, app: &mut App) {
 }
 
 pub fn close_server_channel(channel_id: ChannelId, app: &mut App) {
-    let mut server = app.world.resource_mut::<Server>();
+    let mut server = app.world.resource_mut::<QuinnetServer>();
     server
         .endpoint_mut()
         .close_channel(channel_id)
@@ -227,7 +227,7 @@ pub fn close_server_channel(channel_id: ChannelId, app: &mut App) {
 }
 
 pub fn open_client_channel(channel_type: ChannelType, app: &mut App) -> ChannelId {
-    let mut client = app.world.resource_mut::<Client>();
+    let mut client = app.world.resource_mut::<QuinnetClient>();
     client
         .connection_mut()
         .open_channel(channel_type)
@@ -235,7 +235,7 @@ pub fn open_client_channel(channel_type: ChannelType, app: &mut App) -> ChannelI
 }
 
 pub fn open_server_channel(channel_type: ChannelType, app: &mut App) -> ChannelId {
-    let mut server = app.world.resource_mut::<Server>();
+    let mut server = app.world.resource_mut::<QuinnetServer>();
     server
         .endpoint_mut()
         .open_channel(channel_type)
@@ -246,7 +246,7 @@ pub fn wait_for_client_message(
     client_id: ClientId,
     server_app: &mut App,
 ) -> (ChannelId, SharedMessage) {
-    let mut server = server_app.world.resource_mut::<Server>();
+    let mut server = server_app.world.resource_mut::<QuinnetServer>();
 
     loop {
         sleep(Duration::from_secs_f32(0.05));
@@ -262,7 +262,7 @@ pub fn wait_for_client_message(
 }
 
 pub fn wait_for_server_message(client_app: &mut App) -> (ChannelId, SharedMessage) {
-    let mut client = client_app.world.resource_mut::<Client>();
+    let mut client = client_app.world.resource_mut::<QuinnetClient>();
 
     loop {
         sleep(Duration::from_secs_f32(0.05));
@@ -290,7 +290,7 @@ pub fn send_and_test_client_message(
         .to_string(),
     );
 
-    let client = client_app.world.resource_mut::<Client>();
+    let client = client_app.world.resource_mut::<QuinnetClient>();
     client
         .connection()
         .send_message_on(channel, client_message.clone())
@@ -316,7 +316,7 @@ pub fn send_and_test_server_message(
         .to_string(),
     );
 
-    let mut server = server_app.world.resource_mut::<Server>();
+    let mut server = server_app.world.resource_mut::<QuinnetServer>();
     server
         .endpoint_mut()
         .send_message_on(client_id, channel, server_message.clone())

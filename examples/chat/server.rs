@@ -4,7 +4,7 @@ use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use bevy_quinnet::{
     server::{
         certificate::CertificateRetrievalMode, ConnectionLostEvent, Endpoint, QuinnetServerPlugin,
-        Server, ServerConfiguration,
+        QuinnetServer, ServerConfiguration,
     },
     shared::{channels::ChannelsConfiguration, ClientId},
 };
@@ -18,7 +18,7 @@ struct Users {
     names: HashMap<ClientId, String>,
 }
 
-fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) {
+fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut users: ResMut<Users>) {
     let endpoint = server.endpoint_mut();
     for client_id in endpoint.clients() {
         while let Some((_, message)) = endpoint.try_receive_message_from::<ClientMessage>(client_id)
@@ -81,7 +81,7 @@ fn handle_client_messages(mut server: ResMut<Server>, mut users: ResMut<Users>) 
 
 fn handle_server_events(
     mut connection_lost_events: EventReader<ConnectionLostEvent>,
-    mut server: ResMut<Server>,
+    mut server: ResMut<QuinnetServer>,
     mut users: ResMut<Users>,
 ) {
     // The server signals us about users that lost connection
@@ -113,7 +113,7 @@ fn handle_disconnect(endpoint: &mut Endpoint, users: &mut ResMut<Users>, client_
     }
 }
 
-fn start_listening(mut server: ResMut<Server>) {
+fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
         .start_endpoint(
             ServerConfiguration::from_string("0.0.0.0:6000").unwrap(),

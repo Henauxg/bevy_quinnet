@@ -1,8 +1,8 @@
 use bevy::prelude::App;
 
 use bevy_quinnet::{
-    client::Client,
-    server::Server,
+    client::QuinnetClient,
+    server::QuinnetServer,
     shared::{channels::ChannelType, error::QuinnetError},
 };
 
@@ -34,7 +34,7 @@ fn default_channel() {
     close_server_channel(server_default_channel, &mut server_app);
 
     {
-        let mut server = server_app.world.resource_mut::<Server>();
+        let mut server = server_app.world.resource_mut::<QuinnetServer>();
         assert_eq!(
             server.endpoint().get_default_channel(),
             None,
@@ -52,7 +52,7 @@ fn default_channel() {
         );
     }
     {
-        let mut client = client_app.world.resource_mut::<Client>();
+        let mut client = client_app.world.resource_mut::<QuinnetClient>();
         assert_eq!(
             client.connection().get_default_channel(),
             None,

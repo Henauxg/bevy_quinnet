@@ -59,14 +59,14 @@ pub(crate) enum ClientAsyncMessage {
 }
 
 #[derive(Resource)]
-pub struct Client {
+pub struct QuinnetClient {
     runtime: runtime::Handle,
     connections: HashMap<ConnectionLocalId, Connection>,
     connection_local_id_gen: ConnectionLocalId,
     default_connection_id: Option<ConnectionLocalId>,
 }
 
-impl FromWorld for Client {
+impl FromWorld for QuinnetClient {
     fn from_world(world: &mut World) -> Self {
         if world.get_resource::<AsyncRuntime>().is_none() {
             let async_runtime = tokio::runtime::Builder::new_multi_thread()
@@ -77,11 +77,11 @@ impl FromWorld for Client {
         };
 
         let runtime = world.resource::<AsyncRuntime>();
-        Client::new(runtime.handle().clone())
+        QuinnetClient::new(runtime.handle().clone())
     }
 }
 
-impl Client {
+impl QuinnetClient {
     fn new(runtime_handle: tokio::runtime::Handle) -> Self {
         Self {
             connections: HashMap::new(),
@@ -275,7 +275,7 @@ pub fn update_sync_client(
     mut certificate_interaction_events: EventWriter<CertInteractionEvent>,
     mut cert_trust_update_events: EventWriter<CertTrustUpdateEvent>,
     mut cert_connection_abort_events: EventWriter<CertConnectionAbortEvent>,
-    mut client: ResMut<Client>,
+    mut client: ResMut<QuinnetClient>,
 ) {
     for (connection_id, connection) in &mut client.connections {
         while let Ok(message) = connection.from_async_client_recv.try_recv() {
@@ -360,14 +360,14 @@ impl Plugin for QuinnetClientPlugin {
             .add_event::<CertConnectionAbortEvent>();
 
         if !self.initialize_later {
-            app.init_resource::<Client>();
+            app.init_resource::<QuinnetClient>();
         }
 
         app.add_systems(
             PreUpdate,
             update_sync_client
                 .in_set(QuinnetSyncUpdate)
-                .run_if(resource_exists::<Client>),
+                .run_if(resource_exists::<QuinnetClient>),
         );
     }
 }
@@ -375,7 +375,7 @@ impl Plugin for QuinnetClientPlugin {
 /// Returns true if the following conditions are all true:
 /// - the client Resource exists
 /// - its default connection is connecting.
-pub fn client_connecting(client: Option<Res<Client>>) -> bool {
+pub fn client_connecting(client: Option<Res<QuinnetClient>>) -> bool {
     match client {
         Some(client) => client.is_connecting(),
         None => false,
@@ -385,7 +385,7 @@ pub fn client_connecting(client: Option<Res<Client>>) -> bool {
 /// Returns true if the following conditions are all true:
 /// - the client Resource exists
 /// - its default connection is connected.
-pub fn client_connected(client: Option<Res<Client>>) -> bool {
+pub fn client_connected(client: Option<Res<QuinnetClient>>) -> bool {
     match client {
         Some(client) => client.is_connected(),
         None => false,
@@ -395,7 +395,10 @@ pub fn client_connected(client: Option<Res<Client>>) -> bool {
 /// Returns true if the following conditions are all true:
 /// - the client Resource exists and its default connection is connected
 /// - the previous condition was false during the previous update
-pub fn client_just_connected(mut last_connected: Local<bool>, client: Option<Res<Client>>) -> bool {
+pub fn client_just_connected(
+    mut last_connected: Local<bool>,
+    client: Option<Res<QuinnetClient>>,
+) -> bool {
     let connected = client.map(|client| client.is_connected()).unwrap_or(false);
 
     let just_connected = !*last_connected && connected;
@@ -408,7 +411,7 @@ pub fn client_just_connected(mut last_connected: Local<bool>, client: Option<Res
 /// - the previous condition was false during the previous update
 pub fn client_just_disconnected(
     mut last_connected: Local<bool>,
-    client: Option<Res<Client>>,
+    client: Option<Res<QuinnetClient>>,
 ) -> bool {
     let disconnected = client
         .map(|client| client.is_disconnected())

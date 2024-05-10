@@ -739,12 +739,12 @@ impl Endpoint {
 }
 
 #[derive(Resource)]
-pub struct Server {
+pub struct QuinnetServer {
     runtime: runtime::Handle,
     endpoint: Option<Endpoint>,
 }
 
-impl FromWorld for Server {
+impl FromWorld for QuinnetServer {
     fn from_world(world: &mut World) -> Self {
         if world.get_resource::<AsyncRuntime>().is_none() {
             let async_runtime = tokio::runtime::Builder::new_multi_thread()
@@ -755,11 +755,11 @@ impl FromWorld for Server {
         };
 
         let runtime = world.resource::<AsyncRuntime>();
-        Server::new(runtime.handle().clone())
+        QuinnetServer::new(runtime.handle().clone())
     }
 }
 
-impl Server {
+impl QuinnetServer {
     fn new(runtime: tokio::runtime::Handle) -> Self {
         Self {
             endpoint: None,
@@ -971,7 +971,7 @@ async fn client_connection_task(
 
 // Receive messages from the async server tasks and update the sync server.
 pub fn update_sync_server(
-    mut server: ResMut<Server>,
+    mut server: ResMut<QuinnetServer>,
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
 ) {
@@ -1042,14 +1042,14 @@ impl Plugin for QuinnetServerPlugin {
             .add_event::<ConnectionLostEvent>();
 
         if !self.initialize_later {
-            app.init_resource::<Server>();
+            app.init_resource::<QuinnetServer>();
         }
 
         app.add_systems(
             PreUpdate,
             update_sync_server
                 .in_set(QuinnetSyncUpdate)
-                .run_if(resource_exists::<Server>),
+                .run_if(resource_exists::<QuinnetServer>),
         );
     }
 }
@@ -1057,7 +1057,7 @@ impl Plugin for QuinnetServerPlugin {
 /// Returns true if the following conditions are all true:
 /// - the server Resource exists
 /// - its endpoint is opened.
-pub fn server_listening(server: Option<Res<Server>>) -> bool {
+pub fn server_listening(server: Option<Res<QuinnetServer>>) -> bool {
     match server {
         Some(server) => server.is_listening(),
         None => false,
@@ -1067,7 +1067,7 @@ pub fn server_listening(server: Option<Res<Server>>) -> bool {
 /// Returns true if the following conditions are all true:
 /// - the server Resource exists and its endpoint is opened
 /// - the previous condition was false during the previous update
-pub fn server_just_opened(mut was_listening: Local<bool>, server: Option<Res<Server>>) -> bool {
+pub fn server_just_opened(mut was_listening: Local<bool>, server: Option<Res<QuinnetServer>>) -> bool {
     let listening = server.map(|server| server.is_listening()).unwrap_or(false);
 
     let just_opened = !*was_listening && listening;
@@ -1078,7 +1078,7 @@ pub fn server_just_opened(mut was_listening: Local<bool>, server: Option<Res<Ser
 /// Returns true if the following conditions are all true:
 /// - the server Resource does not exists or its endpoint is closed
 /// - the previous condition was false during the previous update
-pub fn server_just_closed(mut was_listening: Local<bool>, server: Option<Res<Server>>) -> bool {
+pub fn server_just_closed(mut was_listening: Local<bool>, server: Option<Res<QuinnetServer>>) -> bool {
     let closed = server.map(|server| !server.is_listening()).unwrap_or(true);
 
     let just_closed = *was_listening && closed;

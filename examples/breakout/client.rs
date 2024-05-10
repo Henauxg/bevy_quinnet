@@ -18,7 +18,7 @@ use bevy::{
 };
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, connection::ConnectionConfiguration, Client,
+        certificate::CertificateVerificationMode, connection::ConnectionConfiguration, QuinnetClient,
     },
     shared::ClientId,
 };
@@ -93,7 +93,7 @@ pub(crate) enum MenuItem {
 struct WallBundle {
     sprite_bundle: SpriteBundle,
 }
-pub(crate) fn start_connection(mut client: ResMut<Client>) {
+pub(crate) fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(
             ConnectionConfiguration::from_ips(
@@ -193,7 +193,7 @@ pub(crate) fn spawn_bricks(
 
 pub(crate) fn handle_server_messages(
     mut commands: Commands,
-    mut client: ResMut<Client>,
+    mut client: ResMut<QuinnetClient>,
     mut client_data: ResMut<ClientData>,
     mut entity_mapping: ResMut<NetworkMapping>,
     mut next_state: ResMut<NextState<GameState>>,
@@ -292,7 +292,7 @@ pub(crate) struct PaddleState {
 }
 
 pub(crate) fn move_paddle(
-    client: Res<Client>,
+    client: Res<QuinnetClient>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut local: Local<PaddleState>,
 ) {

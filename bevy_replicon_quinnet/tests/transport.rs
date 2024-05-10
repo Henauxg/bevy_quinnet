@@ -7,9 +7,10 @@ use std::{
 use bevy::prelude::*;
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, connection::ConnectionConfiguration, Client,
+        certificate::CertificateVerificationMode, connection::ConnectionConfiguration,
+        QuinnetClient,
     },
-    server::{certificate::CertificateRetrievalMode, Server, ServerConfiguration},
+    server::{certificate::CertificateRetrievalMode, QuinnetServer, ServerConfiguration},
 };
 use bevy_replicon::prelude::*;
 use bevy_replicon_quinnet::{ChannelsConfigurationExt, RepliconQuinnetPlugins};
@@ -33,7 +34,7 @@ fn connect_disconnect() {
 
     setup(&mut server_app, &mut client_app, port);
 
-    let mut quinnet_client = client_app.world.resource_mut::<Client>();
+    let mut quinnet_client = client_app.world.resource_mut::<QuinnetClient>();
     assert!(quinnet_client.is_connected());
     let default_connection = quinnet_client.get_default_connection().unwrap();
     quinnet_client.close_connection(default_connection).unwrap();
@@ -45,7 +46,7 @@ fn connect_disconnect() {
 
     server_wait_for_disconnect(&mut server_app);
 
-    let quinnet_server = server_app.world.resource::<Server>();
+    let quinnet_server = server_app.world.resource::<QuinnetServer>();
     assert_eq!(quinnet_server.endpoint().clients().len(), 0);
 
     let connected_clients = server_app.world.resource::<ConnectedClients>();
@@ -150,7 +151,7 @@ fn setup_client(app: &mut App, server_port: u16) {
         .resource::<RepliconChannels>()
         .get_client_configs();
 
-    let mut client = app.world.resource_mut::<Client>();
+    let mut client = app.world.resource_mut::<QuinnetClient>();
     client
         .open_connection(
             ConnectionConfiguration::from_ips(
@@ -171,7 +172,7 @@ fn setup_server(app: &mut App, server_port: u16) {
         .resource::<RepliconChannels>()
         .get_server_configs();
 
-    let mut server = app.world.resource_mut::<Server>();
+    let mut server = app.world.resource_mut::<QuinnetServer>();
     server
         .start_endpoint(
             ServerConfiguration::from_ip(IpAddr::V4(Ipv4Addr::LOCALHOST), server_port),
@@ -187,7 +188,7 @@ fn wait_for_connection(server_app: &mut App, client_app: &mut App) {
     loop {
         client_app.update();
         server_app.update();
-        if client_app.world.resource::<Client>().is_connected() {
+        if client_app.world.resource::<QuinnetClient>().is_connected() {
             break;
         }
     }
@@ -199,7 +200,7 @@ fn client_wait_for_message(client_app: &mut App) {
         client_app.update();
         if client_app
             .world
-            .resource::<Client>()
+            .resource::<QuinnetClient>()
             .connection()
             .received_messages_count()
             > 0
@@ -215,7 +216,7 @@ fn server_wait_for_message(server_app: &mut App) {
         server_app.update();
         if server_app
             .world
-            .resource::<Server>()
+            .resource::<QuinnetServer>()
             .endpoint()
             .endpoint_stats()
             .received_messages_count()
@@ -232,7 +233,7 @@ fn server_wait_for_disconnect(server_app: &mut App) {
         server_app.update();
         if server_app
             .world
-            .resource::<Server>()
+            .resource::<QuinnetServer>()
             .endpoint()
             .endpoint_stats()
             .disconnect_count()

@@ -6,7 +6,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use bevy::prelude::*;
 use bevy_quinnet::{
     client::QuinnetClientPlugin,
-    server::{QuinnetServerPlugin, Server},
+    server::{QuinnetServerPlugin, QuinnetServer},
 };
 use client::BACKGROUND_COLOR;
 
@@ -113,7 +113,7 @@ impl WallLocation {
     }
 }
 
-fn server_is_listening(server: Res<Server>) -> bool {
+fn server_is_listening(server: Res<QuinnetServer>) -> bool {
     server.is_listening()
 }
 

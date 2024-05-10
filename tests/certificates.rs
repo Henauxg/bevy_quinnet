@@ -8,10 +8,10 @@ use bevy_quinnet::{
     client::{
         self,
         certificate::{CertVerificationStatus, CertificateVerificationMode},
-        Client, QuinnetClientPlugin, DEFAULT_KNOWN_HOSTS_FILE,
+        QuinnetClient, QuinnetClientPlugin, DEFAULT_KNOWN_HOSTS_FILE,
     },
     server::{
-        certificate::CertificateRetrievalMode, QuinnetServerPlugin, Server, ServerConfiguration,
+        certificate::CertificateRetrievalMode, QuinnetServerPlugin, QuinnetServer, ServerConfiguration,
     },
     shared::channels::ChannelsConfiguration,
 };
@@ -77,7 +77,7 @@ fn trust_on_first_use() {
 
     // Server listens with a cert loaded from a file
     {
-        let mut server = server_app.world.resource_mut::<Server>();
+        let mut server = server_app.world.resource_mut::<QuinnetServer>();
         let server_cert = server
             .start_endpoint(
                 ServerConfiguration::from_ip("0.0.0.0".parse().unwrap(), port),
@@ -97,7 +97,7 @@ fn trust_on_first_use() {
 
     // Client connects with empty cert store
     {
-        let mut client = client_app.world.resource_mut::<Client>();
+        let mut client = client_app.world.resource_mut::<QuinnetClient>();
         client
             .open_connection(
                 default_client_configuration(port),
@@ -140,7 +140,7 @@ fn trust_on_first_use() {
             "The server name should match the one we configured"
         );
 
-        let mut client = client_app.world.resource_mut::<Client>();
+        let mut client = client_app.world.resource_mut::<QuinnetClient>();
         assert!(
             client.is_connected(),
             "The default connection should be connected to the server"
@@ -170,7 +170,7 @@ fn trust_on_first_use() {
 
     {
         assert!(
-            client_app.world.resource_mut::<Client>().is_connected(),
+            client_app.world.resource_mut::<QuinnetClient>().is_connected(),
             "The default connection should be connected to the server"
         );
 
@@ -180,7 +180,7 @@ fn trust_on_first_use() {
         // Clients disconnects
         client_app
             .world
-            .resource_mut::<Client>()
+            .resource_mut::<QuinnetClient>()
             .close_all_connections()
             .expect("Failed to close connections on the client");
     }
@@ -188,7 +188,7 @@ fn trust_on_first_use() {
     // Server reboots, and generates a new self-signed certificate
     server_app
         .world
-        .resource_mut::<Server>()
+        .resource_mut::<QuinnetServer>()
         .stop_endpoint()
         .unwrap();
 
@@ -197,7 +197,7 @@ fn trust_on_first_use() {
 
     let server_cert = server_app
         .world
-        .resource_mut::<Server>()
+        .resource_mut::<QuinnetServer>()
         .start_endpoint(
             ServerConfiguration::from_ip(LOCAL_BIND_IP, port),
             CertificateRetrievalMode::GenerateSelfSigned {
@@ -209,7 +209,7 @@ fn trust_on_first_use() {
 
     // Client reconnects with its cert store containing the previously store certificate fingerprint
     {
-        let mut client = client_app.world.resource_mut::<Client>();
+        let mut client = client_app.world.resource_mut::<QuinnetClient>();
         client
             .open_connection(
                 default_client_configuration(port),
@@ -294,7 +294,7 @@ fn trust_on_first_use() {
             "The certificate verification status in the connection abort event should be `Untrusted`"
         );
 
-        let client = client_app.world.resource::<Client>();
+        let client = client_app.world.resource::<QuinnetClient>();
         assert!(
             client.is_connected() == false,
             "The default connection should not be connected to the server"

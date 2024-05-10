@@ -99,7 +99,7 @@ This is a bird-eye view of the features/tasks that will probably be worked on ne
 - You can then use the `Client` resource to connect, send & receive messages:
 
 ```rust
-fn start_connection(client: ResMut<Client>) {
+fn start_connection(client: ResMut<QuinnetClient>) {
     client
         .open_connection(
             ClientConfigurationData::from_ips(
@@ -119,7 +119,7 @@ fn start_connection(client: ResMut<Client>) {
 
 ```rust
 fn handle_server_messages(
-    mut client: ResMut<Client>,
+    mut client: ResMut<QuinnetClient>,
     /*...*/
 ) {
     while let Ok(Some(message)) = client.connection_mut().receive_message::<ServerMessage>() {
@@ -148,7 +148,7 @@ fn handle_server_messages(
 - You can then use the `Server` resource to start the listening server:
 
 ```rust
-fn start_listening(mut server: ResMut<Server>) {
+fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
         .start_endpoint(
             ServerConfigurationData::from_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000),
@@ -163,7 +163,7 @@ fn start_listening(mut server: ResMut<Server>) {
 
 ```rust
 fn handle_client_messages(
-    mut server: ResMut<Server>,
+    mut server: ResMut<QuinnetServer>,
     /*...*/
 ) {
     let mut endpoint = server.endpoint_mut();

@@ -9,7 +9,7 @@ use bevy::{
     transform::TransformBundle,
 };
 use bevy_quinnet::{
-    server::{certificate::CertificateRetrievalMode, ConnectionEvent, Server, ServerConfiguration},
+    server::{certificate::CertificateRetrievalMode, ConnectionEvent, QuinnetServer, ServerConfiguration},
     shared::ClientId,
 };
 
@@ -75,7 +75,7 @@ struct WallBundle {
     collider: Collider,
 }
 
-pub(crate) fn start_listening(mut server: ResMut<Server>) {
+pub(crate) fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
         .start_endpoint(
             ServerConfiguration::from_ip(LOCAL_BIND_IP, SERVER_PORT),
@@ -87,7 +87,7 @@ pub(crate) fn start_listening(mut server: ResMut<Server>) {
         .unwrap();
 }
 
-pub(crate) fn handle_client_messages(mut server: ResMut<Server>, mut players: ResMut<Players>) {
+pub(crate) fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut players: ResMut<Players>) {
     let endpoint = server.endpoint_mut();
     for client_id in endpoint.clients() {
         while let Some((_, message)) = endpoint.try_receive_message_from::<ClientMessage>(client_id)
@@ -106,7 +106,7 @@ pub(crate) fn handle_client_messages(mut server: ResMut<Server>, mut players: Re
 pub(crate) fn handle_server_events(
     mut commands: Commands,
     mut connection_events: EventReader<ConnectionEvent>,
-    mut server: ResMut<Server>,
+    mut server: ResMut<QuinnetServer>,
     mut players: ResMut<Players>,
 ) {
     // The server signals us about new connections
@@ -129,7 +129,7 @@ pub(crate) fn handle_server_events(
 }
 
 pub(crate) fn update_paddles(
-    server: Res<Server>,
+    server: Res<QuinnetServer>,
     players: ResMut<Players>,
     mut paddles: Query<(&mut Transform, &Paddle, Entity)>,
 ) {
@@ -170,7 +170,7 @@ pub(crate) fn update_paddles(
 
 pub(crate) fn check_for_collisions(
     mut commands: Commands,
-    server: ResMut<Server>,
+    server: ResMut<QuinnetServer>,
     mut ball_query: Query<(&mut Velocity, &Transform, Entity, &mut Ball)>,
     collider_query: Query<(Entity, &Transform, Option<&Brick>, Option<&Paddle>), With<Collider>>,
 ) {
@@ -249,7 +249,7 @@ pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<
     }
 }
 
-fn start_game(commands: &mut Commands, server: &mut ResMut<Server>, players: &ResMut<Players>) {
+fn start_game(commands: &mut Commands, server: &mut ResMut<QuinnetServer>, players: &ResMut<Players>) {
     let endpoint = server.endpoint_mut();
     // Assign ids
     for client_id in players.map.keys().into_iter() {

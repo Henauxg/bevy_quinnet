@@ -1,6 +1,6 @@
 use std::{thread::sleep, time::Duration};
 
-use bevy_quinnet::{client::Client, server::Server};
+use bevy_quinnet::{client::QuinnetClient, server::QuinnetServer};
 
 // https://github.com/rust-lang/rust/issues/46379
 pub use utils::*;
@@ -23,12 +23,12 @@ fn connection_with_two_apps() {
     assert!(
         client_app
             .world
-            .resource::<Client>()
+            .resource::<QuinnetClient>()
             .get_connection()
             .is_some(),
         "The default connection should exist"
     );
-    let server = server_app.world.resource::<Server>();
+    let server = server_app.world.resource::<QuinnetServer>();
     assert!(server.is_listening(), "The server should be listening");
 
     let client_id = wait_for_client_connected(&mut client_app, &mut server_app);
@@ -42,7 +42,7 @@ fn connection_with_two_apps() {
     );
 
     assert!(
-        client_app.world.resource::<Client>().is_connected(),
+        client_app.world.resource::<QuinnetClient>().is_connected(),
         "The default connection should be connected to the server"
     );
     assert_eq!(
@@ -56,7 +56,7 @@ fn connection_with_two_apps() {
     let sent_client_message = SharedMessage::TestMessage("Test message content".to_string());
     client_app
         .world
-        .resource::<Client>()
+        .resource::<QuinnetClient>()
         .connection()
         .send_message(sent_client_message.clone())
         .unwrap();
@@ -67,7 +67,7 @@ fn connection_with_two_apps() {
 
     let (_channel_id, client_message) = server_app
         .world
-        .resource_mut::<Server>()
+        .resource_mut::<QuinnetServer>()
         .endpoint_mut()
         .receive_message_from::<SharedMessage>(client_id)
         .expect("Failed to receive client message")
@@ -78,7 +78,7 @@ fn connection_with_two_apps() {
 
     server_app
         .world
-        .resource::<Server>()
+        .resource::<QuinnetServer>()
         .endpoint()
         .broadcast_message(sent_server_message.clone())
         .unwrap();
@@ -89,7 +89,7 @@ fn connection_with_two_apps() {
 
     let (_channel_id, server_message) = client_app
         .world
-        .resource_mut::<Client>()
+        .resource_mut::<QuinnetClient>()
         .connection_mut()
         .receive_message::<SharedMessage>()
         .expect("Failed to receive server message")

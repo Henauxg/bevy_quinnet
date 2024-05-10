@@ -17,7 +17,7 @@ use bevy_quinnet::{
     client::{
         certificate::CertificateVerificationMode,
         connection::{ConnectionConfiguration, ConnectionEvent},
-        Client, QuinnetClientPlugin,
+        QuinnetClient, QuinnetClientPlugin,
     },
     shared::{channels::ChannelsConfiguration, ClientId},
 };
@@ -37,7 +37,7 @@ struct Users {
 #[derive(Resource, Deref, DerefMut)]
 struct TerminalReceiver(mpsc::Receiver<String>);
 
-pub fn on_app_exit(app_exit_events: EventReader<AppExit>, client: Res<Client>) {
+pub fn on_app_exit(app_exit_events: EventReader<AppExit>, client: Res<QuinnetClient>) {
     if !app_exit_events.is_empty() {
         client
             .connection()
@@ -48,7 +48,7 @@ pub fn on_app_exit(app_exit_events: EventReader<AppExit>, client: Res<Client>) {
     }
 }
 
-fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<Client>) {
+fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<QuinnetClient>) {
     while let Some((_, message)) = client
         .connection_mut()
         .try_receive_message::<ServerMessage>()
@@ -91,7 +91,7 @@ fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<Client>) 
 fn handle_terminal_messages(
     mut terminal_messages: ResMut<TerminalReceiver>,
     mut app_exit_events: EventWriter<AppExit>,
-    client: Res<Client>,
+    client: Res<QuinnetClient>,
 ) {
     while let Ok(message) = terminal_messages.try_recv() {
         if message == "quit" {
@@ -118,7 +118,7 @@ fn start_terminal_listener(mut commands: Commands) {
     commands.insert_resource(TerminalReceiver(from_terminal_receiver));
 }
 
-fn start_connection(mut client: ResMut<Client>) {
+fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(
             ConnectionConfiguration::from_strings("127.0.0.1:6000", "0.0.0.0:0").unwrap(),
@@ -132,7 +132,7 @@ fn start_connection(mut client: ResMut<Client>) {
 
 fn handle_client_events(
     mut connection_events: EventReader<ConnectionEvent>,
-    client: ResMut<Client>,
+    client: ResMut<QuinnetClient>,
 ) {
     if !connection_events.is_empty() {
         // We are connected
