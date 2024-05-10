@@ -6,6 +6,7 @@ use std::{
 
 use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
+    ecs::schedule::IntoSystemConfigs,
     log::LogPlugin,
     prelude::{
         App, Commands, Deref, DerefMut, EventReader, EventWriter, PostUpdate, Res, ResMut,
@@ -16,7 +17,8 @@ use bevy::{
 use bevy_quinnet::{
     client::{
         certificate::CertificateVerificationMode,
-        connection::{ConnectionConfiguration, ConnectionEvent},
+        client_connected,
+        connection::{ConnectionConfiguration, ConnectionEvent, ConnectionFailedEvent},
         QuinnetClient, QuinnetClientPlugin,
     },
     shared::{channels::ChannelsConfiguration, ClientId},
@@ -132,6 +134,7 @@ fn start_connection(mut client: ResMut<QuinnetClient>) {
 
 fn handle_client_events(
     mut connection_events: EventReader<ConnectionEvent>,
+    mut connection_failed_events: EventReader<ConnectionFailedEvent>,
     client: ResMut<QuinnetClient>,
 ) {
     if !connection_events.is_empty() {
@@ -152,6 +155,12 @@ fn handle_client_events(
 
         connection_events.clear();
     }
+    for ev in connection_failed_events.read() {
+        println!(
+            "Failed to connect: {:?}, make sure the chat-server is running.",
+            ev.err
+        );
+    }
 }
 
 fn main() {
@@ -166,9 +175,8 @@ fn main() {
         .add_systems(
             Update,
             (
-                handle_terminal_messages,
-                handle_server_messages,
                 handle_client_events,
+                (handle_terminal_messages, handle_server_messages).run_if(client_connected),
             ),
         )
         // CoreSet::PostUpdate so that AppExit events generated in the previous stage are available
