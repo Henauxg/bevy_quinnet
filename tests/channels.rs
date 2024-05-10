@@ -3,10 +3,7 @@ use bevy::prelude::App;
 use bevy_quinnet::{
     client::Client,
     server::Server,
-    shared::{
-        channel::{ChannelId, ChannelType},
-        QuinnetError,
-    },
+    shared::{channels::ChannelType, error::QuinnetError},
 };
 
 // https://github.com/rust-lang/rust/issues/46379
@@ -30,10 +27,7 @@ fn default_channel() {
     let server_default_channel = get_default_server_channel(&server_app);
 
     for channel in vec![client_default_channel, server_default_channel] {
-        assert!(
-            matches!(channel, ChannelId::OrderedReliable(_)),
-            "Default channel should be an OrderedReliable channel"
-        );
+        assert!(matches!(channel, 0), "Default channel id should be 0");
     }
 
     close_client_channel(client_default_channel, &mut client_app);
@@ -105,113 +99,65 @@ fn default_channel() {
 ///////////////////////////////////////////////////////////
 
 #[test]
-fn single_instance_channels() {
+fn multi_instance_channels() {
     let port = 6002; // TODO Use port 0 and retrieve the port used by the server.
     let mut server_app: App = start_simple_server_app(port);
-    let mut client_app: App = start_simple_client_app(port);
 
-    let client_id = wait_for_client_connected(&mut client_app, &mut server_app);
-
-    let mut msg_counter = 0;
-    for (channel_type, channel_id) in vec![
-        (ChannelType::UnorderedReliable, ChannelId::UnorderedReliable),
-        (ChannelType::Unreliable, ChannelId::Unreliable),
+    for channel_type in vec![
+        ChannelType::OrderedReliable,
+        ChannelType::UnorderedReliable,
+        ChannelType::Unreliable,
     ] {
-        send_and_test_client_message(
-            client_id,
-            channel_id,
-            &mut client_app,
-            &mut server_app,
-            &mut msg_counter,
-        );
-        close_client_channel(channel_id, &mut client_app);
-        open_client_channel(channel_type, &mut client_app);
-        send_and_test_client_message(
-            client_id,
-            channel_id,
-            &mut client_app,
-            &mut server_app,
-            &mut msg_counter,
-        );
+        let mut client_app_1: App = start_simple_client_app(port);
 
-        send_and_test_server_message(
-            client_id,
-            channel_id,
-            &mut server_app,
-            &mut client_app,
-            &mut msg_counter,
-        );
-        close_server_channel(channel_id, &mut server_app);
-        open_server_channel(channel_type, &mut server_app);
-        send_and_test_server_message(
-            client_id,
-            channel_id,
-            &mut server_app,
-            &mut client_app,
-            &mut msg_counter,
-        );
-    }
-}
+        let client_id_1 = wait_for_client_connected(&mut client_app_1, &mut server_app);
 
-///////////////////////////////////////////////////////////
-///                                                     ///
-///                        Test                         ///
-///                                                     ///
-///////////////////////////////////////////////////////////
+        let client_1_channel_1 = get_default_client_channel(&client_app_1);
+        let client_1_channel_2 = open_client_channel(channel_type, &mut client_app_1);
 
-#[test]
-fn multi_instance_channels() {
-    let port = 6003; // TODO Use port 0 and retrieve the port used by the server.
-    let mut server_app: App = start_simple_server_app(port);
-    let mut client_app_1: App = start_simple_client_app(port);
+        let server_channel_1 = get_default_server_channel(&server_app);
+        let server_channel_2 = open_server_channel(channel_type, &mut server_app);
 
-    let client_id_1 = wait_for_client_connected(&mut client_app_1, &mut server_app);
+        let mut msg_counter = 0;
+        for channel in vec![client_1_channel_1, client_1_channel_2] {
+            send_and_test_client_message(
+                client_id_1,
+                channel,
+                &mut client_app_1,
+                &mut server_app,
+                &mut msg_counter,
+            );
+        }
+        for channel in vec![server_channel_1, server_channel_2] {
+            send_and_test_server_message(
+                client_id_1,
+                channel,
+                &mut server_app,
+                &mut client_app_1,
+                &mut msg_counter,
+            );
+        }
 
-    let client_1_channel_1 = get_default_client_channel(&client_app_1);
-    let client_1_channel_2 = open_client_channel(ChannelType::OrderedReliable, &mut client_app_1);
+        let mut client_app_2 = start_simple_client_app(port);
+        let client_id_2 = wait_for_client_connected(&mut client_app_2, &mut server_app);
 
-    let server_channel_1 = get_default_server_channel(&server_app);
-    let server_channel_2 = open_server_channel(ChannelType::OrderedReliable, &mut server_app);
-
-    let mut msg_counter = 0;
-    for channel in vec![client_1_channel_1, client_1_channel_2] {
-        send_and_test_client_message(
-            client_id_1,
-            channel,
-            &mut client_app_1,
-            &mut server_app,
-            &mut msg_counter,
-        );
-    }
-    for channel in vec![server_channel_1, server_channel_2] {
-        send_and_test_server_message(
-            client_id_1,
-            channel,
-            &mut server_app,
-            &mut client_app_1,
-            &mut msg_counter,
-        );
-    }
-
-    let mut client_app_2 = start_simple_client_app(port);
-    let client_id_2 = wait_for_client_connected(&mut client_app_2, &mut server_app);
-
-    for (client_id, mut client_app) in
-        vec![(client_id_1, client_app_1), (client_id_2, client_app_2)]
-    {
-        send_and_test_server_message(
-            client_id,
-            server_channel_1,
-            &mut server_app,
-            &mut client_app,
-            &mut msg_counter,
-        );
-        send_and_test_server_message(
-            client_id,
-            server_channel_2,
-            &mut server_app,
-            &mut client_app,
-            &mut msg_counter,
-        );
+        for (client_id, mut client_app) in
+            vec![(client_id_1, client_app_1), (client_id_2, client_app_2)]
+        {
+            send_and_test_server_message(
+                client_id,
+                server_channel_1,
+                &mut server_app,
+                &mut client_app,
+                &mut msg_counter,
+            );
+            send_and_test_server_message(
+                client_id,
+                server_channel_2,
+                &mut server_app,
+                &mut client_app,
+                &mut msg_counter,
+            );
+        }
     }
 }

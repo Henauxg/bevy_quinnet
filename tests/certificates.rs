@@ -13,6 +13,7 @@ use bevy_quinnet::{
     server::{
         certificate::CertificateRetrievalMode, QuinnetServerPlugin, Server, ServerConfiguration,
     },
+    shared::channels::ChannelsConfiguration,
 };
 
 // https://github.com/rust-lang/rust/issues/46379
@@ -77,13 +78,14 @@ fn trust_on_first_use() {
     // Server listens with a cert loaded from a file
     {
         let mut server = server_app.world.resource_mut::<Server>();
-        let (server_cert, _) = server
+        let server_cert = server
             .start_endpoint(
                 ServerConfiguration::from_ip("0.0.0.0".parse().unwrap(), port),
                 CertificateRetrievalMode::LoadFromFile {
                     cert_file: TEST_CERT_FILE.to_string(),
                     key_file: TEST_KEY_FILE.to_string(),
                 },
+                ChannelsConfiguration::default(),
             )
             .unwrap();
         assert_eq!(
@@ -104,16 +106,13 @@ fn trust_on_first_use() {
                         ..Default::default()
                     },
                 ),
+                ChannelsConfiguration::default(),
             )
             .unwrap();
     }
 
     // Let the async runtime connection connect.
-    sleep(Duration::from_secs_f32(0.1));
-
-    // Connection & event propagation
-    server_app.update();
-    client_app.update();
+    wait_for_client_connected(&mut client_app, &mut server_app);
 
     // The server's certificate is treatead as Unknown by the client, which stores it and continues the connection
     {
@@ -143,7 +142,7 @@ fn trust_on_first_use() {
 
         let mut client = client_app.world.resource_mut::<Client>();
         assert!(
-            client.connection().is_connected(),
+            client.is_connected(),
             "The default connection should be connected to the server"
         );
 
@@ -161,24 +160,17 @@ fn trust_on_first_use() {
                         ..Default::default()
                     },
                 ),
+                ChannelsConfiguration::default(),
             )
             .unwrap();
     }
 
     // Let the async runtime connection connect.
-    sleep(Duration::from_secs_f32(0.1));
-
-    // Connection & event propagation
-    server_app.update();
-    client_app.update();
+    wait_for_client_connected(&mut client_app, &mut server_app);
 
     {
         assert!(
-            client_app
-                .world
-                .resource_mut::<Client>()
-                .connection()
-                .is_connected(),
+            client_app.world.resource_mut::<Client>().is_connected(),
             "The default connection should be connected to the server"
         );
 
@@ -203,7 +195,7 @@ fn trust_on_first_use() {
     // Let the endpoint fully stop.
     sleep(Duration::from_secs_f32(0.1));
 
-    let (server_cert, _) = server_app
+    let server_cert = server_app
         .world
         .resource_mut::<Server>()
         .start_endpoint(
@@ -211,6 +203,7 @@ fn trust_on_first_use() {
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_IP.to_string(),
             },
+            ChannelsConfiguration::default(),
         )
         .unwrap();
 
@@ -225,6 +218,7 @@ fn trust_on_first_use() {
                         ..Default::default()
                     },
                 ),
+                ChannelsConfiguration::default(),
             )
             .unwrap();
     }
@@ -302,7 +296,7 @@ fn trust_on_first_use() {
 
         let client = client_app.world.resource::<Client>();
         assert!(
-            client.connection().is_connected() == false,
+            client.is_connected() == false,
             "The default connection should not be connected to the server"
         );
     }

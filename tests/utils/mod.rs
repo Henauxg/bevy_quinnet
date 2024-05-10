@@ -24,7 +24,7 @@ use bevy_quinnet::{
         ServerConfiguration,
     },
     shared::{
-        channel::{ChannelId, ChannelType},
+        channels::{ChannelId, ChannelType, ChannelsConfiguration},
         ClientId,
     },
 };
@@ -98,6 +98,7 @@ pub fn start_simple_connection(mut client: ResMut<Client>, port: Res<Port>) {
         .open_connection(
             default_client_configuration(port.0),
             CertificateVerificationMode::SkipVerification,
+            ChannelsConfiguration::default(),
         )
         .unwrap();
 }
@@ -109,6 +110,7 @@ pub fn start_listening(mut server: ResMut<Server>, port: Res<Port>) {
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_IP.to_string(),
             },
+            ChannelsConfiguration::default(),
         )
         .unwrap();
 }
@@ -179,18 +181,12 @@ pub fn start_simple_client_app(port: u16) -> App {
 
 pub fn wait_for_client_connected(client_app: &mut App, server_app: &mut App) -> ClientId {
     loop {
-        sleep(Duration::from_secs_f32(0.05));
         client_app.update();
-        if client_app
-            .world
-            .resource::<Client>()
-            .connection()
-            .is_connected()
-        {
+        server_app.update();
+        if client_app.world.resource::<Client>().is_connected() {
             break;
         }
     }
-    server_app.update();
     server_app
         .world
         .resource::<ServerTestData>()
@@ -246,7 +242,10 @@ pub fn open_server_channel(channel_type: ChannelType, app: &mut App) -> ChannelI
         .expect("Failed to open channel")
 }
 
-pub fn wait_for_client_message(client_id: ClientId, server_app: &mut App) -> SharedMessage {
+pub fn wait_for_client_message(
+    client_id: ClientId,
+    server_app: &mut App,
+) -> (ChannelId, SharedMessage) {
     let mut server = server_app.world.resource_mut::<Server>();
 
     loop {
@@ -255,20 +254,20 @@ pub fn wait_for_client_message(client_id: ClientId, server_app: &mut App) -> Sha
             .endpoint_mut()
             .receive_message_from::<SharedMessage>(client_id)
         {
-            Ok(Some(msg)) => return msg,
+            Ok(Some(channel_msg)) => return channel_msg,
             Ok(None) => (),
             Err(_) => panic!("Deserialization should be correct"),
         }
     }
 }
 
-pub fn wait_for_server_message(client_app: &mut App) -> SharedMessage {
+pub fn wait_for_server_message(client_app: &mut App) -> (ChannelId, SharedMessage) {
     let mut client = client_app.world.resource_mut::<Client>();
 
     loop {
         sleep(Duration::from_secs_f32(0.05));
         match client.connection_mut().receive_message::<SharedMessage>() {
-            Ok(Some(msg)) => return msg,
+            Ok(Some(channel_msg)) => return channel_msg,
             Ok(None) => (),
             Err(_) => panic!("Deserialization should be correct"),
         }
@@ -298,7 +297,7 @@ pub fn send_and_test_client_message(
         .unwrap();
 
     let server_received = wait_for_client_message(client_id, server_app);
-    assert_eq!(client_message, server_received);
+    assert_eq!((channel, client_message), server_received);
 }
 
 pub fn send_and_test_server_message(
@@ -324,5 +323,5 @@ pub fn send_and_test_server_message(
         .unwrap();
 
     let client_received = wait_for_server_message(client_app);
-    assert_eq!(server_message, client_received);
+    assert_eq!((channel, server_message), client_received);
 }
