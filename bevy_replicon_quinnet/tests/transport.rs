@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use bevy::{log::LogPlugin, prelude::*};
+use bevy::prelude::*;
 use bevy_quinnet::{
     client::{
         certificate::CertificateVerificationMode, connection::ConnectionConfiguration, Client,
@@ -44,7 +44,6 @@ fn connect_disconnect() {
     assert!(replicon_client.is_disconnected());
 
     server_wait_for_disconnect(&mut server_app);
-    server_app.update();
 
     let quinnet_server = server_app.world.resource::<Server>();
     assert_eq!(quinnet_server.endpoint().clients().len(), 0);
@@ -61,7 +60,6 @@ fn replication() {
     for app in [&mut server_app, &mut client_app] {
         app.add_plugins((
             MinimalPlugins,
-            LogPlugin::default(),
             RepliconPlugins.set(ServerPlugin {
                 tick_policy: TickPolicy::EveryFrame,
                 ..Default::default()
@@ -76,7 +74,6 @@ fn replication() {
 
     server_app.update();
     client_wait_for_message(&mut client_app);
-    client_app.update();
 
     assert_eq!(client_app.world.entities().len(), 1);
 }
@@ -107,7 +104,6 @@ fn server_event() {
 
     server_app.update();
     client_wait_for_message(&mut client_app);
-    client_app.update();
 
     let dummy_events = client_app.world.resource::<Events<DummyEvent>>();
     assert_eq!(dummy_events.len(), 1);
@@ -121,7 +117,6 @@ fn client_event() {
     for app in [&mut server_app, &mut client_app] {
         app.add_plugins((
             MinimalPlugins,
-            LogPlugin::default(),
             RepliconPlugins.set(ServerPlugin {
                 tick_policy: TickPolicy::EveryFrame,
                 ..Default::default()
@@ -134,10 +129,8 @@ fn client_event() {
     setup(&mut server_app, &mut client_app, port);
 
     client_app.world.send_event(DummyEvent);
-
     client_app.update();
     server_wait_for_message(&mut server_app);
-    server_app.update();
 
     let client_events = server_app
         .world
@@ -204,7 +197,6 @@ fn client_wait_for_message(client_app: &mut App) {
     loop {
         sleep(Duration::from_secs_f32(0.05));
         client_app.update();
-        info!("client_wait_for_message");
         if client_app
             .world
             .resource::<Client>()
@@ -221,7 +213,6 @@ fn server_wait_for_message(server_app: &mut App) {
     loop {
         sleep(Duration::from_secs_f32(0.05));
         server_app.update();
-        info!("server_wait_for_message");
         if server_app
             .world
             .resource::<Server>()
