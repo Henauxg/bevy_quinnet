@@ -22,7 +22,7 @@ use tokio::{
 };
 
 use crate::{
-    server::certificate::retrieve_certificate,
+    server::certificate::{retrieve_certificate, CertificateRetrievalMode, ServerCertificate},
     shared::{
         channels::{
             spawn_recv_channels_tasks, spawn_send_channels_tasks, Channel, ChannelAsyncMessage,
@@ -34,7 +34,11 @@ use crate::{
     },
 };
 
-use self::certificate::{CertificateRetrievalMode, ServerCertificate};
+#[cfg(feature = "shared-client-id")]
+use crate::server::client_id::spawn_client_id_sender;
+
+#[cfg(feature = "shared-client-id")]
+mod client_id;
 
 pub mod certificate;
 
@@ -135,7 +139,7 @@ pub(crate) enum ServerAsyncMessage {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ServerSyncMessage {
-    ClientConnectedAck(Option<ClientId>),
+    ClientConnectedAck(ClientId),
 }
 
 #[derive(Debug)]
@@ -227,7 +231,7 @@ impl ClientConnection {
 /// Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelType::OrderedReliable] channel.
 pub struct Endpoint {
     clients: HashMap<ClientId, ClientConnection>,
-    last_gen_client_id: ClientId,
+    client_id_gen: ClientId,
 
     opened_channels: HashMap<ChannelId, ChannelType>,
     available_channel_ids: BTreeSet<ChannelId>,
@@ -265,7 +269,7 @@ impl Endpoint {
     ) -> Self {
         Self {
             clients: HashMap::new(),
-            last_gen_client_id: 0,
+            client_id_gen: 0,
             opened_channels: HashMap::new(),
             default_channel: None,
             available_channel_ids: (0..255).collect(),
@@ -715,12 +719,12 @@ impl Endpoint {
             };
         }
 
-        self.last_gen_client_id += 1;
-        let client_id = self.last_gen_client_id;
+        self.client_id_gen += 1;
+        let client_id = self.client_id_gen;
 
         match connection
             .to_connection_send
-            .try_send(ServerSyncMessage::ClientConnectedAck(Some(client_id)))
+            .try_send(ServerSyncMessage::ClientConnectedAck(client_id))
         {
             Ok(_) => {
                 self.clients.insert(client_id, connection);
@@ -911,11 +915,18 @@ async fn client_connection_task(
 
     // Wait for the sync server response before spawning connection tasks.
     match from_sync_server_recv.recv().await {
-        Some(ServerSyncMessage::ClientConnectedAck(Some(client_id))) => {
+        Some(ServerSyncMessage::ClientConnectedAck(client_id)) => {
             info!(
                 "New connection from {}, client_id: {}",
                 connection_handle.remote_address(),
                 client_id
+            );
+
+            #[cfg(feature = "shared-client-id")]
+            spawn_client_id_sender(
+                connection_handle.clone(),
+                client_id,
+                from_channels_send.clone(),
             );
 
             // Spawn a task to listen for the underlying connection being closed

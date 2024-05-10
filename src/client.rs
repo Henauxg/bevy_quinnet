@@ -21,7 +21,7 @@ use tokio::{
 use crate::shared::{
     channels::{ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelsConfiguration},
     error::QuinnetError,
-    AsyncRuntime, InternalConnectionRef, DEFAULT_KILL_MESSAGE_QUEUE_SIZE,
+    AsyncRuntime, ClientId, InternalConnectionRef, DEFAULT_KILL_MESSAGE_QUEUE_SIZE,
     DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
@@ -44,7 +44,7 @@ pub const DEFAULT_KNOWN_HOSTS_FILE: &str = "quinnet/known_hosts";
 
 #[derive(Debug)]
 pub(crate) enum ClientAsyncMessage {
-    Connected(InternalConnectionRef),
+    Connected(InternalConnectionRef, Option<ClientId>),
     ConnectionClosed(ConnectionError),
     CertificateInteractionRequest {
         status: CertVerificationStatus,
@@ -280,9 +280,13 @@ fn update_sync_client(
     for (connection_id, connection) in &mut client.connections {
         while let Ok(message) = connection.from_async_client_recv.try_recv() {
             match message {
-                ClientAsyncMessage::Connected(internal_connection) => {
-                    connection.state = InternalConnectionState::Connected(internal_connection);
-                    connection_events.send(ConnectionEvent { id: *connection_id });
+                ClientAsyncMessage::Connected(internal_connection, client_id) => {
+                    connection.state =
+                        InternalConnectionState::Connected(internal_connection, client_id);
+                    connection_events.send(ConnectionEvent {
+                        id: *connection_id,
+                        client_id,
+                    });
                 }
                 ClientAsyncMessage::ConnectionClosed(_) => match connection.state {
                     InternalConnectionState::Disconnected => (),

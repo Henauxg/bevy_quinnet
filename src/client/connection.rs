@@ -20,13 +20,19 @@ use tokio::sync::{
     },
 };
 
+#[cfg(feature = "shared-client-id")]
+mod client_id;
+
+#[cfg(feature = "shared-client-id")]
+use client_id::receive_client_id;
+
 use crate::shared::{
     channels::{
         spawn_recv_channels_tasks, spawn_send_channels_tasks, Channel, ChannelAsyncMessage,
         ChannelId, ChannelSyncMessage, ChannelType,
     },
     error::QuinnetError,
-    InternalConnectionRef, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+    ClientId, InternalConnectionRef, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
 use super::{
@@ -43,7 +49,9 @@ pub type ConnectionLocalId = u64;
 #[derive(Event)]
 pub struct ConnectionEvent {
     pub id: ConnectionLocalId,
+    pub client_id: Option<ClientId>,
 }
+
 /// ConnectionLost event raised when the client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
 #[derive(Event)]
 pub struct ConnectionLostEvent {
@@ -206,7 +214,7 @@ impl From<&InternalConnectionState> for ConnectionState {
     fn from(internal_conn: &InternalConnectionState) -> Self {
         match internal_conn {
             InternalConnectionState::Connecting => ConnectionState::Connecting,
-            InternalConnectionState::Connected(_) => ConnectionState::Connected,
+            InternalConnectionState::Connected(_, _) => ConnectionState::Connected,
             InternalConnectionState::Disconnected => ConnectionState::Disconnected,
         }
     }
@@ -216,7 +224,7 @@ impl From<&InternalConnectionState> for ConnectionState {
 #[derive(Debug)]
 pub(crate) enum InternalConnectionState {
     Connecting,
-    Connected(InternalConnectionRef),
+    Connected(InternalConnectionRef, Option<ClientId>),
     Disconnected,
 }
 
@@ -434,13 +442,20 @@ impl Connection {
     /// Returns statistics about the current connection if connected.
     pub fn connection_stats(&self) -> Option<ConnectionStats> {
         match &self.state {
-            InternalConnectionState::Connected(connection) => Some(connection.stats()),
+            InternalConnectionState::Connected(connection, _) => Some(connection.stats()),
             _ => None,
         }
     }
 
     pub fn received_messages_count(&self) -> u64 {
         self.received_messages_count
+    }
+
+    pub fn client_id(&self) -> Option<ClientId> {
+        match &self.state {
+            InternalConnectionState::Connected(_, client_id) => *client_id,
+            _ => None,
+        }
     }
 
     /// Opens a channel of the requested [ChannelType] and returns its [ChannelId].
@@ -573,17 +588,6 @@ pub(crate) async fn connection_task(
             connection_id, e
         ),
         Ok(connection_handle) => {
-            info!(
-                "Connection {} connected to {}",
-                connection_id,
-                connection_handle.remote_address()
-            );
-
-            to_sync_client_send
-                .send(ClientAsyncMessage::Connected(connection_handle.clone()))
-                .await
-                .expect("Failed to signal connection to sync client");
-
             // Spawn a task to listen for the underlying connection being closed
             {
                 let conn = connection_handle.clone();
@@ -609,10 +613,30 @@ pub(crate) async fn connection_task(
             );
 
             spawn_send_channels_tasks(
-                connection_handle,
-                close_recv,
+                connection_handle.clone(),
+                close_recv.resubscribe(),
                 to_channels_recv,
                 from_channels_send,
+            );
+
+            let mut client_id = None;
+            #[cfg(feature = "shared-client-id")]
+            receive_client_id(&mut client_id, connection_handle.clone(), close_recv).await;
+
+            // Signal connection
+            to_sync_client_send
+                .send(ClientAsyncMessage::Connected(
+                    connection_handle.clone(),
+                    client_id,
+                ))
+                .await
+                .expect("Failed to signal connection to sync client");
+
+            info!(
+                "Connection {} connected to {} with client_id {:?}",
+                connection_id,
+                connection_handle.remote_address(),
+                client_id
             );
         }
     }

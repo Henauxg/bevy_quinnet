@@ -32,6 +32,11 @@ bytes = "1.5.0"
 base64 = "0.13.1"
 thiserror = "1.0.37"
 
+[features]
+default = ["shared-client-id"]
+# Server sends the client id to the client, client wait for it before being “connected”
+shared-client-id = []
+
 [dev-dependencies]
 bevy = { version = "0.13.0", default-features = false, features = [
 	"bevy_asset",
