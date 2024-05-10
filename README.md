@@ -122,7 +122,7 @@ fn handle_server_messages(
     mut client: ResMut<Client>,
     /*...*/
 ) {
-    while let Ok(Some(message)) = client.connection().receive_message::<ServerMessage>() {
+    while let Ok(Some(message)) = client.connection_mut().receive_message::<ServerMessage>() {
         match message {
             // Match on your own message types ...
             ServerMessage::ClientConnected { client_id, username} => {/*...*/}
@@ -205,21 +205,31 @@ There are currently 3 types of channels available when you send a message:
 - `UnorderedReliable`: ensure that messages sent are delivered, in any order (exemple usage: an animation trigger)
 - `Unreliable`: no guarantees on the delivery or the order of processing by the receiving end (exemple usage: an entity position sent every ticks)
 
-By default for the server as well as the client, Quinnet creates 1 channel instance of each type, each with their own `ChannelId`. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is an `OrderedReliable` channel.
+When you open a connection/endpoint, some channels are created directly according to the given `ChannelsConfiguration`.
+
+```rust
+// Default channels configuration contains only 1 channel of the OrderedReliable type, akin to a TCP connection.
+let channels_config = ChannelsConfiguration::default();
+// Creates 2 OrderedReliable channels, and 1 unreliable channel, with channel ids being respectively 0, 1 and 2.
+let channels_config = ChannelsConfiguration::from_types(vec![
+    ChannelType::OrderedReliable,
+    ChannelType::OrderedReliable,
+    ChannelType::Unreliable]);
+```
+
+Each channel is identified by its own `ChannelId`. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, the first opened channel becomes the defautl channel.
 
 ```rust
 let connection = client.connection();
 // No channel specified, default channel is used
 connection.send_message(message);
 // Specifying the channel id
-connection.send_message_on(ChannelId::UnorderedReliable, message);
+connection.send_message_on(channel_id, message);
 // Changing the default channel
-connection.set_default_channel(ChannelId::Unreliable);
+connection.set_default_channel(channel_id);
 ```
 
-One channel instance is more than enough for `UnorderedReliable` and `Unreliable` since messages are not ordered on those, in fact even if you tried to create more, Quinnet would just reuse the existing ones. This is why you can directly use their `ChannelId` when sending messages, as seen above.
-
-In some cases, you may however want to create more than one channel instance, it may be the case for `OrderedReliable` channels to avoid some [Head of line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking) issues. Channels can be opened & closed at any time.
+In some cases, you may want to create more than one channel instance of the same type. As an example, using multiple `OrderedReliable` channels to avoid some [Head of line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking) issues. Although channels can be defined through a `ChannelsConfiguration`, they can also currently be opened & closed at any time. You may have up to 256 differents channels opened simultaneously.
 
 ```rust
 // If you want to create more channels
@@ -317,7 +327,7 @@ Examples can be found in the [examples](examples) directory.
 
 ## Replicon integration
 
-Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/projectharmonia/bevy_replicon) with the provided [`bevy_replicon_quinnet`](https://github.com/Henauxg/bevy_quinnet/tree/main/bevy_replicon_quinnet). See its own [README](https://github.com/Henauxg/bevy_quinnet/tree/main/bevy_replicon_quinnet/README.md) for more information.
+Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/projectharmonia/bevy_replicon) with the provided [`bevy_replicon_quinnet`](https://github.com/Henauxg/bevy_quinnet/tree/main/bevy_replicon_quinnet).
 
 ## Compatible Bevy versions
 
