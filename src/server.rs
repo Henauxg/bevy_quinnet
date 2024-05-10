@@ -1063,3 +1063,25 @@ pub fn server_listening(server: Option<Res<Server>>) -> bool {
         None => false,
     }
 }
+
+/// Returns true if the following conditions are all true:
+/// - the server Resource exists and its endpoint is opened
+/// - the previous condition was false during the previous update
+pub fn server_just_opened(mut was_listening: Local<bool>, server: Option<Res<Server>>) -> bool {
+    let listening = server.map(|server| server.is_listening()).unwrap_or(false);
+
+    let just_opened = !*was_listening && listening;
+    *was_listening = listening;
+    just_opened
+}
+
+/// Returns true if the following conditions are all true:
+/// - the server Resource does not exists or its endpoint is closed
+/// - the previous condition was false during the previous update
+pub fn server_just_closed(mut was_listening: Local<bool>, server: Option<Res<Server>>) -> bool {
+    let closed = server.map(|server| !server.is_listening()).unwrap_or(true);
+
+    let just_closed = *was_listening && closed;
+    *was_listening = !closed;
+    just_closed
+}
