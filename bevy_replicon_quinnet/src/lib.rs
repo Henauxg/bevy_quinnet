@@ -26,8 +26,8 @@ impl Plugin for RepliconQuinnetServerPlugin {
                 PreUpdate,
                 (
                     (
-                        Self::set_running.run_if(bevy_quinnet::server::server_listening),
-                        Self::set_stopped.run_if(not(bevy_quinnet::server::server_listening)),
+                        Self::set_running.run_if(bevy_quinnet::server::server_just_opened),
+                        Self::set_stopped.run_if(not(bevy_quinnet::server::server_just_closed)),
                         Self::receive_packets.run_if(bevy_quinnet::server::server_listening),
                     )
                         .chain()
