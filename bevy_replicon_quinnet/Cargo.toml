@@ -1,0 +1,38 @@
+[package]
+name = "bevy_replicon_quinnet"
+version = "0.1.0"
+description = "Integration with bevy_quinnet for bevy_replicon"
+repository = "https://github.com/Henauxg/bevy_quinnet"
+documentation = "https://docs.rs/bevy_replicon_quinnet"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+keywords = ["gamedev", "networking", "quic", "bevy", "plugin"]
+categories = ["game-development", "network-programming"]
+readme = "../README.md"
+
+[dependencies]
+bevy_replicon = { version = "0.24" }
+bevy_quinnet = { version = "0.8.0-dev", path = ".." }
+bevy = { version = "0.13", default-features = false }
+
+[dev-dependencies]
+serde = "1.0"
+clap = { version = "4.1", features = ["derive"] }
+bevy = { version = "0.13", default-features = false, features = [
+    "bevy_text",
+    "bevy_ui",
+    "bevy_gizmos",
+    "x11",
+    "default_font",
+] }
+
+[[example]]
+name = "simple_box"
+path = "examples/simple_box.rs"
+
+[[example]]
+name = "tic_tac_toe"
+path = "examples/tic_tac_toe.rs"
+
+[[test]]
+name = "transport"
