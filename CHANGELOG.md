@@ -4,6 +4,7 @@
 
 - Added a new crate `bevy_replicon_quinnet` with tests and examples, providing an integration of bevy_quinnet as a replicon back-end.
 - Added a `shared-client-id` cargo feature: server sends the client id to the client, client wait for it before being “connected”
+- Added #![warn(missing_docs)]
 - Channels:
   - Changed `ChannelId` to be a `u8`
   - Some channels can be preconfigured to be opened on a client or server connection by using `ChannelsConfiguration`
@@ -31,10 +32,10 @@
   - Added `Debug`, `Copy`, `Clone` traits to the server's bevy events
   - Changed `update_sync_server` system to be `pub`
   - Added `server_listening`, `server_just_opened` and `server_just_closed` ergonomic system conditions
+  - Removed unnecessary `Clone` requirement from broadcast methods
 - Tests:
   - Updated to use the new channel API
   - Added a reconnection test
-- Fix minor code documentation
 - Moved `QuinnetError` to `shared::error`
 
 ## Version 0.7.0 (2024-02-18)
