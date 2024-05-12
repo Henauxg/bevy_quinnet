@@ -1,6 +1,6 @@
 # Changelog
 
-## Version 0.8.0
+## Version 0.8.0 (2024-05-12)
 
 - Added a new crate `bevy_replicon_quinnet` with tests and examples, providing an integration of bevy_quinnet as a replicon back-end.
 - Added a `shared-client-id` cargo feature: server sends the client id to the client, client wait for it before being “connected”
