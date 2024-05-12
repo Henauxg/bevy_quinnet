@@ -495,8 +495,10 @@ impl Connection {
         }
     }
 
-    /// Immediately prevents new messages from being sent on the connection and signal the connection to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
-    pub(crate) fn disconnect(&mut self) -> Result<(), QuinnetError> {
+    /// Immediately prevents new messages from being sent on the connection and signal the connection to closes all its background tasks.
+    ///
+    /// Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
+    pub fn disconnect(&mut self) -> Result<(), QuinnetError> {
         match &self.state {
             &InternalConnectionState::Disconnected => Ok(()),
             _ => {
