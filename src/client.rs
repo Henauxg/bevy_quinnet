@@ -180,7 +180,7 @@ impl QuinnetClient {
         self.connections.iter_mut()
     }
 
-    /// Open a connection to a server with the given [EndpointConfiguration], [CertificateVerificationMode] and [ChannelsConfiguration]. The connection will raise an event when fully connected, see [ConnectionEvent]
+    /// Open a connection to a server with the given [ClientEndpointConfiguration], [CertificateVerificationMode] and [ChannelsConfiguration]. The connection will raise an event when fully connected, see [ConnectionEvent]
     ///
     /// Returns the [ConnectionLocalId]
     pub fn open_connection(
