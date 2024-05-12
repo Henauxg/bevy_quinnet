@@ -30,7 +30,8 @@ use crate::{
         },
         error::QuinnetError,
         AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncUpdate,
-        DEFAULT_KEEP_ALIVE_INTERVAL_S, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+        DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE, DEFAULT_KEEP_ALIVE_INTERVAL_S,
+        DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
     },
 };
 
@@ -40,9 +41,8 @@ use crate::server::client_id::spawn_client_id_sender;
 #[cfg(feature = "shared-client-id")]
 mod client_id;
 
+/// Module for the server's certificate features
 pub mod certificate;
-
-pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 
 /// Connection event raised when a client just connected to the server. Raised in the CoreStage::PreUpdate stage.
 #[derive(Event, Debug, Copy, Clone)]
@@ -142,6 +142,7 @@ pub(crate) enum ServerSyncMessage {
     ClientConnectedAck(ClientId),
 }
 
+/// Represents a connection from a quinnet client to a server's [`Endpoint`]
 #[derive(Debug)]
 pub struct ClientConnection {
     connection_handle: InternalConnectionRef,
@@ -244,6 +245,7 @@ pub struct Endpoint {
     stats: EndpointStats,
 }
 
+/// Basic quinnet stats about this server endpoint
 #[derive(Default)]
 pub struct EndpointStats {
     received_messages_count: u64,
@@ -251,12 +253,15 @@ pub struct EndpointStats {
     disconnect_count: u32,
 }
 impl EndpointStats {
+    /// Returns how many messages were received (read) on this endpoint
     pub fn received_messages_count(&self) -> u64 {
         self.received_messages_count
     }
+    /// Returns how many connection events occurred on this endpoint
     pub fn connect_count(&self) -> u32 {
         self.connect_count
     }
+    /// Returns how many disconnections events occurred on this endpoint
     pub fn disconnect_count(&self) -> u32 {
         self.disconnect_count
     }
@@ -286,8 +291,9 @@ impl Endpoint {
 
     /// Attempt to deserialise a message into type `T`.
     ///
-    /// Will return [`Err`] if the bytes accumulated from the client aren't deserializable to T.
-    /// /// Will also return [`Err`] if this client is disconnected.
+    /// Will return [`Err`] if:
+    /// - the bytes accumulated from the client aren't deserializable to T.
+    /// - or if this client is disconnected.
     pub fn receive_message_from<T: serde::de::DeserializeOwned>(
         &mut self,
         client_id: ClientId,
@@ -315,7 +321,13 @@ impl Endpoint {
         }
     }
 
-    /// Attempt to receive a full payload sent by the specified client.
+    /// Attempts to receive a full payload sent by the specified client.
+    ///
+    /// - Returns an [`Ok`] result containg [`Some`] if there is a message from the client in the message buffer
+    /// - Returns an [`Ok`] result containg [`None`] if there is no message from the client in the message buffer
+    /// - Can return an [`Err`] if:
+    ///   - the connection is closed
+    ///   - the client id is not valid
     pub fn receive_payload_from(
         &mut self,
         client_id: ClientId,
@@ -346,7 +358,7 @@ impl Endpoint {
         }
     }
 
-    /// Queue a message to be sent to the specified client on the default channel.
+    /// Same as [Endpoint::send_message_on] but on the default channel
     pub fn send_message<T: serde::Serialize>(
         &self,
         client_id: ClientId,
@@ -358,7 +370,13 @@ impl Endpoint {
         }
     }
 
-    /// Queue a message to be sent to the specified client on the specified channel.
+    /// Sends a message to the specified client on the specified channel
+    ///
+    /// Will return an [`Err`] if:
+    /// - the specified channel does not exist/is closed
+    /// - or if the client is disconnected
+    /// - or if a serialization error occurs
+    /// - (or if the message queue is full)
     pub fn send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &self,
         client_id: ClientId,
@@ -392,6 +410,7 @@ impl Endpoint {
         }
     }
 
+    /// Same as [Endpoint::send_group_message_on] but on the default channel
     pub fn send_group_message<'a, I: Iterator<Item = &'a ClientId>, T: serde::Serialize>(
         &self,
         client_ids: I,
@@ -403,6 +422,13 @@ impl Endpoint {
         }
     }
 
+    /// Sends the message to all the provided clients on the specified channel.
+    ///
+    /// Will return an [`Err`] if:
+    /// - the channel does not exist/is closed
+    /// - or if a client is disconnected
+    /// - or if a serialization error occurs
+    /// - (or if a message queue is full)
     pub fn send_group_message_on<
         'a,
         I: Iterator<Item = &'a ClientId>,
@@ -427,6 +453,7 @@ impl Endpoint {
         }
     }
 
+    /// Same as [Endpoint::send_group_message] but will log the error instead of returning it
     pub fn try_send_group_message<'a, I: Iterator<Item = &'a ClientId>, T: serde::Serialize>(
         &self,
         client_ids: I,
@@ -438,6 +465,7 @@ impl Endpoint {
         }
     }
 
+    /// Same as [Endpoint::send_group_message_on] but will log the error instead of returning it
     pub fn try_send_group_message_on<
         'a,
         I: Iterator<Item = &'a ClientId>,
@@ -455,6 +483,7 @@ impl Endpoint {
         }
     }
 
+    /// Same as [Endpoint::broadcast_message_on] but on the default channel
     pub fn broadcast_message<T: serde::Serialize>(&self, message: T) -> Result<(), QuinnetError> {
         match self.default_channel {
             Some(channel) => self.broadcast_message_on(channel, message),
@@ -462,6 +491,12 @@ impl Endpoint {
         }
     }
 
+    /// Sends the message to all connected clients on the specified channel.
+    ///
+    /// Will return an [`Err`] if:
+    /// - the channel does not exist/is closed
+    /// - or if a serialization error occurs
+    /// - (or if a message queue is full)
     pub fn broadcast_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &self,
         channel_id: C,
@@ -473,6 +508,7 @@ impl Endpoint {
         }
     }
 
+    /// Same as [Endpoint::broadcast_message] but will log the error instead of returning it
     pub fn try_broadcast_message<T: serde::Serialize>(&self, message: T) {
         match self.broadcast_message(message) {
             Ok(_) => {}
@@ -480,6 +516,7 @@ impl Endpoint {
         }
     }
 
+    /// Same as [Endpoint::broadcast_message_on] but will log the error instead of returning it
     pub fn try_broadcast_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &self,
         channel_id: C,
@@ -491,7 +528,7 @@ impl Endpoint {
         }
     }
 
-    /// Sends the payload to all connected clients on the default channel.
+    /// Same as [Endpoint::broadcast_payload_on] but on the default channel
     pub fn broadcast_payload<T: Into<Bytes> + Clone>(
         &self,
         payload: T,
@@ -503,6 +540,10 @@ impl Endpoint {
     }
 
     /// Sends the payload to all connected clients on the specified channel.
+    ///
+    /// Will return an [`Err`] if:
+    /// - the channel does not exist/is closed
+    /// - (or if a message queue is full)
     pub fn broadcast_payload_on<T: Into<Bytes> + Clone, C: Into<ChannelId>>(
         &self,
         channel_id: C,
@@ -510,7 +551,7 @@ impl Endpoint {
     ) -> Result<(), QuinnetError> {
         let payload: Bytes = payload.into();
         let channel_id = channel_id.into();
-        for (_, client_connection) in self.clients.iter() {
+        for client_connection in self.clients.values() {
             match client_connection.channels.get(channel_id as usize) {
                 Some(Some(channel)) => channel.send_payload(payload.clone())?,
                 Some(None) => return Err(QuinnetError::ChannelClosed),
@@ -520,6 +561,7 @@ impl Endpoint {
         Ok(())
     }
 
+    /// Same as [Endpoint::broadcast_payload] but will log the error instead of returning it
     pub fn try_broadcast_payload<T: Into<Bytes> + Clone>(&self, payload: T) {
         match self.broadcast_payload(payload) {
             Ok(_) => {}
@@ -527,6 +569,7 @@ impl Endpoint {
         }
     }
 
+    /// Same as [Endpoint::broadcast_payload_on] but will log the error instead of returning it
     pub fn try_broadcast_payload_on<T: Into<Bytes> + Clone, C: Into<ChannelId>>(
         &self,
         channel_id: C,
@@ -538,6 +581,7 @@ impl Endpoint {
         }
     }
 
+    /// Same as [Endpoint::send_payload] but on the default channel
     pub fn send_payload<T: Into<Bytes>>(
         &self,
         client_id: ClientId,
@@ -549,6 +593,12 @@ impl Endpoint {
         }
     }
 
+    /// Sends the payload to the specified client on the specified channel
+    ///
+    /// Will return an [`Err`] if:
+    /// - the channel does not exist/is closed
+    /// - or if the client is disconnected
+    /// - (or if the message queue is full)
     pub fn send_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &self,
         client_id: ClientId,
@@ -567,6 +617,7 @@ impl Endpoint {
         }
     }
 
+    /// Same as [Endpoint::send_payload] but will log the error instead of returning it
     pub fn try_send_payload<T: Into<Bytes>>(&self, client_id: ClientId, payload: T) {
         match self.send_payload(client_id, payload) {
             Ok(_) => {}
@@ -574,6 +625,7 @@ impl Endpoint {
         }
     }
 
+    /// Same as [Endpoint::send_payload_on] but will log the error instead of returning it
     pub fn try_send_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &self,
         client_id: ClientId,
@@ -601,7 +653,7 @@ impl Endpoint {
         }
     }
 
-    /// Same as disconnect_client but errors are logged instead of returned
+    /// Same as [Endpoint::disconnect_client] but errors are logged instead of returned
     pub fn try_disconnect_client(&mut self, client_id: ClientId) {
         match self.disconnect_client(client_id) {
             Ok(_) => (),
@@ -612,7 +664,7 @@ impl Endpoint {
         }
     }
 
-    /// Calls disconnect_client on all connected clients
+    /// Calls [Endpoint::disconnect_client] on all connected clients
     pub fn disconnect_all_clients(&mut self) -> Result<(), QuinnetError> {
         for client_id in self.clients.keys().cloned().collect::<Vec<ClientId>>() {
             self.disconnect_client(client_id)?;
@@ -628,6 +680,7 @@ impl Endpoint {
         }
     }
 
+    /// Returns statistics about the server's endpoint
     pub fn endpoint_stats(&self) -> &EndpointStats {
         &self.stats
     }
@@ -738,6 +791,9 @@ impl Endpoint {
     }
 }
 
+/// Main quinnet server. Can listen to multiple [`ClientConnection`] from multiple quinnet clients
+///
+/// Created by the [`QuinnetServerPlugin`] or inserted manually via a call to [`bevy::prelude::World::insert_resource`]. When created, it will look for an existing [`AsyncRuntime`] resource and use it or create one itself.
 #[derive(Resource)]
 pub struct QuinnetServer {
     runtime: runtime::Handle,
@@ -767,18 +823,26 @@ impl QuinnetServer {
         }
     }
 
+    /// Returns a reference to the server's endpoint.
+    ///
+    /// **Panics** if the endpoint is not opened
     pub fn endpoint(&self) -> &Endpoint {
         self.endpoint.as_ref().unwrap()
     }
 
+    /// Returns a mutable reference to the server's endpoint
+    ///
+    /// **Panics** if the endpoint is not opened
     pub fn endpoint_mut(&mut self) -> &mut Endpoint {
         self.endpoint.as_mut().unwrap()
     }
 
+    /// Returns an optional reference to the server's endpoint
     pub fn get_endpoint(&self) -> Option<&Endpoint> {
         self.endpoint.as_ref()
     }
 
+    /// Returns an optional mutable reference to the server's endpoint
     pub fn get_endpoint_mut(&mut self) -> Option<&mut Endpoint> {
         self.endpoint.as_mut()
     }
@@ -800,7 +864,7 @@ impl QuinnetServer {
         )?;
         Arc::get_mut(&mut server_config.transport)
             .ok_or(QuinnetError::LockAcquisitionFailure)?
-            .keep_alive_interval(Some(Duration::from_secs(DEFAULT_KEEP_ALIVE_INTERVAL_S)));
+            .keep_alive_interval(Some(DEFAULT_KEEP_ALIVE_INTERVAL_S));
 
         let (to_sync_server_send, from_async_server_recv) =
             mpsc::channel::<ServerAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
@@ -969,7 +1033,9 @@ async fn client_connection_task(
     }
 }
 
-// Receive messages from the async server tasks and update the sync server.
+/// Receive messages from the async server tasks and update the sync server.
+///
+/// This system generates the server's bevy events
 pub fn update_sync_server(
     mut server: ResMut<QuinnetServer>,
     mut connection_events: EventWriter<ConnectionEvent>,
@@ -1021,6 +1087,9 @@ pub fn update_sync_server(
     }
 }
 
+/// Quinnet Server's plugin
+///
+/// It is possbile to add both this plugin and the [`crate::client::QuinnetClientPlugin`]
 pub struct QuinnetServerPlugin {
     /// In order to have more control and only do the strict necessary, which is registering systems and events in the Bevy schedule, `initialize_later` can be set to `true`. This will prevent the plugin from initializing the `Server` Resource.
     /// Server systems are scheduled to only run if the `Server` resource exists.

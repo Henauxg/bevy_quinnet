@@ -35,7 +35,8 @@ use crate::shared::{
         ChannelId, ChannelSyncMessage, ChannelType, ChannelsConfiguration,
     },
     error::QuinnetError,
-    ClientId, InternalConnectionRef, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+    ClientId, InternalConnectionRef, DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE,
+    DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
 use super::{
@@ -43,7 +44,7 @@ use super::{
         load_known_hosts_store_from_config, CertificateVerificationMode, SkipServerVerification,
         TofuServerVerification,
     },
-    ClientAsyncMessage, QuinnetConnectionError, DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE,
+    ClientAsyncMessage, QuinnetConnectionError,
 };
 
 /// Alias type for a local id of a connection
@@ -224,8 +225,13 @@ impl ClientEndpointConfiguration {
 /// Current state of a client connection
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ConnectionState {
+    /// The connection is currently attempting to connect to the specified server
     Connecting,
+    /// The connection is currently connected to the specified server
     Connected,
+    /// The connection is currently disconnected from the specified server.
+    ///
+    /// It may have never been connected if the connection failed.
     Disconnected,
 }
 impl From<&InternalConnectionState> for ConnectionState {
@@ -292,6 +298,7 @@ pub(crate) fn create_async_channels() -> (
     )
 }
 
+/// A connection from a [`crate::client::QuinnetClient`] to a [`crate::server::QuinnetServer`]
 #[derive(Debug)]
 pub struct Connection {
     /// Non networked identifier
@@ -354,6 +361,12 @@ impl Connection {
         }
     }
 
+    /// Attempt to deserialise a message into type `T`.
+    ///
+    /// Will return an [`Err`] if:
+    /// - the bytes accumulated from the server aren't deserializable to T
+    /// - or if the client is disconnected
+    /// - (or if the message queue is full)
     pub fn receive_message<T: serde::de::DeserializeOwned>(
         &mut self,
     ) -> Result<Option<(ChannelId, T)>, QuinnetError> {
@@ -379,6 +392,7 @@ impl Connection {
         }
     }
 
+    /// Same as [Connection::send_message_on] but on the default channel
     pub fn send_message<T: serde::Serialize>(&self, message: T) -> Result<(), QuinnetError> {
         match self.default_channel {
             Some(channel) => self.send_message_on(channel, message),
@@ -386,6 +400,13 @@ impl Connection {
         }
     }
 
+    /// Queues a message to be sent to the server on the specified channel
+    ///
+    /// Will return an [`Err`] if:
+    /// - the specified channel does not exist/is closed
+    /// - or if the client is disconnected
+    /// - or if a serialization error occurs
+    /// - (or if the message queue is full)
     pub fn send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &self,
         channel_id: C,
@@ -425,6 +446,7 @@ impl Connection {
         }
     }
 
+    /// Same as [Connection::send_payload_on] but on the default channel
     pub fn send_payload<T: Into<Bytes>>(&self, payload: T) -> Result<(), QuinnetError> {
         match self.default_channel {
             Some(channel) => self.send_payload_on(channel, payload),
@@ -432,6 +454,12 @@ impl Connection {
         }
     }
 
+    /// Sends the payload to the server on the specified channel
+    ///
+    /// Will return an [`Err`] if:
+    /// - the channel does not exist/is closed
+    /// - or if the client is disconnected
+    /// - (or if the message queue is full)
     pub fn send_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &self,
         channel_id: C,
@@ -468,6 +496,11 @@ impl Connection {
         }
     }
 
+    /// Attempts to receive a full payload sent by the server.
+    ///
+    /// - Returns an [`Ok`] result containg [`Some`] if there is a message from the server in the message buffer
+    /// - Returns an [`Ok`] result containg [`None`] if there is no message from the server in the message buffer
+    /// - Can return an [`Err`] if the connection is closed
     pub fn receive_payload(&mut self) -> Result<Option<(ChannelId, Bytes)>, QuinnetError> {
         match &self.state {
             InternalConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
@@ -514,6 +547,7 @@ impl Connection {
         }
     }
 
+    /// Same as [Connection::disconnect] but will log the error instead of returning it
     pub(crate) fn try_disconnect(&mut self) {
         match &self.disconnect() {
             Ok(_) => (),
@@ -534,10 +568,14 @@ impl Connection {
         }
     }
 
+    /// Returns how many messages were read from this connection currently
     pub fn received_messages_count(&self) -> u64 {
         self.received_messages_count
     }
 
+    /// Returns the client_id assigned to this client by the server.
+    ///
+    /// Will be [None] if the `shared-client-id` feature is disabled
     pub fn client_id(&self) -> Option<ClientId> {
         match &self.state {
             InternalConnectionState::Connected(_, client_id) => *client_id,
@@ -615,10 +653,12 @@ impl Connection {
         Ok(())
     }
 
+    /// Returns the configuration used by this connection
     pub fn endpoint_configuration(&self) -> &ClientEndpointConfiguration {
         &self.endpoint_config
     }
 
+    /// Returns the certificate verification configuration used by this connection
     pub fn certificate_verification_mode(&self) -> &CertificateVerificationMode {
         &self.cert_mode
     }

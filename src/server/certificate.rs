@@ -11,8 +11,11 @@ use crate::shared::{certificate::CertificateFingerprint, error::QuinnetError};
 /// Represents the origin of a certificate.
 #[derive(Debug, Clone)]
 pub enum CertOrigin {
-    /// Indicates that the certificate was generated. The `server_hostname` field contains the hostname used when generating the certificate.
-    Generated { server_hostname: String },
+    /// Indicates that the certificate was generated.
+    Generated {
+        /// Contains the hostname used when generating the certificate.
+        server_hostname: String,
+    },
     /// Indicates that the certificate was loaded from a file.
     Loaded,
 }
@@ -20,16 +23,28 @@ pub enum CertOrigin {
 /// How the server should retrieve its certificate.
 #[derive(Debug, Clone)]
 pub enum CertificateRetrievalMode {
-    /// The server will always generate a new self-signed certificate when starting up, using `server_hostname` as the subject of the certificate.
-    GenerateSelfSigned { server_hostname: String },
+    /// The server will always generate a new self-signed certificate when starting up,
+    GenerateSelfSigned {
+        /// Used as the subject of the certificate.
+        server_hostname: String,
+    },
     /// Try to load cert & key from files `cert_file``and `key_file`.
-    LoadFromFile { cert_file: String, key_file: String },
-    /// Try to load cert & key from files `cert_file``and `key_file`.
-    /// If the files do not exist, generate a self-signed certificate using `server_hostname` as the subject of the certificate. Optionally save it to disk if `save_on_disk` is enabled.
-    LoadFromFileOrGenerateSelfSigned {
+    LoadFromFile {
+        /// Path of the file containing the certificate in PEM form
         cert_file: String,
+        /// Path of the file containing the private key in PEM form
         key_file: String,
+    },
+    /// Try to load cert & key from files `cert_file``and `key_file`.
+    /// If the files do not exist, generates a self-signed certificate.
+    LoadFromFileOrGenerateSelfSigned {
+        /// Path of the file containing the certificate in PEM form
+        cert_file: String,
+        /// Path of the file containing the private key in PEM form
+        key_file: String,
+        /// Saves the generated certificate to disk if enabled.
         save_on_disk: bool,
+        /// Used as the subject of the certificate.
         server_hostname: String,
     },
 }

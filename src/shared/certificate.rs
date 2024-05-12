@@ -5,10 +5,12 @@ use std::fmt;
 pub struct CertificateFingerprint([u8; 32]);
 
 impl CertificateFingerprint {
+    /// Wraps a buffer into a [`CertificateFingerprint`]
     pub fn new(buf: [u8; 32]) -> Self {
         CertificateFingerprint(buf)
     }
 
+    /// Encodes the wrapped buffer content to base64
     pub fn to_base64(&self) -> String {
         base64::encode(&self.0)
     }

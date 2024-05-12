@@ -17,12 +17,14 @@ use crate::shared::{certificate::CertificateFingerprint, error::QuinnetError};
 
 use super::{ClientAsyncMessage, ConnectionLocalId, DEFAULT_KNOWN_HOSTS_FILE};
 
+/// Default certificate behavior is to abort the connection
 pub const DEFAULT_CERT_VERIFIER_BEHAVIOUR: CertVerifierBehaviour =
     CertVerifierBehaviour::ImmediateAction(CertVerifierAction::AbortConnection);
 
 /// Event raised when a user/app interaction is needed for the server's certificate validation
 #[derive(Event)]
 pub struct CertInteractionEvent {
+    /// Local id of the concerned connection
     pub connection_id: ConnectionLocalId,
     /// The current status of the verification
     pub status: CertVerificationStatus,
@@ -33,6 +35,7 @@ pub struct CertInteractionEvent {
 }
 
 impl CertInteractionEvent {
+    /// Handler to call on a [`CertInteractionEvent`] to apply a specific [`CertVerifierAction`]
     pub fn apply_cert_verifier_action(
         &self,
         action: CertVerifierAction,
@@ -52,15 +55,20 @@ impl CertInteractionEvent {
 /// Event raised when a new certificate is trusted
 #[derive(Event)]
 pub struct CertTrustUpdateEvent {
+    /// Local id of the concerned connection
     pub connection_id: ConnectionLocalId,
+    /// Info about the newly trusted certificate
     pub cert_info: CertVerificationInfo,
 }
 
 /// Event raised when a connection is aborted during the certificate verification
 #[derive(Event)]
 pub struct CertConnectionAbortEvent {
+    /// Local id of the concerned connection
     pub connection_id: ConnectionLocalId,
+    /// The status of the certificate verification before aborting the connection
     pub status: CertVerificationStatus,
+    /// Info about the certificate
     pub cert_info: CertVerificationInfo,
 }
 
@@ -156,6 +164,7 @@ impl fmt::Display for ServerName {
     }
 }
 
+/// Describes how a certificate verifier should act when facing a certain [`CertVerificationStatus`]
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CertVerifierBehaviour {
     /// Raises an event to the client app (containing the cert info) and waits for an API call
@@ -164,6 +173,7 @@ pub enum CertVerifierBehaviour {
     ImmediateAction(CertVerifierAction),
 }
 
+/// Possible actions that a certificate verifier or a user can take for a certifcate & connection
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CertVerifierAction {
     /// Abort the connection and raise an error (containing the cert info)

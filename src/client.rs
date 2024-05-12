@@ -31,19 +31,24 @@ use self::{
     },
 };
 
+/// Module for the client's certificate features
 pub mod certificate;
+/// Module for a client's connection to a server
 pub mod connection;
 
-pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
+/// Default path for the known hosts file
 pub const DEFAULT_KNOWN_HOSTS_FILE: &str = "quinnet/known_hosts";
 
 /// Possible errors occuring while a client is connecting to a server
 #[derive(thiserror::Error, Debug)]
 pub enum QuinnetConnectionError {
+    /// A quic error occurred during the connection
     #[error("Quic connection error")]
     QuicConnectionError(#[from] quinn::ConnectionError),
+    /// Client received an invalid client id
     #[error("Client received an invalid client id")]
     InvalidClientId,
+    /// Client did not receive its client id
     #[error("Client did not receive its client id")]
     ClientIdNotReceived,
 }
@@ -65,6 +70,9 @@ pub(crate) enum ClientAsyncMessage {
     },
 }
 
+/// Main quinnet client. Can open multiple [`Connection`] with multiple quinnet servers
+///
+/// Created by the [`QuinnetClientPlugin`] or inserted manually via a call to [`bevy::prelude::World::insert_resource`]. When created, it will look for an existing [`AsyncRuntime`] resource and use it or create one itself.
 #[derive(Resource)]
 pub struct QuinnetClient {
     runtime: runtime::Handle,
@@ -279,7 +287,9 @@ impl QuinnetClient {
     }
 }
 
-// Receive messages from the async client tasks and update the sync client.
+/// Receive messages from the async client tasks and update the sync client.
+///
+/// This system generates the client's bevy events
 pub fn update_sync_client(
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_failed_events: EventWriter<ConnectionFailedEvent>,
@@ -355,6 +365,9 @@ pub fn update_sync_client(
     }
 }
 
+/// Quinnet Server's plugin
+///
+/// It is possbile to add both this plugin and the [`crate::server::QuinnetServerPlugin`]
 pub struct QuinnetClientPlugin {
     /// In order to have more control and only do the strict necessary, which is registering systems and events in the Bevy schedule, `initialize_later` can be set to `true`. This will prevent the plugin from initializing the `Client` Resource.
     /// Client systems are scheduled to only run if the `Client` resource exists.

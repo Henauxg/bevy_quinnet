@@ -23,12 +23,15 @@ use self::{
 mod reliable;
 mod unreliable;
 
+/// Id of an opened channel
 pub type ChannelId = u8;
+/// Maximum number of channels that can be opened simultaneously
 pub const MAX_CHANNEL_COUNT: usize = u8::MAX as usize + 1;
 
 pub(crate) const CHANNEL_ID_LEN: usize = 1;
 pub(crate) const PROTOCOL_HEADER_LEN: usize = CHANNEL_ID_LEN;
 
+/// Type of a channel, offering different delivery guarantees.
 #[derive(Debug, Copy, Clone)]
 pub enum ChannelType {
     /// An OrderedReliable channel ensures that messages sent are delivered, and are processed by the receiving end in the same order as they were sent.
@@ -91,6 +94,7 @@ impl Channel {
     }
 }
 
+/// Stores a configuration that represents multiple channels to be opened by a [`crate::client::connection::Connection`] or [`crate::server::Endpoint`]
 #[derive(Debug, Clone)]
 pub struct ChannelsConfiguration {
     channels: Vec<ChannelType>,
@@ -105,12 +109,14 @@ impl Default for ChannelsConfiguration {
 }
 
 impl ChannelsConfiguration {
+    /// New empty configuration
     pub fn new() -> Self {
         Self {
             channels: Vec::new(),
         }
     }
 
+    /// New configuration from a simple list of [`ChannelType`]. Opened channels (and their [`ChannelId`]) will have the same order as in this collection
     pub fn from_types(
         channel_types: Vec<ChannelType>,
     ) -> Result<ChannelsConfiguration, QuinnetError> {
@@ -123,6 +129,7 @@ impl ChannelsConfiguration {
         }
     }
 
+    /// Adds one element to the configuration from a [`ChannelType`]. Opened channels (and their [`ChannelId`]) will have the same order as their insertion order.
     pub fn add(&mut self, channel_type: ChannelType) -> Option<ChannelId> {
         if self.channels.len() < MAX_CHANNEL_COUNT {
             self.channels.push(channel_type);
