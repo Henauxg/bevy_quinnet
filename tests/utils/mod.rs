@@ -50,6 +50,8 @@ pub struct ClientTestData {
 pub struct ServerTestData {
     pub connection_events_received: u64,
     pub last_connected_client_id: Option<ClientId>,
+    pub connection_lost_events_received: u64,
+    pub last_disconnected_client_id: Option<ClientId>,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -153,11 +155,16 @@ pub fn handle_client_events(
 
 pub fn handle_server_events(
     mut connection_events: EventReader<server::ConnectionEvent>,
+    mut connection_lost_events: EventReader<server::ConnectionLostEvent>,
     mut test_data: ResMut<ServerTestData>,
 ) {
-    for connected_event in connection_events.read() {
+    for event in connection_events.read() {
         test_data.connection_events_received += 1;
-        test_data.last_connected_client_id = Some(connected_event.id);
+        test_data.last_connected_client_id = Some(event.id);
+    }
+    for event in connection_lost_events.read() {
+        test_data.connection_lost_events_received += 1;
+        test_data.last_disconnected_client_id = Some(event.id);
     }
 }
 
@@ -191,6 +198,27 @@ pub fn wait_for_client_connected(client_app: &mut App, server_app: &mut App) -> 
         .world
         .resource::<ServerTestData>()
         .last_connected_client_id
+        .expect("A client should have connected")
+}
+
+pub fn wait_for_all_clients_disconnected(server_app: &mut App) -> ClientId {
+    loop {
+        server_app.update();
+        if server_app
+            .world
+            .resource::<QuinnetServer>()
+            .endpoint()
+            .clients()
+            .len()
+            == 0
+        {
+            break;
+        }
+    }
+    server_app
+        .world
+        .resource::<ServerTestData>()
+        .last_disconnected_client_id
         .expect("A client should have connected")
 }
 

@@ -96,3 +96,75 @@ fn connection_with_two_apps() {
         .expect("There should be a server message");
     assert_eq!(server_message, sent_server_message);
 }
+
+///////////////////////////////////////////////////////////
+///                                                     ///
+///                        Test                         ///
+///                                                     ///
+///////////////////////////////////////////////////////////
+
+#[test]
+fn reconnection() {
+    let port = 6005; // TODO Use port 0 and retrieve the port used by the server.
+
+    let mut client_app = start_simple_client_app(port);
+    let mut server_app = start_simple_server_app(port);
+
+    let client_id_1 = wait_for_client_connected(&mut client_app, &mut server_app);
+
+    assert_eq!(
+        server_app
+            .world
+            .resource::<ServerTestData>()
+            .connection_events_received,
+        1
+    );
+
+    assert_eq!(
+        client_app
+            .world
+            .resource::<ClientTestData>()
+            .connection_events_received,
+        1
+    );
+
+    client_app
+        .world
+        .resource_mut::<QuinnetClient>()
+        .connection_mut()
+        .disconnect()
+        .unwrap();
+
+    let last_disconnected_client_id = wait_for_all_clients_disconnected(&mut server_app);
+    assert_eq!(last_disconnected_client_id, client_id_1);
+
+    client_app
+        .world
+        .resource_mut::<QuinnetClient>()
+        .connection_mut()
+        .reconnect()
+        .unwrap();
+
+    let client_id_2 = wait_for_client_connected(&mut client_app, &mut server_app);
+
+    assert_ne!(
+        client_id_1, client_id_2,
+        "The two connections should be assigned a different client id"
+    );
+
+    assert_eq!(
+        server_app
+            .world
+            .resource::<ServerTestData>()
+            .connection_events_received,
+        2
+    );
+
+    assert_eq!(
+        client_app
+            .world
+            .resource::<ClientTestData>()
+            .connection_events_received,
+        2
+    );
+}
