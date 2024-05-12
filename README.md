@@ -72,10 +72,6 @@ The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channel
 
 This is a bird-eye view of the features/tasks that will probably be worked on next (in no particular order):
 
-- [x] [Previous roadmap tasks](ROADMAP.md)
-- [x] Security: More certificates support, see [certificates-and-server-authentication](#certificates-and-server-authentication)
-- [x] Feature: Implement `unordered` & `ordered` `reliable` message channels on client & server, see [channels](#channels)
-- [x] Feature: Implement `unreliable` message channel on client & server
 - [ ] Feature: Implement `unreliable` messages larger than the path MTU from client & server
 - [ ] Performance: feed multiples messages before flushing ordered reliable channels
 - [ ] Clean: Rework the error handling in the async back-end
