@@ -11,7 +11,7 @@ use bevy_quinnet::{
         QuinnetClient, QuinnetClientPlugin, DEFAULT_KNOWN_HOSTS_FILE,
     },
     server::{
-        certificate::CertificateRetrievalMode, QuinnetServerPlugin, QuinnetServer, ServerConfiguration,
+        certificate::CertificateRetrievalMode, QuinnetServerPlugin, QuinnetServer, ServerEndpointConfiguration,
     },
     shared::channels::ChannelsConfiguration,
 };
@@ -80,7 +80,7 @@ fn trust_on_first_use() {
         let mut server = server_app.world.resource_mut::<QuinnetServer>();
         let server_cert = server
             .start_endpoint(
-                ServerConfiguration::from_ip("0.0.0.0".parse().unwrap(), port),
+                ServerEndpointConfiguration::from_ip("0.0.0.0".parse().unwrap(), port),
                 CertificateRetrievalMode::LoadFromFile {
                     cert_file: TEST_CERT_FILE.to_string(),
                     key_file: TEST_KEY_FILE.to_string(),
@@ -199,7 +199,7 @@ fn trust_on_first_use() {
         .world
         .resource_mut::<QuinnetServer>()
         .start_endpoint(
-            ServerConfiguration::from_ip(LOCAL_BIND_IP, port),
+            ServerEndpointConfiguration::from_ip(LOCAL_BIND_IP, port),
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_IP.to_string(),
             },

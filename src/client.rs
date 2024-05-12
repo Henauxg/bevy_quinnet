@@ -7,22 +7,16 @@ use std::{
 };
 
 use bevy::prelude::*;
-use bytes::Bytes;
 use quinn::ConnectionError;
 use tokio::{
     runtime::{self},
-    sync::{
-        broadcast,
-        mpsc::{self},
-        oneshot,
-    },
+    sync::oneshot,
 };
 
 use crate::shared::{
-    channels::{ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelsConfiguration},
+    channels::{ChannelAsyncMessage, ChannelsConfiguration},
     error::QuinnetError,
     AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncUpdate,
-    DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
 use self::{
@@ -31,9 +25,9 @@ use self::{
         CertVerificationStatus, CertVerifierAction, CertificateVerificationMode,
     },
     connection::{
-        connection_task, Connection, ConnectionConfiguration, ConnectionEvent,
-        ConnectionFailedEvent, ConnectionLocalId, ConnectionLostEvent, ConnectionState,
-        InternalConnectionState,
+        async_connection_task, create_async_channels, ClientEndpointConfiguration, Connection,
+        ConnectionEvent, ConnectionFailedEvent, ConnectionLocalId, ConnectionLostEvent,
+        ConnectionState, InternalConnectionState,
     },
 };
 
@@ -178,63 +172,67 @@ impl QuinnetClient {
         self.connections.iter_mut()
     }
 
-    /// Open a connection to a server with the given [ConnectionConfiguration], [CertificateVerificationMode] and [ChannelsConfiguration]. The connection will raise an event when fully connected, see [ConnectionEvent]
+    /// Open a connection to a server with the given [EndpointConfiguration], [CertificateVerificationMode] and [ChannelsConfiguration]. The connection will raise an event when fully connected, see [ConnectionEvent]
     ///
     /// Returns the [ConnectionLocalId]
     pub fn open_connection(
         &mut self,
-        config: ConnectionConfiguration,
+        endpoint_config: ClientEndpointConfiguration,
         cert_mode: CertificateVerificationMode,
         channels_config: ChannelsConfiguration,
     ) -> Result<ConnectionLocalId, QuinnetError> {
-        let (bytes_from_server_send, bytes_from_server_recv) =
-            mpsc::channel::<(ChannelId, Bytes)>(DEFAULT_MESSAGE_QUEUE_SIZE);
+        // Generate a local connection id
+        let local_id = self.connection_local_id_gen;
+        self.connection_local_id_gen += 1;
 
-        let (to_sync_client_send, from_async_client_recv) =
-            mpsc::channel::<ClientAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
-        let (from_channels_send, from_channels_recv) =
-            mpsc::channel::<ChannelAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
-        let (to_channels_send, to_channels_recv) =
-            mpsc::channel::<ChannelSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
-
-        // Create a close channel for this connection
-        let (close_send, close_recv) = broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
+        let (
+            bytes_from_server_send,
+            bytes_from_server_recv,
+            to_sync_client_send,
+            to_sync_client_recv,
+            from_channels_send,
+            from_channels_recv,
+            to_channels_send,
+            to_channels_recv,
+            close_send,
+            close_recv,
+        ) = create_async_channels();
 
         let mut connection = Connection::new(
+            local_id,
+            self.runtime.clone(),
+            endpoint_config.clone(),
+            cert_mode.clone(),
+            channels_config.clone(),
             bytes_from_server_recv,
-            close_send.clone(),
-            from_async_client_recv,
+            close_send,
+            to_sync_client_recv,
             to_channels_send,
             from_channels_recv,
         );
-        // Create default channels
-        for channel_type in channels_config.configs() {
-            connection.open_channel(*channel_type)?;
-        }
+        connection.open_configured_channels(channels_config)?;
 
-        let connection_local_id = self.connection_local_id_gen;
-        self.connection_local_id_gen += 1;
-        self.connections.insert(connection_local_id, connection);
+        self.connections.insert(local_id, connection);
         if self.default_connection_id.is_none() {
-            self.default_connection_id = Some(connection_local_id);
+            self.default_connection_id = Some(local_id);
         }
 
         // Async connection
         self.runtime.spawn(async move {
-            connection_task(
-                connection_local_id,
-                config,
+            async_connection_task(
+                local_id,
+                endpoint_config,
                 cert_mode,
                 to_sync_client_send,
+                bytes_from_server_send,
                 to_channels_recv,
                 from_channels_send,
                 close_recv,
-                bytes_from_server_send,
             )
             .await
         });
 
-        Ok(connection_local_id)
+        Ok(local_id)
     }
 
     /// Set the default connection

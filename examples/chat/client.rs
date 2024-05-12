@@ -18,7 +18,7 @@ use bevy_quinnet::{
     client::{
         certificate::CertificateVerificationMode,
         client_connected,
-        connection::{ConnectionConfiguration, ConnectionEvent, ConnectionFailedEvent},
+        connection::{ClientEndpointConfiguration, ConnectionEvent, ConnectionFailedEvent},
         QuinnetClient, QuinnetClientPlugin,
     },
     shared::{channels::ChannelsConfiguration, ClientId},
@@ -123,7 +123,7 @@ fn start_terminal_listener(mut commands: Commands) {
 fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(
-            ConnectionConfiguration::from_strings("127.0.0.1:6000", "0.0.0.0:0").unwrap(),
+            ClientEndpointConfiguration::from_strings("127.0.0.1:6000", "0.0.0.0:0").unwrap(),
             CertificateVerificationMode::SkipVerification,
             ChannelsConfiguration::default(),
         )

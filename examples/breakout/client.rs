@@ -18,7 +18,7 @@ use bevy::{
 };
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, connection::ConnectionConfiguration, QuinnetClient,
+        certificate::CertificateVerificationMode, connection::ClientEndpointConfiguration, QuinnetClient,
     },
     shared::ClientId,
 };
@@ -96,7 +96,7 @@ struct WallBundle {
 pub(crate) fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(
-            ConnectionConfiguration::from_ips(
+            ClientEndpointConfiguration::from_ips(
                 SERVER_HOST.parse().unwrap(),
                 SERVER_PORT,
                 LOCAL_BIND_IP,

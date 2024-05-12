@@ -60,12 +60,12 @@ pub struct ConnectionLostEvent {
 
 /// Configuration of the server, used when the server starts an Endpoint
 #[derive(Debug, Deserialize, Clone)]
-pub struct ServerConfiguration {
+pub struct ServerEndpointConfiguration {
     local_bind_addr: SocketAddr,
 }
 
-impl ServerConfiguration {
-    /// Creates a new ServerConfiguration
+impl ServerEndpointConfiguration {
+    /// Creates a new ServerEndpointConfiguration
     ///
     /// # Arguments
     ///
@@ -75,20 +75,20 @@ impl ServerConfiguration {
     ///
     /// Listen on port 6000, on an IPv4 endpoint, for all incoming IPs.
     /// ```
-    /// use bevy_quinnet::server::ServerConfiguration;
-    /// let config = ServerConfiguration::from_string("0.0.0.0:6000");
+    /// use bevy_quinnet::server::ServerEndpointConfiguration;
+    /// let config = ServerEndpointConfiguration::from_string("0.0.0.0:6000");
     /// ```
     /// Listen on port 6000, on an IPv6 endpoint, for all incoming IPs.
     /// ```
-    /// use bevy_quinnet::server::ServerConfiguration;
-    /// let config = ServerConfiguration::from_string("[::]:6000");
+    /// use bevy_quinnet::server::ServerEndpointConfiguration;
+    /// let config = ServerEndpointConfiguration::from_string("[::]:6000");
     /// ```
     pub fn from_string(local_bind_addr_str: &str) -> Result<Self, AddrParseError> {
         let local_bind_addr = local_bind_addr_str.parse()?;
         Ok(Self { local_bind_addr })
     }
 
-    /// Creates a new ServerConfiguration
+    /// Creates a new ServerEndpointConfiguration
     ///
     /// # Arguments
     ///
@@ -100,8 +100,8 @@ impl ServerConfiguration {
     /// Listen on port 6000, on an IPv4 endpoint, for all incoming IPs.
     /// ```
     /// use std::net::{IpAddr, Ipv4Addr};
-    /// use bevy_quinnet::server::ServerConfiguration;
-    /// let config = ServerConfiguration::from_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000);
+    /// use bevy_quinnet::server::ServerEndpointConfiguration;
+    /// let config = ServerEndpointConfiguration::from_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000);
     /// ```
     pub fn from_ip(local_bind_ip: IpAddr, local_bind_port: u16) -> Self {
         Self {
@@ -109,7 +109,7 @@ impl ServerConfiguration {
         }
     }
 
-    /// Creates a new ServerConfiguration
+    /// Creates a new ServerEndpointConfiguration
     ///
     /// # Arguments
     ///
@@ -120,9 +120,9 @@ impl ServerConfiguration {
     ///
     /// Listen on port 6000, on an IPv4 endpoint, for all incoming IPs.
     /// ```
-    /// use bevy_quinnet::server::ServerConfiguration;
+    /// use bevy_quinnet::server::ServerEndpointConfiguration;
     /// use std::{net::{IpAddr, Ipv4Addr, SocketAddr}};
-    /// let config = ServerConfiguration::from_addr(
+    /// let config = ServerEndpointConfiguration::from_addr(
     ///           SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000),
     ///       );
     /// ```
@@ -783,12 +783,12 @@ impl QuinnetServer {
         self.endpoint.as_mut()
     }
 
-    /// Starts a new endpoint with the given [ServerConfiguration], [CertificateRetrievalMode] and [ChannelsConfiguration]
+    /// Starts a new endpoint with the given [ServerEndpointConfiguration], [CertificateRetrievalMode] and [ChannelsConfiguration]
     ///
     /// Returns the [ServerCertificate] generated or loaded
     pub fn start_endpoint(
         &mut self,
-        config: ServerConfiguration,
+        config: ServerEndpointConfiguration,
         cert_mode: CertificateRetrievalMode,
         channels_config: ChannelsConfiguration,
     ) -> Result<ServerCertificate, QuinnetError> {
@@ -1067,7 +1067,10 @@ pub fn server_listening(server: Option<Res<QuinnetServer>>) -> bool {
 /// Returns true if the following conditions are all true:
 /// - the server Resource exists and its endpoint is opened
 /// - the previous condition was false during the previous update
-pub fn server_just_opened(mut was_listening: Local<bool>, server: Option<Res<QuinnetServer>>) -> bool {
+pub fn server_just_opened(
+    mut was_listening: Local<bool>,
+    server: Option<Res<QuinnetServer>>,
+) -> bool {
     let listening = server.map(|server| server.is_listening()).unwrap_or(false);
 
     let just_opened = !*was_listening && listening;
@@ -1078,7 +1081,10 @@ pub fn server_just_opened(mut was_listening: Local<bool>, server: Option<Res<Qui
 /// Returns true if the following conditions are all true:
 /// - the server Resource does not exists or its endpoint is closed
 /// - the previous condition was false during the previous update
-pub fn server_just_closed(mut was_listening: Local<bool>, server: Option<Res<QuinnetServer>>) -> bool {
+pub fn server_just_closed(
+    mut was_listening: Local<bool>,
+    server: Option<Res<QuinnetServer>>,
+) -> bool {
     let closed = server.map(|server| !server.is_listening()).unwrap_or(true);
 
     let just_closed = *was_listening && closed;

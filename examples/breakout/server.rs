@@ -9,7 +9,7 @@ use bevy::{
     transform::TransformBundle,
 };
 use bevy_quinnet::{
-    server::{certificate::CertificateRetrievalMode, ConnectionEvent, QuinnetServer, ServerConfiguration},
+    server::{certificate::CertificateRetrievalMode, ConnectionEvent, QuinnetServer, ServerEndpointConfiguration},
     shared::ClientId,
 };
 
@@ -78,7 +78,7 @@ struct WallBundle {
 pub(crate) fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
         .start_endpoint(
-            ServerConfiguration::from_ip(LOCAL_BIND_IP, SERVER_PORT),
+            ServerEndpointConfiguration::from_ip(LOCAL_BIND_IP, SERVER_PORT),
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_HOST.to_string(),
             },

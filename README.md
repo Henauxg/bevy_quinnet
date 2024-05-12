@@ -102,7 +102,7 @@ This is a bird-eye view of the features/tasks that will probably be worked on ne
 fn start_connection(client: ResMut<QuinnetClient>) {
     client
         .open_connection(
-            ClientConfigurationData::from_ips(
+            ClientEndpointConfiguration::from_ips(
                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                 6000,
                 IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -151,7 +151,7 @@ fn handle_server_messages(
 fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
         .start_endpoint(
-            ServerConfigurationData::from_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000),
+            ServerEndpointConfiguration::from_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000),
             CertificateRetrievalMode::GenerateSelfSigned,
             ChannelsConfiguration::default(),
         )

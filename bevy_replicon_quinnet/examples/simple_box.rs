@@ -12,9 +12,9 @@ use bevy::{
 };
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, connection::ConnectionConfiguration, QuinnetClient,
+        certificate::CertificateVerificationMode, connection::ClientEndpointConfiguration, QuinnetClient,
     },
-    server::{certificate::CertificateRetrievalMode, QuinnetServer, ServerConfiguration},
+    server::{certificate::CertificateRetrievalMode, QuinnetServer, ServerEndpointConfiguration},
 };
 use bevy_replicon::prelude::*;
 use bevy_replicon_quinnet::{ChannelsConfigurationExt, RepliconQuinnetPlugins};
@@ -81,7 +81,7 @@ impl SimpleBoxPlugin {
             Cli::Server { port } => {
                 server
                     .start_endpoint(
-                        ServerConfiguration::from_ip(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+                        ServerEndpointConfiguration::from_ip(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
                         CertificateRetrievalMode::GenerateSelfSigned {
                             server_hostname: Ipv4Addr::LOCALHOST.to_string(),
                         },
@@ -106,7 +106,7 @@ impl SimpleBoxPlugin {
             Cli::Client { port, ip } => {
                 client
                     .open_connection(
-                        ConnectionConfiguration::from_ips(
+                        ClientEndpointConfiguration::from_ips(
                             ip,
                             port,
                             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),

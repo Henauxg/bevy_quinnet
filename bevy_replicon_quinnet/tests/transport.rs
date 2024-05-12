@@ -7,10 +7,9 @@ use std::{
 use bevy::prelude::*;
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, connection::ConnectionConfiguration,
-        QuinnetClient,
+        certificate::CertificateVerificationMode, connection::ClientEndpointConfiguration, QuinnetClient,
     },
-    server::{certificate::CertificateRetrievalMode, QuinnetServer, ServerConfiguration},
+    server::{certificate::CertificateRetrievalMode, QuinnetServer, ServerEndpointConfiguration},
 };
 use bevy_replicon::prelude::*;
 use bevy_replicon_quinnet::{ChannelsConfigurationExt, RepliconQuinnetPlugins};
@@ -154,7 +153,7 @@ fn setup_client(app: &mut App, server_port: u16) {
     let mut client = app.world.resource_mut::<QuinnetClient>();
     client
         .open_connection(
-            ConnectionConfiguration::from_ips(
+            ClientEndpointConfiguration::from_ips(
                 IpAddr::V4(Ipv4Addr::LOCALHOST),
                 server_port,
                 IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -175,7 +174,7 @@ fn setup_server(app: &mut App, server_port: u16) {
     let mut server = app.world.resource_mut::<QuinnetServer>();
     server
         .start_endpoint(
-            ServerConfiguration::from_ip(IpAddr::V4(Ipv4Addr::LOCALHOST), server_port),
+            ServerEndpointConfiguration::from_ip(IpAddr::V4(Ipv4Addr::LOCALHOST), server_port),
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: Ipv4Addr::LOCALHOST.to_string(),
             },

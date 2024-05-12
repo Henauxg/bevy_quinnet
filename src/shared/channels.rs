@@ -91,6 +91,7 @@ impl Channel {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ChannelsConfiguration {
     channels: Vec<ChannelType>,
 }

@@ -12,11 +12,14 @@ use quinn::{ClientConfig, Endpoint};
 use quinn_proto::ConnectionStats;
 
 use serde::Deserialize;
-use tokio::sync::{
-    broadcast,
-    mpsc::{
-        self,
-        error::{TryRecvError, TrySendError},
+use tokio::{
+    runtime,
+    sync::{
+        broadcast,
+        mpsc::{
+            self,
+            error::{TryRecvError, TrySendError},
+        },
     },
 };
 
@@ -29,7 +32,7 @@ use client_id::receive_client_id;
 use crate::shared::{
     channels::{
         spawn_recv_channels_tasks, spawn_send_channels_tasks, Channel, ChannelAsyncMessage,
-        ChannelId, ChannelSyncMessage, ChannelType,
+        ChannelId, ChannelSyncMessage, ChannelType, ChannelsConfiguration,
     },
     error::QuinnetError,
     ClientId, InternalConnectionRef, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
@@ -40,7 +43,7 @@ use super::{
         load_known_hosts_store_from_config, CertificateVerificationMode, SkipServerVerification,
         TofuServerVerification,
     },
-    ClientAsyncMessage, QuinnetConnectionError,
+    ClientAsyncMessage, QuinnetConnectionError, DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE,
 };
 
 /// Alias type for a local id of a connection
@@ -75,14 +78,14 @@ pub struct ConnectionLostEvent {
 
 /// Configuration of a client connection, used when connecting to a server
 #[derive(Debug, Deserialize, Clone)]
-pub struct ConnectionConfiguration {
+pub struct ClientEndpointConfiguration {
     server_addr: SocketAddr,
     server_hostname: String,
     local_bind_addr: SocketAddr,
 }
 
-impl ConnectionConfiguration {
-    /// Creates a new ConnectionConfiguration
+impl ClientEndpointConfiguration {
+    /// Creates a new ClientEndpointConfiguration
     ///
     /// # Arguments
     ///
@@ -93,16 +96,16 @@ impl ConnectionConfiguration {
     ///
     /// Connect to an IPv4 server hosted on localhost (127.0.0.1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
     /// ```
-    /// use bevy_quinnet::client::connection::ConnectionConfiguration;
-    /// let config = ConnectionConfiguration::from_strings(
+    /// use bevy_quinnet::client::connection::ClientEndpointConfiguration;
+    /// let config = ClientEndpointConfiguration::from_strings(
     ///                 "127.0.0.1:6000",
     ///                 "0.0.0.0:0"
     ///             );
     /// ```
     /// Connect to an IPv6 server hosted on localhost (::1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
     /// ```
-    /// use bevy_quinnet::client::connection::ConnectionConfiguration;
-    /// let config = ConnectionConfiguration::from_strings(
+    /// use bevy_quinnet::client::connection::ClientEndpointConfiguration;
+    /// let config = ClientEndpointConfiguration::from_strings(
     ///                 "[::1]:6000",
     ///                 "[::]:0"
     ///             );
@@ -116,7 +119,7 @@ impl ConnectionConfiguration {
         Ok(Self::from_addrs(server_addr, local_bind_addr))
     }
 
-    /// Same as [`ConnectionConfiguration::from_strings`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
+    /// Same as [`ClientEndpointConfiguration::from_strings`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
     pub fn from_strings_with_name(
         server_addr_str: &str,
         server_hostname: String,
@@ -129,7 +132,7 @@ impl ConnectionConfiguration {
         ))
     }
 
-    /// Creates a new ConnectionConfiguration
+    /// Creates a new ClientEndpointConfiguration
     ///
     /// # Arguments
     ///
@@ -143,8 +146,8 @@ impl ConnectionConfiguration {
     /// Connect to an IPv4 server hosted on localhost (127.0.0.1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
     /// ```
     /// use std::net::{IpAddr, Ipv4Addr};
-    /// use bevy_quinnet::client::connection::ConnectionConfiguration;
-    /// let config = ConnectionConfiguration::from_ips(
+    /// use bevy_quinnet::client::connection::ClientEndpointConfiguration;
+    /// let config = ClientEndpointConfiguration::from_ips(
     ///                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
     ///                 6000,
     ///                 IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -163,7 +166,7 @@ impl ConnectionConfiguration {
         )
     }
 
-    /// Same as [`ConnectionConfiguration::from_ips`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
+    /// Same as [`ClientEndpointConfiguration::from_ips`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
     pub fn from_ips_with_name(
         server_ip: IpAddr,
         server_port: u16,
@@ -178,7 +181,7 @@ impl ConnectionConfiguration {
         )
     }
 
-    /// Creates a new ConnectionConfiguration
+    /// Creates a new ClientEndpointConfiguration
     ///
     /// # Arguments
     ///
@@ -189,9 +192,9 @@ impl ConnectionConfiguration {
     ///
     /// Connect to an IPv4 server hosted on localhost (127.0.0.1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
     /// ```
-    /// use bevy_quinnet::client::connection::ConnectionConfiguration;
+    /// use bevy_quinnet::client::connection::ClientEndpointConfiguration;
     /// use std::{net::{IpAddr, Ipv4Addr, SocketAddr}};
-    /// let config = ConnectionConfiguration::from_addrs(
+    /// let config = ClientEndpointConfiguration::from_addrs(
     ///        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6000),
     ///        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0),
     ///    );
@@ -204,7 +207,7 @@ impl ConnectionConfiguration {
         }
     }
 
-    /// Same as [`ConnectionConfiguration::from_addrs`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
+    /// Same as [`ClientEndpointConfiguration::from_addrs`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
     pub fn from_addrs_with_name(
         server_addr: SocketAddr,
         server_hostname: String,
@@ -243,8 +246,65 @@ pub(crate) enum InternalConnectionState {
     Disconnected,
 }
 
+pub(crate) type MessageSend = mpsc::Sender<(ChannelId, Bytes)>;
+pub(crate) type MessageRecv = mpsc::Receiver<(ChannelId, Bytes)>;
+pub(crate) type ClientAsyncMsgSend = mpsc::Sender<ClientAsyncMessage>;
+pub(crate) type ClientAsyncMsgRecv = mpsc::Receiver<ClientAsyncMessage>;
+pub(crate) type ChannelAsyncMsgSend = mpsc::Sender<ChannelAsyncMessage>;
+pub(crate) type ChannelAsyncMsgRecv = mpsc::Receiver<ChannelAsyncMessage>;
+pub(crate) type ChannelSyncMsgSend = mpsc::Sender<ChannelSyncMessage>;
+pub(crate) type ChannelSyncMsgRecv = mpsc::Receiver<ChannelSyncMessage>;
+pub(crate) type CloseSend = broadcast::Sender<()>;
+pub(crate) type CloseRecv = broadcast::Receiver<()>;
+
+pub(crate) fn create_async_channels() -> (
+    MessageSend,
+    MessageRecv,
+    ClientAsyncMsgSend,
+    ClientAsyncMsgRecv,
+    ChannelAsyncMsgSend,
+    ChannelAsyncMsgRecv,
+    ChannelSyncMsgSend,
+    ChannelSyncMsgRecv,
+    CloseSend,
+    CloseRecv,
+) {
+    let (bytes_from_server_send, bytes_from_server_recv) =
+        mpsc::channel::<(ChannelId, Bytes)>(DEFAULT_MESSAGE_QUEUE_SIZE);
+    let (to_sync_client_send, to_sync_client_recv) =
+        mpsc::channel::<ClientAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+    let (from_channels_send, from_channels_recv) =
+        mpsc::channel::<ChannelAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+    let (to_channels_send, to_channels_recv) =
+        mpsc::channel::<ChannelSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+    let (close_send, close_recv) = broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
+    (
+        bytes_from_server_send,
+        bytes_from_server_recv,
+        to_sync_client_send,
+        to_sync_client_recv,
+        from_channels_send,
+        from_channels_recv,
+        to_channels_send,
+        to_channels_recv,
+        close_send,
+        close_recv,
+    )
+}
+
 #[derive(Debug)]
 pub struct Connection {
+    /// Non networked identifier
+    local_id: ConnectionLocalId,
+    /// handle to the async runtime
+    runtime: runtime::Handle,
+
+    // Configuration
+    endpoint_config: ClientEndpointConfiguration,
+    cert_mode: CertificateVerificationMode,
+    channels_config: ChannelsConfiguration,
+
+    // State
     pub(crate) state: InternalConnectionState,
 
     channels: Vec<Option<Channel>>,
@@ -264,23 +324,33 @@ pub struct Connection {
 
 impl Connection {
     pub(crate) fn new(
-        bytes_from_server_recv: mpsc::Receiver<(ChannelId, Bytes)>,
-        close_sender: broadcast::Sender<()>,
-        from_async_client_recv: mpsc::Receiver<ClientAsyncMessage>,
-        to_channels_send: mpsc::Sender<ChannelSyncMessage>,
-        from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
+        local_id: ConnectionLocalId,
+        runtime: runtime::Handle,
+        config: ClientEndpointConfiguration,
+        cert_mode: CertificateVerificationMode,
+        channels_config: ChannelsConfiguration,
+        bytes_from_server_recv: MessageRecv,
+        close_sender: CloseSend,
+        from_async_client_recv: ClientAsyncMsgRecv,
+        to_channels_send: ChannelSyncMsgSend,
+        from_channels_recv: ChannelAsyncMsgRecv,
     ) -> Self {
         Self {
+            local_id,
+            runtime,
             state: InternalConnectionState::Connecting,
             channels: Vec::new(),
             default_channel: None,
             available_channel_ids: (0..255).collect(),
+            received_messages_count: 0,
             bytes_from_server_recv,
             close_sender,
-            received_messages_count: 0,
             from_async_client_recv,
             to_channels_send,
             from_channels_recv,
+            endpoint_config: config,
+            cert_mode,
+            channels_config,
         }
     }
 
@@ -473,6 +543,84 @@ impl Connection {
         }
     }
 
+    /// Attempts to reconnect to the server.
+    ///
+    /// This uses the initial connection configuration. Notably, channels opened by calling [`Connection::open_channel`] on the connection after it was initially opened won't be automatically re-opened.
+    ///
+    /// Does nothing if the connection state is not [`ConnectionState::Disconnected`]
+    pub fn reconnect(&mut self) -> Result<(), QuinnetError> {
+        match &self.state {
+            InternalConnectionState::Disconnected => {
+                let (
+                    bytes_from_server_send,
+                    bytes_from_server_recv,
+                    to_sync_client_send,
+                    to_sync_client_recv,
+                    from_channels_send,
+                    from_channels_recv,
+                    to_channels_send,
+                    to_channels_recv,
+                    close_send,
+                    close_recv,
+                ) = create_async_channels();
+
+                // Connection state reset
+                self.state = InternalConnectionState::Connecting;
+                self.channels = Vec::new();
+                self.default_channel = None;
+                self.available_channel_ids = (0..255).collect();
+                self.bytes_from_server_recv = bytes_from_server_recv;
+                self.close_sender = close_send;
+                self.from_async_client_recv = to_sync_client_recv;
+                self.to_channels_send = to_channels_send;
+                self.from_channels_recv = from_channels_recv;
+                // Connection stats reset
+                self.received_messages_count = 0;
+
+                // Open default channels
+                self.open_configured_channels(self.channels_config.clone())?;
+
+                // Async connection
+                let local_id = self.local_id;
+                let endpoint_config = self.endpoint_config.clone();
+                let cert_mode = self.cert_mode.clone();
+                self.runtime.spawn(async move {
+                    async_connection_task(
+                        local_id,
+                        endpoint_config,
+                        cert_mode,
+                        to_sync_client_send,
+                        bytes_from_server_send,
+                        to_channels_recv,
+                        from_channels_send,
+                        close_recv,
+                    )
+                    .await
+                });
+            }
+            _ => (),
+        }
+        Ok(())
+    }
+
+    pub(crate) fn open_configured_channels(
+        &mut self,
+        channels_config: ChannelsConfiguration,
+    ) -> Result<(), QuinnetError> {
+        for channel_type in channels_config.configs() {
+            self.open_channel(*channel_type)?;
+        }
+        Ok(())
+    }
+
+    pub fn endpoint_configuration(&self) -> &ClientEndpointConfiguration {
+        &self.endpoint_config
+    }
+
+    pub fn certificate_verification_mode(&self) -> &CertificateVerificationMode {
+        &self.cert_mode
+    }
+
     /// Opens a channel of the requested [ChannelType] and returns its [ChannelId].
     ///
     /// If no channels were previously opened, the opened channel will be the new default channel.
@@ -571,38 +719,38 @@ impl Connection {
     }
 }
 
-pub(crate) async fn connection_task(
-    connection_id: ConnectionLocalId,
-    config: ConnectionConfiguration,
+pub(crate) async fn async_connection_task(
+    local_id: ConnectionLocalId,
+    endpoint_config: ClientEndpointConfiguration,
     cert_mode: CertificateVerificationMode,
-    to_sync_client_send: mpsc::Sender<ClientAsyncMessage>,
-    to_channels_recv: mpsc::Receiver<ChannelSyncMessage>,
-    from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
-    close_recv: broadcast::Receiver<()>,
-    bytes_from_server_send: mpsc::Sender<(ChannelId, Bytes)>,
+    to_sync_client_send: ClientAsyncMsgSend,
+    bytes_from_server_send: MessageSend,
+    to_channels_recv: ChannelSyncMsgRecv,
+    from_channels_send: ChannelAsyncMsgSend,
+    close_recv: CloseRecv,
 ) {
     info!(
         "Connection {} trying to connect to server on: {} ...",
-        connection_id, config.server_addr
+        local_id, endpoint_config.server_addr
     );
 
     let client_cfg = configure_client(cert_mode, to_sync_client_send.clone())
         .expect("Failed to configure client");
 
-    let mut endpoint =
-        Endpoint::client(config.local_bind_addr).expect("Failed to create client endpoint");
+    let mut endpoint = Endpoint::client(endpoint_config.local_bind_addr)
+        .expect("Failed to create client endpoint");
     endpoint.set_default_client_config(client_cfg);
 
     let connection = endpoint
-        .connect(config.server_addr, &config.server_hostname)
+        .connect(
+            endpoint_config.server_addr,
+            &endpoint_config.server_hostname,
+        )
         .expect("Failed to connect: configuration error")
         .await;
     match connection {
         Err(e) => {
-            error!(
-                "Connection {}, error while connecting: {}",
-                connection_id, e
-            );
+            error!("Connection {}, error while connecting: {}", local_id, e);
             // Signal connection failure
             to_sync_client_send
                 .send(ClientAsyncMessage::ConnectionFailed(
@@ -618,7 +766,7 @@ pub(crate) async fn connection_task(
                 let to_sync_client = to_sync_client_send.clone();
                 tokio::spawn(async move {
                     let conn_err = conn.closed().await;
-                    info!("Connection {} closed: {}", connection_id, conn_err);
+                    info!("Connection {} closed: {}", local_id, conn_err);
                     // If we requested the connection to close, channel may have been closed already.
                     if !to_sync_client.is_closed() {
                         to_sync_client
@@ -631,7 +779,7 @@ pub(crate) async fn connection_task(
 
             spawn_recv_channels_tasks(
                 connection_handle.clone(),
-                connection_id,
+                local_id,
                 close_recv.resubscribe(),
                 bytes_from_server_send,
             );
@@ -646,7 +794,7 @@ pub(crate) async fn connection_task(
             #[cfg(not(feature = "shared-client-id"))]
             signal_connection(
                 connection_handle.clone(),
-                connection_id,
+                local_id,
                 None,
                 to_sync_client_send,
             )
@@ -657,7 +805,7 @@ pub(crate) async fn connection_task(
                 client_id::ClientIdReception::Retrieved(client_id) => {
                     signal_connection(
                         connection_handle.clone(),
-                        connection_id,
+                        local_id,
                         Some(client_id),
                         to_sync_client_send,
                     )
@@ -665,8 +813,8 @@ pub(crate) async fn connection_task(
                 }
                 client_id::ClientIdReception::Failed(e) => {
                     error!(
-                        "Connection {}, error while retrieveing client_id: {}",
-                        connection_id, e
+                        "Connection {}, error while retrieving client_id: {}",
+                        local_id, e
                     );
                     // Signal connection failure
                     to_sync_client_send
@@ -676,7 +824,7 @@ pub(crate) async fn connection_task(
                 }
                 client_id::ClientIdReception::Interrupted => trace!(
                     "Connection {}, reception of client_id was interrupted",
-                    connection_id
+                    local_id
                 ),
             }
         }

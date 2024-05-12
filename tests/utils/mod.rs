@@ -16,12 +16,12 @@ use bevy_quinnet::{
             CertVerificationInfo, CertVerificationStatus, CertVerifierAction,
             CertificateVerificationMode,
         },
-        connection::ConnectionConfiguration,
+        connection::ClientEndpointConfiguration,
         QuinnetClient, QuinnetClientPlugin,
     },
     server::{
         self, certificate::CertificateRetrievalMode, QuinnetServer, QuinnetServerPlugin,
-        ServerConfiguration,
+        ServerEndpointConfiguration,
     },
     shared::{
         channels::{ChannelId, ChannelType, ChannelsConfiguration},
@@ -89,8 +89,8 @@ pub fn build_server_app() -> App {
     server_app
 }
 
-pub fn default_client_configuration(port: u16) -> ConnectionConfiguration {
-    ConnectionConfiguration::from_ips(SERVER_IP, port, LOCAL_BIND_IP, 0)
+pub fn default_client_configuration(port: u16) -> ClientEndpointConfiguration {
+    ClientEndpointConfiguration::from_ips(SERVER_IP, port, LOCAL_BIND_IP, 0)
 }
 
 pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port>) {
@@ -106,7 +106,7 @@ pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port
 pub fn start_listening(mut server: ResMut<QuinnetServer>, port: Res<Port>) {
     server
         .start_endpoint(
-            ServerConfiguration::from_ip(LOCAL_BIND_IP, port.0),
+            ServerEndpointConfiguration::from_ip(LOCAL_BIND_IP, port.0),
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_IP.to_string(),
             },
