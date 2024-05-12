@@ -2,7 +2,6 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     net::{AddrParseError, IpAddr, SocketAddr},
     sync::Arc,
-    time::Duration,
 };
 
 use bevy::prelude::*;
@@ -529,10 +528,7 @@ impl Endpoint {
     }
 
     /// Same as [Endpoint::broadcast_payload_on] but on the default channel
-    pub fn broadcast_payload<T: Into<Bytes> + Clone>(
-        &self,
-        payload: T,
-    ) -> Result<(), QuinnetError> {
+    pub fn broadcast_payload<T: Into<Bytes>>(&self, payload: T) -> Result<(), QuinnetError> {
         match self.default_channel {
             Some(channel) => self.broadcast_payload_on(channel, payload),
             None => Err(QuinnetError::NoDefaultChannel),
@@ -544,7 +540,7 @@ impl Endpoint {
     /// Will return an [`Err`] if:
     /// - the channel does not exist/is closed
     /// - (or if a message queue is full)
-    pub fn broadcast_payload_on<T: Into<Bytes> + Clone, C: Into<ChannelId>>(
+    pub fn broadcast_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &self,
         channel_id: C,
         payload: T,
@@ -562,7 +558,7 @@ impl Endpoint {
     }
 
     /// Same as [Endpoint::broadcast_payload] but will log the error instead of returning it
-    pub fn try_broadcast_payload<T: Into<Bytes> + Clone>(&self, payload: T) {
+    pub fn try_broadcast_payload<T: Into<Bytes>>(&self, payload: T) {
         match self.broadcast_payload(payload) {
             Ok(_) => {}
             Err(err) => error!("try_broadcast_payload: {}", err),
@@ -570,7 +566,7 @@ impl Endpoint {
     }
 
     /// Same as [Endpoint::broadcast_payload_on] but will log the error instead of returning it
-    pub fn try_broadcast_payload_on<T: Into<Bytes> + Clone, C: Into<ChannelId>>(
+    pub fn try_broadcast_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &self,
         channel_id: C,
         payload: T,
