@@ -5,10 +5,10 @@ use std::{
     sync::Arc,
 };
 
-use bevy::prelude::Event;
 use bevy::utils::tracing::{error, info};
+use bevy::{log::trace, prelude::Event};
 use bytes::Bytes;
-use quinn::{ClientConfig, ConnectionError, Endpoint};
+use quinn::{ClientConfig, Endpoint};
 use quinn_proto::ConnectionStats;
 
 use serde::Deserialize;
@@ -40,7 +40,7 @@ use super::{
         load_known_hosts_store_from_config, CertificateVerificationMode, SkipServerVerification,
         TofuServerVerification,
     },
-    ClientAsyncMessage,
+    ClientAsyncMessage, QuinnetConnectionError,
 };
 
 /// Alias type for a local id of a connection
@@ -63,7 +63,7 @@ pub struct ConnectionFailedEvent {
     /// Local id of the connection which failed to connect
     pub id: ConnectionLocalId,
     /// Error raised during the connection
-    pub err: ConnectionError,
+    pub err: QuinnetConnectionError,
 }
 
 /// ConnectionLost event raised when the client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
@@ -605,7 +605,9 @@ pub(crate) async fn connection_task(
             );
             // Signal connection failure
             to_sync_client_send
-                .send(ClientAsyncMessage::ConnectionFailed(e))
+                .send(ClientAsyncMessage::ConnectionFailed(
+                    QuinnetConnectionError::from(e),
+                ))
                 .await
                 .expect("Failed to signal connection failure to sync client");
         }
@@ -641,27 +643,67 @@ pub(crate) async fn connection_task(
                 from_channels_send,
             );
 
-            let mut client_id = None;
-            #[cfg(feature = "shared-client-id")]
-            receive_client_id(&mut client_id, connection_handle.clone(), close_recv).await;
-
-            // Signal connection
-            to_sync_client_send
-                .send(ClientAsyncMessage::Connected(
-                    connection_handle.clone(),
-                    client_id,
-                ))
-                .await
-                .expect("Failed to signal connection to sync client");
-
-            info!(
-                "Connection {} connected to {} with client_id {:?}",
+            #[cfg(not(feature = "shared-client-id"))]
+            signal_connection(
+                connection_handle.clone(),
                 connection_id,
-                connection_handle.remote_address(),
-                client_id
-            );
+                None,
+                to_sync_client_send,
+            )
+            .await;
+
+            #[cfg(feature = "shared-client-id")]
+            match receive_client_id(connection_handle.clone(), close_recv).await {
+                client_id::ClientIdReception::Retrieved(client_id) => {
+                    signal_connection(
+                        connection_handle.clone(),
+                        connection_id,
+                        Some(client_id),
+                        to_sync_client_send,
+                    )
+                    .await
+                }
+                client_id::ClientIdReception::Failed(e) => {
+                    error!(
+                        "Connection {}, error while retrieveing client_id: {}",
+                        connection_id, e
+                    );
+                    // Signal connection failure
+                    to_sync_client_send
+                        .send(ClientAsyncMessage::ConnectionFailed(e))
+                        .await
+                        .expect("Failed to signal connection failure to sync client");
+                }
+                client_id::ClientIdReception::Interrupted => trace!(
+                    "Connection {}, reception of client_id was interrupted",
+                    connection_id
+                ),
+            }
         }
     }
+}
+
+async fn signal_connection(
+    connection_handle: quinn::Connection,
+    connection_id: ConnectionLocalId,
+    client_id: Option<ClientId>,
+    to_sync_client_send: mpsc::Sender<ClientAsyncMessage>,
+) {
+    // Signal connection
+    to_sync_client_send
+        .send(ClientAsyncMessage::Connected(
+            connection_handle.clone(),
+            client_id,
+        ))
+        .await
+        .expect("Failed to signal connection to sync client");
+
+    info!(
+        "Connection {} connected to {} with client_id {:?}",
+        connection_id,
+        connection_handle.remote_address(),
+        client_id
+    );
 }
 
 fn configure_client(

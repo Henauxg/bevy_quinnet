@@ -43,10 +43,21 @@ pub mod connection;
 pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
 pub const DEFAULT_KNOWN_HOSTS_FILE: &str = "quinnet/known_hosts";
 
+/// Possible errors occuring while a client is connecting to a server
+#[derive(thiserror::Error, Debug)]
+pub enum QuinnetConnectionError {
+    #[error("Quic connection error")]
+    QuicConnectionError(#[from] quinn::ConnectionError),
+    #[error("Client received an invalid client id")]
+    InvalidClientId,
+    #[error("Client did not receive its client id")]
+    ClientIdNotReceived,
+}
+
 #[derive(Debug)]
 pub(crate) enum ClientAsyncMessage {
     Connected(InternalConnectionRef, Option<ClientId>),
-    ConnectionFailed(ConnectionError),
+    ConnectionFailed(QuinnetConnectionError),
     ConnectionClosed(ConnectionError),
     CertificateInteractionRequest {
         status: CertVerificationStatus,
