@@ -208,16 +208,18 @@ There are currently 3 types of channels available when you send a message:
 When you open a connection/endpoint, some channels are created directly according to the given `ChannelsConfiguration`.
 
 ```rust
-// Default channels configuration contains only 1 channel of the OrderedReliable type, akin to a TCP connection.
+// Default channels configuration contains only 1 channel of the OrderedReliable type,
+// akin to a TCP connection.
 let channels_config = ChannelsConfiguration::default();
-// Creates 2 OrderedReliable channels, and 1 unreliable channel, with channel ids being respectively 0, 1 and 2.
+// Creates 2 OrderedReliable channels, and 1 unreliable channel,
+// with channel ids being respectively 0, 1 and 2.
 let channels_config = ChannelsConfiguration::from_types(vec![
     ChannelType::OrderedReliable,
     ChannelType::OrderedReliable,
     ChannelType::Unreliable]);
 ```
 
-Each channel is identified by its own `ChannelId`. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, the first opened channel becomes the defautl channel.
+Each channel is identified by its own `ChannelId`. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, the first opened channel becomes the default channel.
 
 ```rust
 let connection = client.connection();
