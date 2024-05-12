@@ -331,7 +331,7 @@ Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/
 
 | bevy_quinnet | bevy |
 | :----------- | :--- |
-| 0.7          | 0.13 |
+| 0.7-0.8      | 0.13 |
 | 0.6          | 0.12 |
 | 0.5          | 0.11 |
 | 0.4          | 0.10 |

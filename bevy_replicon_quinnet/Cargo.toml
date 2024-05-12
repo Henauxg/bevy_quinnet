@@ -8,11 +8,12 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 keywords = ["gamedev", "networking", "quic", "bevy", "plugin"]
 categories = ["game-development", "network-programming"]
-readme = "../README.md"
+readme = "README.md"
+exclude = ["assets/"]
 
 [dependencies]
 bevy_replicon = { version = "0.24" }
-bevy_quinnet = { version = "0.8.0-dev", path = ".." }
+bevy_quinnet = { version = "0.8.0", path = ".." }
 bevy = { version = "0.13", default-features = false }
 
 [dev-dependencies]
