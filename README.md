@@ -77,7 +77,6 @@ This is a bird-eye view of the features/tasks that will probably be worked on ne
 - [ ] Performance: feed multiples messages before flushing ordered reliable channels
 - [ ] Clean: Rework the error handling in the async back-end
 - [ ] Clean: Rework the error handling on collections to not fail at the first error
-- [ ] Documentation: Fully document the API
 
 ## Quickstart
 
