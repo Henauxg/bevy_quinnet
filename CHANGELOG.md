@@ -1,5 +1,42 @@
 # Changelog
 
+## Version 0.8.0
+
+- Added a new crate `bevy_replicon_quinnet` with tests and examples, providing an integration of bevy_quinnet as a replicon back-end.
+- Added a `shared-client-id` cargo feature: server sends the client id to the client, client wait for it before being “connected”
+- Channels:
+  - Changed `ChannelId` to be a `u8`
+  - Some channels can be preconfigured to be opened on a client or server connection by using `ChannelsConfiguration`
+  - Channels payloads now contain the `channel_id`
+  - When receiving a message, the message's `channel_id` is now available
+  - You can now have only up to 256 channels opened simultaneously
+  - You can now have more than 1 `Unreliable` or `UnorderedReliable` channel
+- Client:
+  - Renamed `Client` to `QuinnetClient`
+  - In `QuinnetClient::Connection`
+    - Changed `disconnect` function to be `pub` (was previously only accessible through `Client::close_connection`)
+    - Added `reconnect` function
+    - Added a new bevy event `ConnectionFailedEvent` raised when a connection fails
+      - Added a `QuinnetConnectionError` type
+    - Renamed `ConnectionId` to `ConnectionLocalId`
+    - State:
+      - Removed `is_connected`
+      - Renamed internal `ConnectionState` to `InternalConnectionState`
+      - Added a new `ConnectionState`
+      - Added `state` function
+  - Changed `update_sync_client` system to be `pub`
+  - Added `client_connecting`, `client_connected`, `client_just_connected` and `client_just_disconnected` ergonomic system conditions
+- Server:
+  - Renamed `Server` to `QuinnetServer`
+  - Added `Debug`, `Copy`, `Clone` traits to the server's bevy events
+  - Changed `update_sync_server` system to be `pub`
+  - Added `server_listening`, `server_just_opened` and `server_just_closed` ergonomic system conditions
+- Tests:
+  - Updated to use the new channel API
+  - Added a reconnection test
+- Fix minor code documentation
+- Moved `QuinnetError` to `shared::error`
+
 ## Version 0.7.0 (2024-02-18)
 
 - Update plugins, tests & examples to use Bevy 0.13
