@@ -32,15 +32,10 @@ Sources for the examples can be found in the [examples](examples) directory.
 
 ## Compatible versions
 
-| bevy_quinnet | bevy | bevy_replicon_quinnet | bevy_replicon |
-| :----------- | :--- | :-------------------- | :------------ |
-| 0.8          | 0.13 | 0.1                   | 0.24          |
-| 0.7          | 0.13 | -                     | -             |
-| 0.6          | 0.12 | -                     | -             |
-| 0.5          | 0.11 | -                     | -             |
-| 0.4          | 0.10 | -                     | -             |
-| 0.2-0.3      | 0.9  | -                     | -             |
-| 0.1          | 0.8  | -                     | -             |
+| bevy | bevy_quinnet | bevy_replicon_quinnet | bevy_replicon |
+| :--- | :----------- | :-------------------- | :------------ |
+| 0.13 | 0.8          | 0.2                   | 0.25          |
+| 0.13 | 0.8          | 0.1                   | 0.24          |
 
 ## License
 
