@@ -7,7 +7,8 @@ use std::{
 use bevy::prelude::*;
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, connection::ClientEndpointConfiguration, QuinnetClient,
+        certificate::CertificateVerificationMode, connection::ClientEndpointConfiguration,
+        QuinnetClient,
     },
     server::{certificate::CertificateRetrievalMode, QuinnetServer, ServerEndpointConfiguration},
 };
@@ -70,7 +71,7 @@ fn replication() {
 
     setup(&mut server_app, &mut client_app, port);
 
-    server_app.world.spawn(Replication);
+    server_app.world.spawn(Replicated);
 
     server_app.update();
     client_wait_for_message(&mut client_app);

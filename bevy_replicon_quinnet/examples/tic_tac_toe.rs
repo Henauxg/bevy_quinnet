@@ -10,7 +10,8 @@ use std::{
 use bevy::prelude::*;
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, connection::ClientEndpointConfiguration, QuinnetClient,
+        certificate::CertificateVerificationMode, connection::ClientEndpointConfiguration,
+        QuinnetClient,
     },
     server::{certificate::CertificateRetrievalMode, QuinnetServer, ServerEndpointConfiguration},
 };
@@ -605,7 +606,7 @@ struct GridNode;
 struct SymbolBundle {
     symbol: Symbol,
     cell_index: CellIndex,
-    replicated: Replication,
+    replicated: Replicated,
 }
 
 impl SymbolBundle {
@@ -613,7 +614,7 @@ impl SymbolBundle {
         Self {
             cell_index: CellIndex(index),
             symbol,
-            replicated: Replication,
+            replicated: Replicated,
         }
     }
 }
@@ -627,7 +628,7 @@ struct CellIndex(usize);
 struct PlayerBundle {
     player: Player,
     symbol: Symbol,
-    replicated: Replication,
+    replicated: Replicated,
 }
 
 impl PlayerBundle {
@@ -635,7 +636,7 @@ impl PlayerBundle {
         Self {
             player: Player(client_id),
             symbol,
-            replicated: Replication,
+            replicated: Replicated,
         }
     }
 

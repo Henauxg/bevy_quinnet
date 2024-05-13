@@ -12,7 +12,8 @@ use bevy::{
 };
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, connection::ClientEndpointConfiguration, QuinnetClient,
+        certificate::CertificateVerificationMode, connection::ClientEndpointConfiguration,
+        QuinnetClient,
     },
     server::{certificate::CertificateRetrievalMode, QuinnetServer, ServerEndpointConfiguration},
 };
@@ -237,7 +238,7 @@ struct PlayerBundle {
     player: Player,
     position: PlayerPosition,
     color: PlayerColor,
-    replicated: Replication,
+    replicated: Replicated,
 }
 
 impl PlayerBundle {
@@ -246,7 +247,7 @@ impl PlayerBundle {
             player: Player(client_id),
             position: PlayerPosition(position),
             color: PlayerColor(color),
-            replicated: Replication,
+            replicated: Replicated,
         }
     }
 }

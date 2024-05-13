@@ -12,7 +12,7 @@ readme = "README.md"
 exclude = ["assets/"]
 
 [dependencies]
-bevy_replicon = { version = "0.24" }
+bevy_replicon = { version = "0.25" }
 bevy_quinnet = { version = "0.8.0", path = ".." }
 bevy = { version = "0.13", default-features = false }
 
