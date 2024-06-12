@@ -15,7 +15,7 @@ exclude = ["assets/"]
 members = ["bevy_replicon_quinnet"]
 
 [dependencies]
-bevy = { version = "0.13.0", default-features = false, features = [] }
+bevy = { version = "0.14.0-rc.2", default-features = false, features = [] }
 rustls = { version = "0.21.0", default-features = false, features = [
 	"quic",
 	"dangerous_configuration",
@@ -41,7 +41,7 @@ default = ["shared-client-id"]
 shared-client-id = []
 
 [dev-dependencies]
-bevy = { version = "0.13.0", default-features = false, features = [
+bevy = { version = "0.14.0-rc.2", default-features = false, features = [
 	"bevy_asset",         # Provides asset functionality
 	"bevy_audio",         # Provides audio functionality
 	"vorbis",             # OGG/VORBIS audio format support
@@ -52,6 +52,14 @@ bevy = { version = "0.13.0", default-features = false, features = [
 	"bevy_text",          # Provides text functionality
 	"bevy_core_pipeline", # Provides cameras and other basic render pipeline features
 	"x11",                # X11 display server support
+
+	# Can be removed later, temporary fixes for a bug in "0.14.0-rc.2"
+	"bevy_state",
+	"serialize",
+	"bevy_scene",
+	"bevy_pbr",
+	"ktx2",
+	"zstd",
 ] }
 rand = "0.8.5"
 

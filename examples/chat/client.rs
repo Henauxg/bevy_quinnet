@@ -97,7 +97,7 @@ fn handle_terminal_messages(
 ) {
     while let Ok(message) = terminal_messages.try_recv() {
         if message == "quit" {
-            app_exit_events.send(AppExit);
+            app_exit_events.send(AppExit::Success);
         } else {
             client
                 .connection()

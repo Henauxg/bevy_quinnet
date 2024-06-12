@@ -6,7 +6,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use bevy::prelude::*;
 use bevy_quinnet::{
     client::QuinnetClientPlugin,
-    server::{QuinnetServerPlugin, QuinnetServer},
+    server::{QuinnetServer, QuinnetServerPlugin},
 };
 use client::BACKGROUND_COLOR;
 
@@ -134,7 +134,7 @@ fn main() {
         .insert_resource(client::BricksMapping::default());
 
     // ------ Main menu
-    app.add_systems(Update, bevy::window::close_on_esc)
+    app.add_systems(Update, close_on_esc)
         .add_systems(OnEnter(GameState::MainMenu), client::setup_main_menu)
         .add_systems(
             Update,
@@ -201,4 +201,20 @@ fn main() {
     });
 
     app.run();
+}
+
+pub fn close_on_esc(
+    mut commands: Commands,
+    focused_windows: Query<(Entity, &Window)>,
+    input: Res<ButtonInput<KeyCode>>,
+) {
+    for (window, focus) in focused_windows.iter() {
+        if !focus.focused {
+            continue;
+        }
+
+        if input.just_pressed(KeyCode::Escape) {
+            commands.entity(window).despawn();
+        }
+    }
 }
