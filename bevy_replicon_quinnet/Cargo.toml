@@ -26,6 +26,13 @@ bevy = { version = "0.14.0-rc.2", default-features = false, features = [
     "bevy_gizmos",
     "x11",
     "default_font",
+
+
+    # Can be removed later, temporary fixes for a bug in "0.14.0-rc.2"
+    "bevy_scene",
+    "bevy_pbr",
+    "ktx2",
+    "zstd",
 ] }
 
 [[example]]

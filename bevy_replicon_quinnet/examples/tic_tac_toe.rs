@@ -344,10 +344,7 @@ impl TicTacToePlugin {
     }
 
     fn handle_interactions(
-        mut buttons: Query<
-            (Entity, &Parent, &Interaction, &mut BackgroundColor),
-            Changed<Interaction>,
-        >,
+        mut buttons: Query<(Entity, &Parent, &Interaction, &mut UiImage), Changed<Interaction>>,
         children: Query<&Children>,
         mut pick_events: EventWriter<CellPick>,
     ) {
@@ -366,8 +363,8 @@ impl TicTacToePlugin {
                     // In case of server or single-player the event will re-translated into [`FromClient`] event to re-use the logic.
                     pick_events.send(CellPick(index));
                 }
-                Interaction::Hovered => *background = HOVER_COLOR.into(),
-                Interaction::None => *background = BACKGROUND_COLOR.into(),
+                Interaction::Hovered => *background = UiImage::default().with_color(HOVER_COLOR),
+                Interaction::None => *background = UiImage::default().with_color(BACKGROUND_COLOR),
             };
         }
     }
@@ -416,7 +413,7 @@ impl TicTacToePlugin {
         symbol_font: Res<SymbolFont>,
         symbols: Query<(Entity, &CellIndex, &Symbol), Added<Symbol>>,
         grid_nodes: Query<&Children, With<GridNode>>,
-        mut background_colors: Query<&mut BackgroundColor>,
+        mut background_colors: Query<&mut UiImage>,
     ) {
         for (symbol_entity, cell_index, symbol) in &symbols {
             let children = grid_nodes.single();
@@ -427,7 +424,7 @@ impl TicTacToePlugin {
             let mut background = background_colors
                 .get_mut(button_entity)
                 .expect("buttons should be initialized with color");
-            *background = BACKGROUND_COLOR.into();
+            *background = UiImage::default().with_color(BACKGROUND_COLOR);
 
             commands
                 .entity(button_entity)
