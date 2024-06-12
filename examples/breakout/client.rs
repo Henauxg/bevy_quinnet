@@ -13,8 +13,8 @@ use bevy::{
     state::state::NextState,
     text::{Text, TextSection, TextStyle},
     ui::{
-        node_bundles::NodeBundle, AlignItems, BackgroundColor, Interaction, JustifyContent,
-        PositionType, Style, UiImage, UiRect, Val,
+        node_bundles::NodeBundle, AlignItems, Interaction, JustifyContent, PositionType, Style,
+        UiImage, UiRect, Val,
     },
 };
 use bevy_quinnet::{
@@ -81,7 +81,7 @@ pub(crate) struct Paddle;
 pub(crate) struct Ball;
 
 #[derive(Component)]
-pub(crate) struct Brick(BrickId);
+pub(crate) struct Brick;
 
 /// The buttons in the main menu.
 #[derive(Clone, Copy, Component)]
@@ -172,7 +172,7 @@ pub(crate) fn spawn_bricks(
 
             let brick = commands
                 .spawn((
-                    Brick(brick_id),
+                    Brick,
                     SpriteBundle {
                         sprite: Sprite {
                             color: BRICK_COLOR,
@@ -407,7 +407,7 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
 
 pub(crate) fn handle_menu_buttons(
     mut interaction_query: Query<
-        (&Interaction, &mut BackgroundColor, &MenuItem),
+        (&Interaction, &mut UiImage, &MenuItem),
         (Changed<Interaction>, With<Button>),
     >,
     mut next_state: ResMut<NextState<GameState>>,
@@ -415,18 +415,14 @@ pub(crate) fn handle_menu_buttons(
     for (interaction, mut color, item) in &mut interaction_query {
         match *interaction {
             Interaction::Pressed => {
-                *color = PRESSED_BUTTON_COLOR.into();
+                *color = UiImage::default().with_color(PRESSED_BUTTON_COLOR);
                 match item {
                     MenuItem::Host => next_state.set(GameState::HostingLobby),
                     MenuItem::Join => next_state.set(GameState::JoiningLobby),
                 }
             }
-            Interaction::Hovered => {
-                *color = HOVERED_BUTTON_COLOR.into();
-            }
-            Interaction::None => {
-                *color = NORMAL_BUTTON_COLOR.into();
-            }
+            Interaction::Hovered => *color = UiImage::default().with_color(HOVERED_BUTTON_COLOR),
+            Interaction::None => *color = UiImage::default().with_color(NORMAL_BUTTON_COLOR),
         }
     }
 }
