@@ -42,15 +42,16 @@ shared-client-id = []
 
 [dev-dependencies]
 bevy = { version = "0.13.0", default-features = false, features = [
-	"bevy_asset",
-	"bevy_audio",
-	"vorbis",
-	"bevy_winit",
-	"bevy_render",
-	"bevy_sprite",
-	"bevy_ui",
-	"bevy_text",
-	"bevy_core_pipeline",
+	"bevy_asset",         # Provides asset functionality
+	"bevy_audio",         # Provides audio functionality
+	"vorbis",             # OGG/VORBIS audio format support
+	"bevy_winit",         # winit window and input backend
+	"bevy_render",        # Provides rendering functionality
+	"bevy_sprite",        # Provides sprite functionality
+	"bevy_ui",            # A custom ECS-driven UI framework
+	"bevy_text",          # Provides text functionality
+	"bevy_core_pipeline", # Provides cameras and other basic render pipeline features
+	"x11",                # X11 display server support
 ] }
 rand = "0.8.5"
 
