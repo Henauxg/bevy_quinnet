@@ -6,10 +6,13 @@ use bevy::{
         default, Bundle, Commands, Component, Entity, EventReader, Query, Res, ResMut, Resource,
         Transform, Vec2, Vec3, With,
     },
-    transform::TransformBundle,
+    transform::bundles::TransformBundle,
 };
 use bevy_quinnet::{
-    server::{certificate::CertificateRetrievalMode, ConnectionEvent, QuinnetServer, ServerEndpointConfiguration},
+    server::{
+        certificate::CertificateRetrievalMode, ConnectionEvent, QuinnetServer,
+        ServerEndpointConfiguration,
+    },
     shared::ClientId,
 };
 
@@ -87,7 +90,10 @@ pub(crate) fn start_listening(mut server: ResMut<QuinnetServer>) {
         .unwrap();
 }
 
-pub(crate) fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut players: ResMut<Players>) {
+pub(crate) fn handle_client_messages(
+    mut server: ResMut<QuinnetServer>,
+    mut players: ResMut<Players>,
+) {
     let endpoint = server.endpoint_mut();
     for client_id in endpoint.clients() {
         while let Some((_, message)) = endpoint.try_receive_message_from::<ClientMessage>(client_id)
@@ -249,7 +255,11 @@ pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<
     }
 }
 
-fn start_game(commands: &mut Commands, server: &mut ResMut<QuinnetServer>, players: &ResMut<Players>) {
+fn start_game(
+    commands: &mut Commands,
+    server: &mut ResMut<QuinnetServer>,
+    players: &ResMut<Players>,
+) {
     let endpoint = server.endpoint_mut();
     // Assign ids
     for client_id in players.map.keys().into_iter() {

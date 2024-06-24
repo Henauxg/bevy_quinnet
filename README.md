@@ -19,8 +19,8 @@ A Client/Server game networking plugin using [QUIC](https://www.chromium.org/qui
     - [Server](#server)
   - [Channels](#channels)
   - [Certificates and server authentication](#certificates-and-server-authentication)
-  - [Replicon integration](#replicon-integration)
   - [Examples](#examples)
+  - [Replicon integration](#replicon-integration)
   - [Compatible Bevy versions](#compatible-bevy-versions)
   - [Misc](#misc)
     - [Cargo features](#cargo-features)
@@ -331,6 +331,7 @@ Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/
 
 | bevy_quinnet | bevy |
 | :----------- | :--- |
+| 0.9          | 0.14 |
 | 0.7-0.8      | 0.13 |
 | 0.6          | 0.12 |
 | 0.5          | 0.11 |

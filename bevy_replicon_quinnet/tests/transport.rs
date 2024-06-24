@@ -34,22 +34,22 @@ fn connect_disconnect() {
 
     setup(&mut server_app, &mut client_app, port);
 
-    let mut quinnet_client = client_app.world.resource_mut::<QuinnetClient>();
+    let mut quinnet_client = client_app.world_mut().resource_mut::<QuinnetClient>();
     assert!(quinnet_client.is_connected());
     let default_connection = quinnet_client.get_default_connection().unwrap();
     quinnet_client.close_connection(default_connection).unwrap();
 
     client_app.update();
 
-    let replicon_client = client_app.world.resource_mut::<RepliconClient>();
+    let replicon_client = client_app.world_mut().resource_mut::<RepliconClient>();
     assert!(replicon_client.is_disconnected());
 
     server_wait_for_disconnect(&mut server_app);
 
-    let quinnet_server = server_app.world.resource::<QuinnetServer>();
+    let quinnet_server = server_app.world().resource::<QuinnetServer>();
     assert_eq!(quinnet_server.endpoint().clients().len(), 0);
 
-    let connected_clients = server_app.world.resource::<ConnectedClients>();
+    let connected_clients = server_app.world().resource::<ConnectedClients>();
     assert_eq!(connected_clients.len(), 0);
 }
 
@@ -71,12 +71,12 @@ fn replication() {
 
     setup(&mut server_app, &mut client_app, port);
 
-    server_app.world.spawn(Replicated);
+    server_app.world_mut().spawn(Replicated);
 
     server_app.update();
     client_wait_for_message(&mut client_app);
 
-    assert_eq!(client_app.world.entities().len(), 1);
+    assert_eq!(client_app.world().entities().len(), 1);
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn server_event() {
 
     setup(&mut server_app, &mut client_app, port);
 
-    server_app.world.send_event(ToClients {
+    server_app.world_mut().send_event(ToClients {
         mode: SendMode::Broadcast,
         event: DummyEvent,
     });
@@ -106,7 +106,7 @@ fn server_event() {
     server_app.update();
     client_wait_for_message(&mut client_app);
 
-    let dummy_events = client_app.world.resource::<Events<DummyEvent>>();
+    let dummy_events = client_app.world().resource::<Events<DummyEvent>>();
     assert_eq!(dummy_events.len(), 1);
 }
 
@@ -129,12 +129,12 @@ fn client_event() {
 
     setup(&mut server_app, &mut client_app, port);
 
-    client_app.world.send_event(DummyEvent);
+    client_app.world_mut().send_event(DummyEvent);
     client_app.update();
     server_wait_for_message(&mut server_app);
 
     let client_events = server_app
-        .world
+        .world()
         .resource::<Events<FromClient<DummyEvent>>>();
     assert_eq!(client_events.len(), 1);
 }
@@ -147,11 +147,11 @@ fn setup(server_app: &mut App, client_app: &mut App, server_port: u16) {
 
 fn setup_client(app: &mut App, server_port: u16) {
     let channels_config = app
-        .world
+        .world()
         .resource::<RepliconChannels>()
         .get_client_configs();
 
-    let mut client = app.world.resource_mut::<QuinnetClient>();
+    let mut client = app.world_mut().resource_mut::<QuinnetClient>();
     client
         .open_connection(
             ClientEndpointConfiguration::from_ips(
@@ -168,11 +168,11 @@ fn setup_client(app: &mut App, server_port: u16) {
 
 fn setup_server(app: &mut App, server_port: u16) {
     let channels_config = app
-        .world
+        .world()
         .resource::<RepliconChannels>()
         .get_server_configs();
 
-    let mut server = app.world.resource_mut::<QuinnetServer>();
+    let mut server = app.world_mut().resource_mut::<QuinnetServer>();
     server
         .start_endpoint(
             ServerEndpointConfiguration::from_ip(IpAddr::V4(Ipv4Addr::LOCALHOST), server_port),
@@ -188,7 +188,11 @@ fn wait_for_connection(server_app: &mut App, client_app: &mut App) {
     loop {
         client_app.update();
         server_app.update();
-        if client_app.world.resource::<QuinnetClient>().is_connected() {
+        if client_app
+            .world()
+            .resource::<QuinnetClient>()
+            .is_connected()
+        {
             break;
         }
     }
@@ -199,7 +203,7 @@ fn client_wait_for_message(client_app: &mut App) {
         sleep(Duration::from_secs_f32(0.05));
         client_app.update();
         if client_app
-            .world
+            .world()
             .resource::<QuinnetClient>()
             .connection()
             .received_messages_count()
@@ -215,7 +219,7 @@ fn server_wait_for_message(server_app: &mut App) {
         sleep(Duration::from_secs_f32(0.05));
         server_app.update();
         if server_app
-            .world
+            .world()
             .resource::<QuinnetServer>()
             .endpoint()
             .endpoint_stats()
@@ -232,7 +236,7 @@ fn server_wait_for_disconnect(server_app: &mut App) {
         sleep(Duration::from_secs_f32(0.05));
         server_app.update();
         if server_app
-            .world
+            .world()
             .resource::<QuinnetServer>()
             .endpoint()
             .endpoint_stats()

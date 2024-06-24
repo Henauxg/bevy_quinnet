@@ -22,6 +22,8 @@ use bevy_replicon_quinnet::{ChannelsConfigurationExt, RepliconQuinnetPlugins};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
+use bevy::color::palettes::css::GREEN;
+
 const PORT: u16 = 5000;
 
 fn main() {
@@ -76,7 +78,7 @@ impl SimpleBoxPlugin {
                 commands.spawn(PlayerBundle::new(
                     ClientId::SERVER,
                     Vec2::ZERO,
-                    Color::GREEN,
+                    GREEN.into(),
                 ));
             }
             Cli::Server { port } => {
@@ -101,7 +103,7 @@ impl SimpleBoxPlugin {
                 commands.spawn(PlayerBundle::new(
                     ClientId::SERVER,
                     Vec2::ZERO,
-                    Color::GREEN,
+                    GREEN.into(),
                 ));
             }
             Cli::Client { port, ip } => {
@@ -149,7 +151,7 @@ impl SimpleBoxPlugin {
                     commands.spawn(PlayerBundle::new(
                         *client_id,
                         Vec2::ZERO,
-                        Color::rgb(r, g, b),
+                        Color::srgb(r, g, b),
                     ));
                 }
                 ServerEvent::ClientDisconnected { client_id, reason } => {
