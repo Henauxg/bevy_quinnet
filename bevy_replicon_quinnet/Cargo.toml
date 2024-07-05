@@ -12,14 +12,14 @@ readme = "README.md"
 exclude = ["assets/"]
 
 [dependencies]
-bevy_replicon = { version = "0.27.0-rc.1" }
+bevy_replicon = { version = "0.27" }
 bevy_quinnet = { version = "0.9.0", path = ".." }
-bevy = { version = "0.14.0-rc.2", default-features = false }
+bevy = { version = "0.14", default-features = false }
 
 [dev-dependencies]
 serde = "1.0"
 clap = { version = "4.1", features = ["derive"] }
-bevy = { version = "0.14.0-rc.2", default-features = false, features = [
+bevy = { version = "0.14", default-features = false, features = [
     "bevy_text",
     "bevy_ui",
     "bevy_state",
