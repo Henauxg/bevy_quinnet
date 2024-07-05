@@ -15,7 +15,7 @@ exclude = ["assets/"]
 members = ["bevy_replicon_quinnet"]
 
 [dependencies]
-bevy = { version = "0.14.0-rc.2", default-features = false, features = [] }
+bevy = { version = "0.14", default-features = false, features = [] }
 rustls = { version = "0.21.0", default-features = false, features = [
 	"quic",
 	"dangerous_configuration",
@@ -30,7 +30,7 @@ quinn-proto = "0.10.1"
 futures-util = "0.3.24"
 futures = "0.3.24"
 bincode = "1.3.3"
-serde = "1.0.145"
+serde = { version = "1.0.145", features = ["derive"] }
 bytes = "1.5.0"
 base64 = "0.13.1"
 thiserror = "1.0.37"
@@ -41,7 +41,7 @@ default = ["shared-client-id"]
 shared-client-id = []
 
 [dev-dependencies]
-bevy = { version = "0.14.0-rc.2", default-features = false, features = [
+bevy = { version = "0.14", default-features = false, features = [
 	"bevy_asset",         # Provides asset functionality
 	"bevy_audio",         # Provides audio functionality
 	"vorbis",             # OGG/VORBIS audio format support
