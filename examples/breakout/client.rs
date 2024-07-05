@@ -13,8 +13,8 @@ use bevy::{
     state::state::NextState,
     text::{Text, TextSection, TextStyle},
     ui::{
-        node_bundles::NodeBundle, AlignItems, Interaction, JustifyContent, PositionType, Style,
-        UiImage, UiRect, Val,
+        node_bundles::NodeBundle, AlignItems, BackgroundColor, Interaction, JustifyContent,
+        PositionType, Style, UiRect, Val,
     },
 };
 use bevy_quinnet::{
@@ -382,7 +382,7 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
                 .spawn((
                     ButtonBundle {
                         style: button_style.clone(),
-                        image: UiImage::default().with_color(NORMAL_BUTTON_COLOR),
+                        background_color: NORMAL_BUTTON_COLOR.into(),
                         ..default()
                     },
                     MenuItem::Host,
@@ -394,7 +394,7 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
                 .spawn((
                     ButtonBundle {
                         style: button_style,
-                        image: UiImage::default().with_color(NORMAL_BUTTON_COLOR),
+                        background_color: NORMAL_BUTTON_COLOR.into(),
                         ..default()
                     },
                     MenuItem::Join,
@@ -407,7 +407,7 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
 
 pub(crate) fn handle_menu_buttons(
     mut interaction_query: Query<
-        (&Interaction, &mut UiImage, &MenuItem),
+        (&Interaction, &mut BackgroundColor, &MenuItem),
         (Changed<Interaction>, With<Button>),
     >,
     mut next_state: ResMut<NextState<GameState>>,
@@ -415,14 +415,14 @@ pub(crate) fn handle_menu_buttons(
     for (interaction, mut color, item) in &mut interaction_query {
         match *interaction {
             Interaction::Pressed => {
-                *color = UiImage::default().with_color(PRESSED_BUTTON_COLOR);
+                *color = PRESSED_BUTTON_COLOR.into();
                 match item {
                     MenuItem::Host => next_state.set(GameState::HostingLobby),
                     MenuItem::Join => next_state.set(GameState::JoiningLobby),
                 }
             }
-            Interaction::Hovered => *color = UiImage::default().with_color(HOVERED_BUTTON_COLOR),
-            Interaction::None => *color = UiImage::default().with_color(NORMAL_BUTTON_COLOR),
+            Interaction::Hovered => *color = HOVERED_BUTTON_COLOR.into(),
+            Interaction::None => *color = NORMAL_BUTTON_COLOR.into(),
         }
     }
 }
