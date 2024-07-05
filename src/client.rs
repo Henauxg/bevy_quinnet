@@ -7,7 +7,7 @@ use std::{
 };
 
 use bevy::prelude::*;
-use quinn::ConnectionError;
+
 use tokio::{
     runtime::{self},
     sync::oneshot,
@@ -57,7 +57,7 @@ pub enum QuinnetConnectionError {
 pub(crate) enum ClientAsyncMessage {
     Connected(InternalConnectionRef, Option<ClientId>),
     ConnectionFailed(QuinnetConnectionError),
-    ConnectionClosed(ConnectionError),
+    ConnectionClosed, // TODO Might set a ConnectionError
     CertificateInteractionRequest {
         status: CertVerificationStatus,
         info: CertVerificationInfo,
@@ -317,7 +317,7 @@ pub fn update_sync_client(
                         err,
                     });
                 }
-                ClientAsyncMessage::ConnectionClosed(_) => match connection.state {
+                ClientAsyncMessage::ConnectionClosed => match connection.state {
                     InternalConnectionState::Disconnected => (),
                     _ => {
                         connection.try_disconnect();

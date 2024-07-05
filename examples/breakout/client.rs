@@ -6,10 +6,11 @@ use bevy::{
     prelude::{
         default, AssetServer, AudioBundle, BuildChildren, Bundle, Button, ButtonBundle,
         Camera2dBundle, Changed, Color, Commands, Component, DespawnRecursiveExt, Entity,
-        EventReader, EventWriter, KeyCode, Local, NextState, PlaybackSettings, Query, Res, ResMut,
-        Resource, TextBundle, Transform, Vec2, Vec3, With, Without,
+        EventReader, EventWriter, KeyCode, Local, PlaybackSettings, Query, Res, ResMut, Resource,
+        TextBundle, Transform, Vec2, Vec3, With, Without,
     },
     sprite::{Sprite, SpriteBundle},
+    state::state::NextState,
     text::{Text, TextSection, TextStyle},
     ui::{
         node_bundles::NodeBundle, AlignItems, BackgroundColor, Interaction, JustifyContent,
@@ -18,7 +19,8 @@ use bevy::{
 };
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, connection::ClientEndpointConfiguration, QuinnetClient,
+        certificate::CertificateVerificationMode, connection::ClientEndpointConfiguration,
+        QuinnetClient,
     },
     shared::ClientId,
 };
@@ -33,19 +35,19 @@ use crate::{
 const SCOREBOARD_FONT_SIZE: f32 = 40.0;
 const SCOREBOARD_TEXT_PADDING: Val = Val::Px(5.0);
 
-pub(crate) const BACKGROUND_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
-const PADDLE_COLOR: Color = Color::rgb(0.3, 0.3, 0.7);
-const OPPONENT_PADDLE_COLOR: Color = Color::rgb(1.0, 0.5, 0.5);
-const BALL_COLOR: Color = Color::rgb(0.35, 0.35, 0.6);
-const OPPONENT_BALL_COLOR: Color = Color::rgb(0.9, 0.6, 0.6);
-const BRICK_COLOR: Color = Color::rgb(0.5, 0.5, 1.0);
-const WALL_COLOR: Color = Color::rgb(0.8, 0.8, 0.8);
-const TEXT_COLOR: Color = Color::rgb(0.5, 0.5, 1.0);
-const SCORE_COLOR: Color = Color::rgb(1.0, 0.5, 0.5);
-const NORMAL_BUTTON_COLOR: Color = Color::rgb(0.15, 0.15, 0.15);
-const HOVERED_BUTTON_COLOR: Color = Color::rgb(0.25, 0.25, 0.25);
-const PRESSED_BUTTON_COLOR: Color = Color::rgb(0.35, 0.75, 0.35);
-const BUTTON_TEXT_COLOR: Color = Color::rgb(0.9, 0.9, 0.9);
+pub(crate) const BACKGROUND_COLOR: Color = Color::srgb(0.9, 0.9, 0.9);
+const PADDLE_COLOR: Color = Color::srgb(0.3, 0.3, 0.7);
+const OPPONENT_PADDLE_COLOR: Color = Color::srgb(1.0, 0.5, 0.5);
+const BALL_COLOR: Color = Color::srgb(0.35, 0.35, 0.6);
+const OPPONENT_BALL_COLOR: Color = Color::srgb(0.9, 0.6, 0.6);
+const BRICK_COLOR: Color = Color::srgb(0.5, 0.5, 1.0);
+const WALL_COLOR: Color = Color::srgb(0.8, 0.8, 0.8);
+const TEXT_COLOR: Color = Color::srgb(0.5, 0.5, 1.0);
+const SCORE_COLOR: Color = Color::srgb(1.0, 0.5, 0.5);
+const NORMAL_BUTTON_COLOR: Color = Color::srgb(0.15, 0.15, 0.15);
+const HOVERED_BUTTON_COLOR: Color = Color::srgb(0.25, 0.25, 0.25);
+const PRESSED_BUTTON_COLOR: Color = Color::srgb(0.35, 0.75, 0.35);
+const BUTTON_TEXT_COLOR: Color = Color::srgb(0.9, 0.9, 0.9);
 
 const BOLD_FONT: &str = "fonts/FiraSans-Bold.ttf";
 const NORMAL_FONT: &str = "fonts/FiraMono-Medium.ttf";
@@ -79,7 +81,7 @@ pub(crate) struct Paddle;
 pub(crate) struct Ball;
 
 #[derive(Component)]
-pub(crate) struct Brick(BrickId);
+pub(crate) struct Brick;
 
 /// The buttons in the main menu.
 #[derive(Clone, Copy, Component)]
@@ -170,7 +172,7 @@ pub(crate) fn spawn_bricks(
 
             let brick = commands
                 .spawn((
-                    Brick(brick_id),
+                    Brick,
                     SpriteBundle {
                         sprite: Sprite {
                             color: BRICK_COLOR,
@@ -419,12 +421,8 @@ pub(crate) fn handle_menu_buttons(
                     MenuItem::Join => next_state.set(GameState::JoiningLobby),
                 }
             }
-            Interaction::Hovered => {
-                *color = HOVERED_BUTTON_COLOR.into();
-            }
-            Interaction::None => {
-                *color = NORMAL_BUTTON_COLOR.into();
-            }
+            Interaction::Hovered => *color = HOVERED_BUTTON_COLOR.into(),
+            Interaction::None => *color = NORMAL_BUTTON_COLOR.into(),
         }
     }
 }

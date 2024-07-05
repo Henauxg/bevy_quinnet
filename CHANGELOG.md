@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.9.0 (2024-06-05)
+
+- Update to use Bevy 0.14
+
 ## Version 0.8.0 (2024-05-12)
 
 - Added a new crate `bevy_replicon_quinnet` with tests and examples, providing an integration of bevy_quinnet as a replicon back-end.

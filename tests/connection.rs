@@ -22,32 +22,35 @@ fn connection_with_two_apps() {
 
     assert!(
         client_app
-            .world
+            .world()
             .resource::<QuinnetClient>()
             .get_connection()
             .is_some(),
         "The default connection should exist"
     );
-    let server = server_app.world.resource::<QuinnetServer>();
+    let server = server_app.world().resource::<QuinnetServer>();
     assert!(server.is_listening(), "The server should be listening");
 
     let client_id = wait_for_client_connected(&mut client_app, &mut server_app);
 
     assert_eq!(
         server_app
-            .world
+            .world()
             .resource::<ServerTestData>()
             .connection_events_received,
         1
     );
 
     assert!(
-        client_app.world.resource::<QuinnetClient>().is_connected(),
+        client_app
+            .world()
+            .resource::<QuinnetClient>()
+            .is_connected(),
         "The default connection should be connected to the server"
     );
     assert_eq!(
         client_app
-            .world
+            .world()
             .resource::<ClientTestData>()
             .connection_events_received,
         1
@@ -55,7 +58,7 @@ fn connection_with_two_apps() {
 
     let sent_client_message = SharedMessage::TestMessage("Test message content".to_string());
     client_app
-        .world
+        .world()
         .resource::<QuinnetClient>()
         .connection()
         .send_message(sent_client_message.clone())
@@ -66,7 +69,7 @@ fn connection_with_two_apps() {
     server_app.update();
 
     let (_channel_id, client_message) = server_app
-        .world
+        .world_mut()
         .resource_mut::<QuinnetServer>()
         .endpoint_mut()
         .receive_message_from::<SharedMessage>(client_id)
@@ -77,7 +80,7 @@ fn connection_with_two_apps() {
     let sent_server_message = SharedMessage::TestMessage("Server response".to_string());
 
     server_app
-        .world
+        .world()
         .resource::<QuinnetServer>()
         .endpoint()
         .broadcast_message(sent_server_message.clone())
@@ -88,7 +91,7 @@ fn connection_with_two_apps() {
     client_app.update();
 
     let (_channel_id, server_message) = client_app
-        .world
+        .world_mut()
         .resource_mut::<QuinnetClient>()
         .connection_mut()
         .receive_message::<SharedMessage>()
@@ -114,7 +117,7 @@ fn reconnection() {
 
     assert_eq!(
         server_app
-            .world
+            .world()
             .resource::<ServerTestData>()
             .connection_events_received,
         1
@@ -122,14 +125,14 @@ fn reconnection() {
 
     assert_eq!(
         client_app
-            .world
+            .world()
             .resource::<ClientTestData>()
             .connection_events_received,
         1
     );
 
     client_app
-        .world
+        .world_mut()
         .resource_mut::<QuinnetClient>()
         .connection_mut()
         .disconnect()
@@ -139,7 +142,7 @@ fn reconnection() {
     assert_eq!(last_disconnected_client_id, client_id_1);
 
     client_app
-        .world
+        .world_mut()
         .resource_mut::<QuinnetClient>()
         .connection_mut()
         .reconnect()
@@ -154,7 +157,7 @@ fn reconnection() {
 
     assert_eq!(
         server_app
-            .world
+            .world()
             .resource::<ServerTestData>()
             .connection_events_received,
         2
@@ -162,7 +165,7 @@ fn reconnection() {
 
     assert_eq!(
         client_app
-            .world
+            .world()
             .resource::<ClientTestData>()
             .connection_events_received,
         2

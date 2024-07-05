@@ -6,7 +6,7 @@ use std::{
 
 use bevy::prelude::*;
 use bytes::Bytes;
-use quinn::{ConnectionError, Endpoint as QuinnEndpoint, ServerConfig};
+use quinn::{Endpoint as QuinnEndpoint, ServerConfig};
 use quinn_proto::ConnectionStats;
 use serde::Deserialize;
 use tokio::{
@@ -133,7 +133,7 @@ impl ServerEndpointConfiguration {
 #[derive(Debug)]
 pub(crate) enum ServerAsyncMessage {
     ClientConnected(ClientConnection),
-    ClientConnectionClosed(ClientId, ConnectionError),
+    ClientConnectionClosed(ClientId), // TODO Might add a ConnectionError
 }
 
 #[derive(Debug, Clone)]
@@ -994,14 +994,12 @@ async fn client_connection_task(
                 let conn = connection_handle.clone();
                 let to_sync_server = to_sync_server_send.clone();
                 tokio::spawn(async move {
-                    let conn_err = conn.closed().await;
-                    info!("Connection {} closed: {}", client_id, conn_err);
+                    let _conn_err = conn.closed().await;
+                    info!("Connection {} closed: {}", client_id, _conn_err);
                     // If we requested the connection to close, channel may have been closed already.
                     if !to_sync_server.is_closed() {
                         to_sync_server
-                            .send(ServerAsyncMessage::ClientConnectionClosed(
-                                client_id, conn_err,
-                            ))
+                            .send(ServerAsyncMessage::ClientConnectionClosed(client_id))
                             .await
                             .expect("Failed to signal connection lost in async connection");
                     }
@@ -1051,7 +1049,7 @@ pub fn update_sync_server(
                         }
                     };
                 }
-                ServerAsyncMessage::ClientConnectionClosed(client_id, _) => {
+                ServerAsyncMessage::ClientConnectionClosed(client_id) => {
                     match endpoint.clients.contains_key(&client_id) {
                         true => {
                             endpoint.stats.disconnect_count += 1;
