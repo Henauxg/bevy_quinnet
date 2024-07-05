@@ -1,6 +1,6 @@
 # Changelog
 
-## Version 0.9.0 (2024-06-05)
+## Version 0.9.0 (2024-07-05)
 
 - Update to use Bevy 0.14
 
