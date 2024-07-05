@@ -807,12 +807,12 @@ pub(crate) async fn async_connection_task(
                 let conn = connection_handle.clone();
                 let to_sync_client = to_sync_client_send.clone();
                 tokio::spawn(async move {
-                    let conn_err = conn.closed().await;
-                    info!("Connection {} closed: {}", local_id, conn_err);
+                    let _conn_err = conn.closed().await;
+                    info!("Connection {} closed: {}", local_id, _conn_err);
                     // If we requested the connection to close, channel may have been closed already.
                     if !to_sync_client.is_closed() {
                         to_sync_client
-                            .send(ClientAsyncMessage::ConnectionClosed(conn_err))
+                            .send(ClientAsyncMessage::ConnectionClosed)
                             .await
                             .expect("Failed to signal connection closed in async connection");
                     }
