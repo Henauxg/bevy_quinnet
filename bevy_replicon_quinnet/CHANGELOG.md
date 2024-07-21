@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.5.0  (WIP)
+
+- Add `client` & `server` features.
+
 ## Version 0.4.0 (2024-07-05)
 
 - Update `bevy_replicon` dependency from 0.26 to 0.27

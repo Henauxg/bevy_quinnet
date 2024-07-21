@@ -1,5 +1,13 @@
 # Changelog
 
+## Version 0.10.0  (WIP)
+
+- Add `client` & `server` features.
+
+## Version 0.9.0 (2024-07-05)
+
+- Update to use Bevy 0.14
+
 ## Version 0.9.0 (2024-07-05)
 
 - Update to use Bevy 0.14

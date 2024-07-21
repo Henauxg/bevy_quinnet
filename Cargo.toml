@@ -1,6 +1,6 @@
 [package]
 name = "bevy_quinnet"
-version = "0.9.0"
+version = "0.10.0"
 description = "Bevy plugin for Client/Server multiplayer games using QUIC"
 repository = "https://github.com/Henauxg/bevy_quinnet"
 documentation = "https://docs.rs/bevy_quinnet"
@@ -36,9 +36,13 @@ base64 = "0.13.1"
 thiserror = "1.0.37"
 
 [features]
-default = ["shared-client-id"]
+default = ["shared-client-id", "client", "server"]
 # Server sends the client id to the client, client wait for it before being “connected”
 shared-client-id = []
+# Enables client features
+client = []
+# Enables server features
+server = []
 
 [dev-dependencies]
 bevy = { version = "0.14", default-features = false, features = [
