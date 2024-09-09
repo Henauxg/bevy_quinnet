@@ -37,10 +37,10 @@ impl PluginGroup for RepliconQuinnetPlugins {
 }
 
 pub trait ChannelsConfigurationExt {
-    /// Returns server channel configs that can be used to create [`ConnectionConfig`](renet::ConnectionConfig).
+    /// Returns server channel configs that can be used to start an endpoint on the [`bevy_quinnet::server::QuinnetServer`].
     fn get_server_configs(&self) -> ChannelsConfiguration;
 
-    /// Same as [`RenetChannelsExt::get_server_configs`], but for clients.
+    /// Same as [`ChannelsConfigurationExt::get_server_configs`], but for clients.
     fn get_client_configs(&self) -> ChannelsConfiguration;
 }
 impl ChannelsConfigurationExt for RepliconChannels {
