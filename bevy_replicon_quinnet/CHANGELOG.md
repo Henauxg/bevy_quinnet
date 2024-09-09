@@ -1,8 +1,10 @@
 # Changelog
 
-## Version 0.5.0  (WIP)
+## Version 0.5.0 (2024-09-09)
 
 - Add `client` & `server` features.
+- Update `bevy_quinnet` dependency from 0.9 to 0.10
+- Update `bevy_replicon` dependency from 0.26 to 0.27
 
 ## Version 0.4.0 (2024-07-05)
 

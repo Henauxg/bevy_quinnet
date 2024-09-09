@@ -78,7 +78,7 @@ impl RepliconQuinnetServerPlugin {
         let Some(endpoint) = quinnet_server.get_endpoint_mut() else {
             return;
         };
-        for client_id in connected_clients.iter_client_ids() {
+        for &client_id in connected_clients.iter() {
             while let Some((channel_id, message)) =
                 endpoint.try_receive_payload_from(client_id.get())
             {
