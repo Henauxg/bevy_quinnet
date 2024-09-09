@@ -1,6 +1,6 @@
 # Changelog
 
-## Version 0.10.0  (WIP)
+## Version 0.10.0 (2024-09-09)
 
 - Add `client` & `server` features.
 
