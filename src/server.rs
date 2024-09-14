@@ -25,7 +25,7 @@ use crate::{
     shared::{
         channels::{
             spawn_recv_channels_tasks, spawn_send_channels_tasks, Channel, ChannelAsyncMessage,
-            ChannelId, ChannelSyncMessage, ChannelType, ChannelsConfiguration,
+            ChannelId, ChannelSyncMessage, ChannelType, ChannelsConfiguration, CloseReason,
         },
         error::QuinnetError,
         AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncUpdate,
@@ -148,7 +148,7 @@ pub struct ClientConnection {
 
     channels: Vec<Option<Channel>>,
     bytes_from_client_recv: mpsc::Receiver<(ChannelId, Bytes)>,
-    close_sender: broadcast::Sender<()>,
+    close_sender: broadcast::Sender<CloseReason>,
 
     pub(crate) to_connection_send: mpsc::Sender<ServerSyncMessage>,
     pub(crate) to_channels_send: mpsc::Sender<ChannelSyncMessage>,
@@ -210,7 +210,7 @@ impl ClientConnection {
 
     /// Signal the connection to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
     pub(crate) fn close(&mut self) -> Result<(), QuinnetError> {
-        match self.close_sender.send(()) {
+        match self.close_sender.send(CloseReason::LocalOrder) {
             Ok(_) => Ok(()),
             Err(_) => {
                 // The only possible error for a send is that there is no active receivers, meaning that the tasks are already terminated.
@@ -634,19 +634,38 @@ impl Endpoint {
         }
     }
 
+    fn internal_disconnect_client(
+        &mut self,
+        client_id: ClientId,
+        reason: CloseReason,
+    ) -> Result<(), QuinnetError> {
+        match self.clients.remove(&client_id) {
+            Some(client_connection) => match client_connection.close_sender.send(reason) {
+                Ok(_) => Ok(()),
+                Err(_) => Err(QuinnetError::ClientAlreadyDisconnected(client_id)),
+            },
+            None => Err(QuinnetError::UnknownClient(client_id)),
+        }
+    }
+
+    /// Logical "Disconnect", the client already closed/lost the connection.
+    fn try_disconnect_closed_client(&mut self, client_id: ClientId) {
+        match self.internal_disconnect_client(client_id, CloseReason::PeerClosed) {
+            Ok(_) => (),
+            Err(err) => error!(
+                "Failed to properly disconnect client {}: {}",
+                client_id, err
+            ),
+        }
+    }
+
     /// Disconnect a specific client. Removes it from the server.
     ///
     /// Disconnecting a client immediately prevents new messages from being sent on its connection and signal the underlying connection to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
     ///
     /// This may fail if no client if found for client_id, or if the client is already disconnected.
     pub fn disconnect_client(&mut self, client_id: ClientId) -> Result<(), QuinnetError> {
-        match self.clients.remove(&client_id) {
-            Some(client_connection) => match client_connection.close_sender.send(()) {
-                Ok(_) => Ok(()),
-                Err(_) => Err(QuinnetError::ClientAlreadyDisconnected(client_id)),
-            },
-            None => Err(QuinnetError::UnknownClient(client_id)),
-        }
+        self.internal_disconnect_client(client_id, CloseReason::LocalOrder)
     }
 
     /// Same as [Endpoint::disconnect_client] but errors are logged instead of returned
@@ -1053,7 +1072,7 @@ pub fn update_sync_server(
                     match endpoint.clients.contains_key(&client_id) {
                         true => {
                             endpoint.stats.disconnect_count += 1;
-                            endpoint.try_disconnect_client(client_id);
+                            endpoint.try_disconnect_closed_client(client_id);
                             connection_lost_events.send(ConnectionLostEvent { id: client_id });
                         }
                         false => (),

@@ -320,7 +320,7 @@ pub fn update_sync_client(
                 ClientAsyncMessage::ConnectionClosed => match connection.state {
                     InternalConnectionState::Disconnected => (),
                     _ => {
-                        connection.try_disconnect();
+                        connection.try_disconnect_closed_connection();
                         connection_lost_events.send(ConnectionLostEvent { id: *connection_id });
                     }
                 },
@@ -356,7 +356,7 @@ pub fn update_sync_client(
                 ChannelAsyncMessage::LostConnection => match connection.state {
                     InternalConnectionState::Disconnected => (),
                     _ => {
-                        connection.try_disconnect();
+                        connection.try_disconnect_closed_connection();
                         connection_lost_events.send(ConnectionLostEvent { id: *connection_id });
                     }
                 },

@@ -1,13 +1,14 @@
 use bevy::prelude::*;
 use bytes::Buf;
 use futures::StreamExt;
-use tokio::sync::broadcast;
 use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 
 use crate::{
     client::QuinnetConnectionError,
     shared::{ClientId, CLIENT_ID_LEN},
 };
+
+use super::CloseRecv;
 
 pub(crate) enum ClientIdReception {
     Interrupted,
@@ -17,7 +18,7 @@ pub(crate) enum ClientIdReception {
 
 pub(crate) async fn receive_client_id(
     connection_handle: quinn::Connection,
-    mut close_recv: broadcast::Receiver<()>,
+    mut close_recv: CloseRecv,
 ) -> ClientIdReception {
     let mut client_id = None;
     let mut err = QuinnetConnectionError::ClientIdNotReceived;

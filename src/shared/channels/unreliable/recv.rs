@@ -1,17 +1,17 @@
 use bevy::utils::tracing::trace;
 use bytes::Bytes;
 use std::fmt::Display;
-use tokio::sync::{
-    broadcast,
-    mpsc::{self},
-};
+use tokio::sync::mpsc::{self};
 
-use crate::shared::channels::{ChannelId, CHANNEL_ID_LEN};
+use crate::{
+    client::connection::CloseRecv,
+    shared::channels::{ChannelId, CHANNEL_ID_LEN},
+};
 
 pub(crate) async fn unreliable_channel_receiver_task<T: Display>(
     task_id: T,
     connection: quinn::Connection,
-    mut close_recv: broadcast::Receiver<()>,
+    mut close_recv: CloseRecv,
     bytes_incoming_send: mpsc::Sender<(ChannelId, Bytes)>,
 ) {
     tokio::select! {

@@ -31,6 +31,12 @@ pub const MAX_CHANNEL_COUNT: usize = u8::MAX as usize + 1;
 pub(crate) const CHANNEL_ID_LEN: usize = 1;
 pub(crate) const PROTOCOL_HEADER_LEN: usize = CHANNEL_ID_LEN;
 
+#[derive(PartialEq, Clone, Copy)]
+pub(crate) enum CloseReason {
+    LocalOrder,
+    PeerClosed,
+}
+
 /// Type of a channel, offering different delivery guarantees.
 #[derive(Debug, Copy, Clone)]
 pub enum ChannelType {
@@ -146,7 +152,7 @@ impl ChannelsConfiguration {
 
 pub(crate) fn spawn_send_channels_tasks(
     connection_handle: quinn::Connection,
-    close_recv: broadcast::Receiver<()>,
+    close_recv: broadcast::Receiver<CloseReason>,
     to_channels_recv: mpsc::Receiver<ChannelSyncMessage>,
     from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
 ) {
@@ -164,7 +170,7 @@ pub(crate) fn spawn_send_channels_tasks(
 
 pub(crate) async fn send_channel_task_spawner(
     connection: quinn::Connection,
-    mut close_recv: broadcast::Receiver<()>,
+    mut close_recv: broadcast::Receiver<CloseReason>,
     mut to_channels_recv: mpsc::Receiver<ChannelSyncMessage>,
     from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
 ) {
@@ -247,7 +253,7 @@ pub(crate) async fn send_channel_task_spawner(
 pub(crate) fn spawn_recv_channels_tasks(
     connection_handle: quinn::Connection,
     connection_id: u64,
-    close_recv: broadcast::Receiver<()>,
+    close_recv: broadcast::Receiver<CloseReason>,
     bytes_incoming_send: mpsc::Sender<(ChannelId, Bytes)>,
 ) {
     // Spawn a task to listen for reliable messages

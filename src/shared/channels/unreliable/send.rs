@@ -4,25 +4,33 @@ use bevy::{
 };
 use bytes::{BufMut, Bytes, BytesMut};
 use quinn::SendDatagramError;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 
-use crate::shared::channels::{ChannelAsyncMessage, ChannelId, PROTOCOL_HEADER_LEN};
+use crate::{
+    client::connection::CloseRecv,
+    shared::channels::{ChannelAsyncMessage, ChannelId, CloseReason, PROTOCOL_HEADER_LEN},
+};
 
 pub(crate) async fn unreliable_channel_task(
     connection: quinn::Connection,
     channel_id: ChannelId,
     _: mpsc::Sender<()>,
     from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
-    mut close_recv: broadcast::Receiver<()>,
+    mut close_recv: CloseRecv,
     mut channel_close_recv: mpsc::Receiver<()>,
     mut bytes_to_channel_recv: mpsc::Receiver<Bytes>,
 ) {
-    tokio::select! {
-        _ = close_recv.recv() => {
-            trace!("Unreliable Channel task received a close signal")
+    let close_reason = tokio::select! {
+        close_reason = close_recv.recv() => {
+            trace!("Unreliable Channel task received a close signal");
+            match close_reason {
+                Ok(reason) => reason,
+                Err(_) => CloseReason::LocalOrder,
+            }
         }
         _ = channel_close_recv.recv() => {
-            trace!("Unreliable Channel task received a channel close signal")
+            trace!("Unreliable Channel task received a channel close signal");
+            CloseReason::LocalOrder
         }
         _ = async {
             while let Some(msg_bytes) = bytes_to_channel_recv.recv().await {
@@ -43,15 +51,19 @@ pub(crate) async fn unreliable_channel_task(
                 }
             }
         } => {
-            trace!("Unreliable Channel task ended")
+            trace!("Unreliable Channel task ended");
+            CloseReason::LocalOrder
         }
     };
-    while let Ok(msg_bytes) = bytes_to_channel_recv.try_recv() {
-        if let Err(err) = send_unreliable_message(&connection, msg_bytes, channel_id) {
-            warn!(
-                "Failed to send a remaining message on Unreliable Channel, {}",
-                err
-            );
+    // No need to try to flush if we know that the peer is already closed
+    if close_reason != CloseReason::PeerClosed {
+        while let Ok(msg_bytes) = bytes_to_channel_recv.try_recv() {
+            if let Err(err) = send_unreliable_message(&connection, msg_bytes, channel_id) {
+                warn!(
+                    "Failed to send a remaining message on Unreliable Channel, {}",
+                    err
+                );
+            }
         }
     }
 }

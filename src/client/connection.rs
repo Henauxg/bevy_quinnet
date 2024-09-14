@@ -32,7 +32,7 @@ use client_id::receive_client_id;
 use crate::shared::{
     channels::{
         spawn_recv_channels_tasks, spawn_send_channels_tasks, Channel, ChannelAsyncMessage,
-        ChannelId, ChannelSyncMessage, ChannelType, ChannelsConfiguration,
+        ChannelId, ChannelSyncMessage, ChannelType, ChannelsConfiguration, CloseReason,
     },
     error::QuinnetError,
     ClientId, InternalConnectionRef, DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE,
@@ -260,8 +260,8 @@ pub(crate) type ChannelAsyncMsgSend = mpsc::Sender<ChannelAsyncMessage>;
 pub(crate) type ChannelAsyncMsgRecv = mpsc::Receiver<ChannelAsyncMessage>;
 pub(crate) type ChannelSyncMsgSend = mpsc::Sender<ChannelSyncMessage>;
 pub(crate) type ChannelSyncMsgRecv = mpsc::Receiver<ChannelSyncMessage>;
-pub(crate) type CloseSend = broadcast::Sender<()>;
-pub(crate) type CloseRecv = broadcast::Receiver<()>;
+pub(crate) type CloseSend = broadcast::Sender<CloseReason>;
+pub(crate) type CloseRecv = broadcast::Receiver<CloseReason>;
 
 pub(crate) fn create_async_channels() -> (
     MessageSend,
@@ -319,7 +319,7 @@ pub struct Connection {
     default_channel: Option<ChannelId>,
 
     bytes_from_server_recv: mpsc::Receiver<(ChannelId, Bytes)>,
-    close_sender: broadcast::Sender<()>,
+    close_sender: broadcast::Sender<CloseReason>,
 
     pub(crate) from_async_client_recv: mpsc::Receiver<ClientAsyncMessage>,
     pub(crate) to_channels_send: mpsc::Sender<ChannelSyncMessage>,
@@ -528,15 +528,12 @@ impl Connection {
         }
     }
 
-    /// Immediately prevents new messages from being sent on the connection and signal the connection to closes all its background tasks.
-    ///
-    /// Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
-    pub fn disconnect(&mut self) -> Result<(), QuinnetError> {
+    fn internal_disconnect(&mut self, reason: CloseReason) -> Result<(), QuinnetError> {
         match &self.state {
             &InternalConnectionState::Disconnected => Ok(()),
             _ => {
                 self.state = InternalConnectionState::Disconnected;
-                match self.close_sender.send(()) {
+                match self.close_sender.send(reason) {
                     Ok(_) => Ok(()),
                     Err(_) => {
                         // The only possible error for a send is that there is no active receivers, meaning that the tasks are already terminated.
@@ -547,9 +544,24 @@ impl Connection {
         }
     }
 
+    /// Immediately prevents new messages from being sent on the connection and signal the connection to closes all its background tasks.
+    ///
+    /// Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
+    pub fn disconnect(&mut self) -> Result<(), QuinnetError> {
+        self.internal_disconnect(CloseReason::LocalOrder)
+    }
+
     /// Same as [Connection::disconnect] but will log the error instead of returning it
-    pub(crate) fn try_disconnect(&mut self) {
+    pub fn try_disconnect(&mut self) {
         match &self.disconnect() {
+            Ok(_) => (),
+            Err(err) => error!("Failed to properly close clonnection: {}", err),
+        }
+    }
+
+    /// Logical "Disconnect", the underlying connection si already closed/lost.
+    pub(crate) fn try_disconnect_closed_connection(&mut self) {
+        match self.internal_disconnect(CloseReason::PeerClosed) {
             Ok(_) => (),
             Err(err) => error!("Failed to properly close clonnection: {}", err),
         }

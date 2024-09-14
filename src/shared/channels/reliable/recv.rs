@@ -3,21 +3,21 @@ use bytes::{Buf, Bytes, BytesMut};
 use futures::StreamExt;
 use quinn::RecvStream;
 use std::{fmt::Display, io::Cursor};
-use tokio::sync::{
-    broadcast,
-    mpsc::{self},
-};
+use tokio::sync::mpsc::{self};
 use tokio_util::codec::FramedRead;
 
-use crate::shared::channels::{
-    reliable::{codec::QuinnetProtocolCodecDecoder, DEFAULT_MAX_RELIABLE_FRAME_LEN},
-    ChannelId, CHANNEL_ID_LEN,
+use crate::{
+    client::connection::CloseRecv,
+    shared::channels::{
+        reliable::{codec::QuinnetProtocolCodecDecoder, DEFAULT_MAX_RELIABLE_FRAME_LEN},
+        ChannelId, CHANNEL_ID_LEN,
+    },
 };
 
 pub(crate) async fn reliable_channels_receiver_task<T: Display>(
     task_id: T,
     connection: quinn::Connection,
-    mut close_recv: broadcast::Receiver<()>,
+    mut close_recv: CloseRecv,
     bytes_incoming_send: mpsc::Sender<(ChannelId, Bytes)>,
 ) {
     let close_recv_clone = close_recv.resubscribe();
@@ -45,7 +45,7 @@ pub(crate) async fn reliable_channels_receiver_task<T: Display>(
 
 async fn reliable_stream_receiver_task(
     recv: RecvStream,
-    mut close_recv: broadcast::Receiver<()>,
+    mut close_recv: CloseRecv,
     bytes_incoming_send: mpsc::Sender<(ChannelId, Bytes)>,
 ) {
     tokio::select! {
