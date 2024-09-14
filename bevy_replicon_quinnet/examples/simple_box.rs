@@ -57,8 +57,8 @@ impl Plugin for SimpleBoxPlugin {
             .add_systems(
                 Update,
                 (
-                    Self::apply_movement.run_if(has_authority), // Runs only on the server or a single player.
-                    Self::handle_connections.run_if(server_running), // Runs only on the server.
+                    Self::apply_movement.run_if(server_or_singleplayer), // Runs only on the server or a single player.
+                    Self::handle_connections.run_if(server_running),     // Runs only on the server.
                     (Self::draw_boxes, Self::read_input),
                 ),
             );
