@@ -84,7 +84,7 @@ pub(crate) async fn ordered_reliable_channel_task(
                 err
             );
         }
-        if let Err(err) = frame_sender.into_inner().finish().await {
+        if let Err(err) = frame_sender.into_inner().finish() {
             warn!(
                 "Failed to shutdown Ordered Reliable Channel stream gracefully: {}",
                 err
@@ -128,7 +128,7 @@ pub(crate) async fn unordered_reliable_channel_task(
                             .await
                             .expect("Failed to signal connection lost on Unordered Reliable Channel");
                     }
-                    if let Err(err) = frame_sender.into_inner().finish().await {
+                    if let Err(err) = frame_sender.into_inner().finish() {
                         warn!("Failed to shutdown Unordered Reliable Channel stream gracefully: {}", err);
                     }
                     drop(channels_keepalive_clone)
@@ -152,7 +152,7 @@ pub(crate) async fn unordered_reliable_channel_task(
                         err
                     );
                 }
-                if let Err(err) = frame_sender.into_inner().finish().await {
+                if let Err(err) = frame_sender.into_inner().finish() {
                     warn!(
                         "Failed to shutdown Unordered Reliable Channel stream gracefully: {}",
                         err

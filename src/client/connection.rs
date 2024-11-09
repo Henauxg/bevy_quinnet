@@ -8,7 +8,7 @@ use std::{
 use bevy::utils::tracing::{error, info};
 use bevy::{log::trace, prelude::Event};
 use bytes::Bytes;
-use quinn::{ClientConfig, Endpoint};
+use quinn::{ClientConfig, Endpoint, crypto::rustls::QuicClientConfig};
 use quinn_proto::ConnectionStats;
 
 use serde::Deserialize;
@@ -914,28 +914,28 @@ fn configure_client(
 ) -> Result<ClientConfig, Box<dyn Error>> {
     match cert_mode {
         CertificateVerificationMode::SkipVerification => {
-            let crypto = rustls::ClientConfig::builder()
-                .with_safe_defaults()
+            let crypto = rustls::ClientConfig::builder().dangerous()
                 .with_custom_certificate_verifier(SkipServerVerification::new())
                 .with_no_client_auth();
 
-            Ok(ClientConfig::new(Arc::new(crypto)))
+            Ok(ClientConfig::new(Arc::new(QuicClientConfig::try_from(crypto)?)))
         }
         CertificateVerificationMode::SignedByCertificateAuthority => {
-            Ok(ClientConfig::with_native_roots())
+            let _ = rustls::crypto::CryptoProvider::install_default(rustls::crypto::ring::default_provider());
+            Ok(ClientConfig::with_platform_verifier())
         }
         CertificateVerificationMode::TrustOnFirstUse(config) => {
             let (store, store_file) = load_known_hosts_store_from_config(config.known_hosts)?;
-            let crypto = rustls::ClientConfig::builder()
-                .with_safe_defaults()
+            let crypto = rustls::ClientConfig::builder().dangerous()
                 .with_custom_certificate_verifier(TofuServerVerification::new(
                     store,
                     config.verifier_behaviour,
                     to_sync_client,
                     store_file,
+                    Arc::new(rustls::crypto::ring::default_provider()),
                 ))
                 .with_no_client_auth();
-            Ok(ClientConfig::new(Arc::new(crypto)))
+            Ok(ClientConfig::new(Arc::new(QuicClientConfig::try_from(crypto)?)))
         }
     }
 }

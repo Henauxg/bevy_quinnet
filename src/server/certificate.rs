@@ -52,9 +52,9 @@ pub enum CertificateRetrievalMode {
 /// Represents a server certificate.
 pub struct ServerCertificate {
     /// A vector of [rustls::Certificate] that contains the server's certificate chain.
-    pub cert_chain: Vec<rustls::Certificate>,
+    pub cert_chain: Vec<rustls::pki_types::CertificateDer<'static>>,
     /// The server's private key, represented by a [rustls::PrivateKey] struct.
-    pub priv_key: rustls::PrivateKey,
+    pub priv_key: rustls::pki_types::PrivateKeyDer<'static>,
     /// The fingerprint of the server's main certificate, represented by a [CertificateFingerprint] struct.
     pub fingerprint: CertificateFingerprint,
 }
@@ -64,16 +64,15 @@ fn read_certs_from_files(
     key_file: &String,
 ) -> Result<ServerCertificate, QuinnetError> {
     let mut cert_chain_reader = BufReader::new(File::open(cert_file)?);
-    let cert_chain: Vec<rustls::Certificate> = rustls_pemfile::certs(&mut cert_chain_reader)?
-        .into_iter()
-        .map(rustls::Certificate)
-        .collect();
+    let cert_chain: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(&mut cert_chain_reader)
+        .collect::<Result<_, _>>()?;
 
     let mut key_reader = BufReader::new(File::open(key_file)?);
-    let mut keys = rustls_pemfile::pkcs8_private_keys(&mut key_reader)?;
-
-    assert_eq!(keys.len(), 1);
-    let priv_key = rustls::PrivateKey(keys.remove(0));
+    let priv_key = if let Ok(key) = rustls_pemfile::private_key(&mut key_reader) {
+        key.expect("single private key")
+    } else {
+        panic!("missing private key");
+    };
 
     assert!(cert_chain.len() >= 1);
     let fingerprint = CertificateFingerprint::from(&cert_chain[0]);
@@ -86,12 +85,12 @@ fn read_certs_from_files(
 }
 
 fn write_certs_to_files(
-    cert: &rcgen::Certificate,
+    cert: &rcgen::CertifiedKey,
     cert_file: &String,
     key_file: &String,
 ) -> Result<(), QuinnetError> {
-    let pem_cert = cert.serialize_pem()?;
-    let pem_key = cert.serialize_private_key_pem();
+    let pem_cert = cert.cert.pem();
+    let pem_key = cert.key_pair.serialize_pem();
 
     for file in vec![cert_file, key_file] {
         let path = std::path::Path::new(file);
@@ -108,11 +107,10 @@ fn write_certs_to_files(
 
 fn generate_self_signed_certificate(
     server_host: &String,
-) -> Result<(ServerCertificate, rcgen::Certificate), QuinnetError> {
+) -> Result<(ServerCertificate, rcgen::CertifiedKey), QuinnetError> {
     let cert = rcgen::generate_simple_self_signed(vec![server_host.into()])?;
-    let cert_der = cert.serialize_der()?;
-    let priv_key = rustls::PrivateKey(cert.serialize_private_key_der());
-    let rustls_cert = rustls::Certificate(cert_der.clone());
+    let priv_key = rustls::pki_types::PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()).into();
+    let rustls_cert = cert.cert.der().clone();
     let fingerprint = CertificateFingerprint::from(&rustls_cert);
     let cert_chain = vec![rustls_cert];
 

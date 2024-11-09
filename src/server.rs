@@ -875,7 +875,7 @@ impl QuinnetServer {
         let server_cert = retrieve_certificate(cert_mode)?;
         let mut server_config = ServerConfig::with_single_cert(
             server_cert.cert_chain.clone(),
-            server_cert.priv_key.clone(),
+            server_cert.priv_key.clone_key(),
         )?;
         Arc::get_mut(&mut server_config.transport)
             .ok_or(QuinnetError::LockAcquisitionFailure)?
