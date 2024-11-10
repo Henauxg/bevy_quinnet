@@ -99,9 +99,9 @@ fn start_connection(client: ResMut<QuinnetClient>) {
     client
         .open_connection(
             ClientEndpointConfiguration::from_ips(
-                IpAddr::V4(Ipv6Addr::new('::1')),
+                IpAddr::V6(Ipv6Addr::new('::1')),
                 6000,
-                IpAddr::V4(Ipv6Addr::new('::')),
+                IpAddr::V6(Ipv6Addr::new('::')),
                 0,
             ),
             CertificateVerificationMode::SkipVerification,
@@ -147,7 +147,7 @@ fn handle_server_messages(
 fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
         .start_endpoint(
-            ServerEndpointConfiguration::from_ip(IpAddr::V4(Ipv6Addr::new('::')), 6000),
+            ServerEndpointConfiguration::from_ip(IpAddr::V6(Ipv6Addr::new('::')), 6000),
             CertificateRetrievalMode::GenerateSelfSigned,
             ChannelsConfiguration::default(),
         )
