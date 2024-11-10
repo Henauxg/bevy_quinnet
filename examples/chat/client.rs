@@ -123,7 +123,7 @@ fn start_terminal_listener(mut commands: Commands) {
 fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(
-            ClientEndpointConfiguration::from_strings("127.0.0.1:6000", "0.0.0.0:0").unwrap(),
+            ClientEndpointConfiguration::from_strings("[::1]:6000", "[::]:0").unwrap(),
             CertificateVerificationMode::SkipVerification,
             ChannelsConfiguration::default(),
         )

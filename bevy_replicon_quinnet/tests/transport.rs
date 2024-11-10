@@ -1,5 +1,5 @@
 use std::{
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv6Addr},
     thread::sleep,
     time::Duration,
 };
@@ -155,9 +155,9 @@ fn setup_client(app: &mut App, server_port: u16) {
     client
         .open_connection(
             ClientEndpointConfiguration::from_ips(
-                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                IpAddr::V6(Ipv6Addr::LOCALHOST),
                 server_port,
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)),
                 0,
             ),
             CertificateVerificationMode::SkipVerification,
@@ -175,9 +175,9 @@ fn setup_server(app: &mut App, server_port: u16) {
     let mut server = app.world_mut().resource_mut::<QuinnetServer>();
     server
         .start_endpoint(
-            ServerEndpointConfiguration::from_ip(IpAddr::V4(Ipv4Addr::LOCALHOST), server_port),
+            ServerEndpointConfiguration::from_ip(IpAddr::V6(Ipv6Addr::LOCALHOST), server_port),
             CertificateRetrievalMode::GenerateSelfSigned {
-                server_hostname: Ipv4Addr::LOCALHOST.to_string(),
+                server_hostname: Ipv6Addr::LOCALHOST.to_string(),
             },
             channels_config,
         )

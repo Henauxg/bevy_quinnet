@@ -1,5 +1,5 @@
 use std::{
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv6Addr},
     thread::sleep,
     time::Duration,
 };
@@ -62,8 +62,8 @@ pub enum SharedMessage {
     TestMessage(String),
 }
 
-pub const SERVER_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-pub const LOCAL_BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
+pub const SERVER_IP: IpAddr = IpAddr::V6(Ipv6Addr::new(0 ,0, 0, 0, 0, 0, 0, 1));
+pub const LOCAL_BIND_IP: IpAddr = IpAddr::V6(Ipv6Addr::new(0 ,0, 0, 0, 0, 0, 0, 0));
 
 pub fn build_client_app() -> App {
     let mut client_app = App::new();
