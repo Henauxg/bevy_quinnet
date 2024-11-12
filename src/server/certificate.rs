@@ -51,30 +51,26 @@ pub enum CertificateRetrievalMode {
 
 /// Represents a server certificate.
 pub struct ServerCertificate {
-    /// A vector of [rustls::Certificate] that contains the server's certificate chain.
+    /// The server's certificate chain.
     pub cert_chain: Vec<rustls::pki_types::CertificateDer<'static>>,
-    /// The server's private key, represented by a [rustls::PrivateKey] struct.
+    /// The server's private key.
     pub priv_key: rustls::pki_types::PrivateKeyDer<'static>,
-    /// The fingerprint of the server's main certificate, represented by a [CertificateFingerprint] struct.
+    /// The fingerprint of the server's main certificate (first in the chain)
     pub fingerprint: CertificateFingerprint,
 }
 
-fn read_certs_from_files(
+fn read_cert_from_files(
     cert_file: &String,
     key_file: &String,
 ) -> Result<ServerCertificate, QuinnetError> {
     let mut cert_chain_reader = BufReader::new(File::open(cert_file)?);
-    let cert_chain: Vec<rustls::pki_types::CertificateDer> = rustls_pemfile::certs(&mut cert_chain_reader)
-        .collect::<Result<_, _>>()?;
-
-    let mut key_reader = BufReader::new(File::open(key_file)?);
-    let priv_key = if let Ok(key) = rustls_pemfile::private_key(&mut key_reader) {
-        key.expect("single private key")
-    } else {
-        panic!("missing private key");
-    };
+    let cert_chain: Vec<rustls::pki_types::CertificateDer> =
+        rustls_pemfile::certs(&mut cert_chain_reader).collect::<Result<_, _>>()?;
 
     assert!(cert_chain.len() >= 1);
+
+    let mut key_reader = BufReader::new(File::open(key_file)?);
+    let priv_key = rustls_pemfile::private_key(&mut key_reader)?.expect("private key is present");
     let fingerprint = CertificateFingerprint::from(&cert_chain[0]);
 
     Ok(ServerCertificate {
@@ -84,23 +80,19 @@ fn read_certs_from_files(
     })
 }
 
-fn write_certs_to_files(
+fn write_cert_to_files(
     cert: &rcgen::CertifiedKey,
     cert_file: &String,
     key_file: &String,
 ) -> Result<(), QuinnetError> {
-    let pem_cert = cert.cert.pem();
-    let pem_key = cert.key_pair.serialize_pem();
-
     for file in vec![cert_file, key_file] {
-        let path = std::path::Path::new(file);
-        if let Some(parent) = path.parent() {
+        if let Some(parent) = std::path::Path::new(file).parent() {
             std::fs::create_dir_all(parent)?;
         }
     }
 
-    fs::write(cert_file, pem_cert)?;
-    fs::write(key_file, pem_key)?;
+    fs::write(cert_file, cert.cert.pem())?;
+    fs::write(key_file, cert.key_pair.serialize_pem())?;
 
     Ok(())
 }
@@ -108,19 +100,20 @@ fn write_certs_to_files(
 fn generate_self_signed_certificate(
     server_host: &String,
 ) -> Result<(ServerCertificate, rcgen::CertifiedKey), QuinnetError> {
-    let cert = rcgen::generate_simple_self_signed(vec![server_host.into()])?;
-    let priv_key = rustls::pki_types::PrivatePkcs8KeyDer::from(cert.key_pair.serialize_der()).into();
-    let rustls_cert = cert.cert.der().clone();
-    let fingerprint = CertificateFingerprint::from(&rustls_cert);
-    let cert_chain = vec![rustls_cert];
+    let generated = rcgen::generate_simple_self_signed(vec![server_host.into()])?;
+
+    let priv_key_der =
+        rustls::pki_types::PrivatePkcs8KeyDer::from(generated.key_pair.serialize_der()).into();
+    let cert_der = generated.cert.der();
+    let fingerprint = CertificateFingerprint::from(cert_der);
 
     Ok((
         ServerCertificate {
-            cert_chain,
-            priv_key,
+            cert_chain: vec![cert_der.clone()],
+            priv_key: priv_key_der,
             fingerprint,
         },
-        cert,
+        generated,
     ))
 }
 
@@ -137,7 +130,7 @@ pub(crate) fn retrieve_certificate(
             cert_file,
             key_file,
         } => {
-            let server_cert = read_certs_from_files(&cert_file, &key_file)?;
+            let server_cert = read_cert_from_files(&cert_file, &key_file)?;
             trace!("Successfuly loaded cert and key from files");
             Ok(server_cert)
         }
@@ -148,14 +141,14 @@ pub(crate) fn retrieve_certificate(
             server_hostname,
         } => {
             if Path::new(&cert_file).exists() && Path::new(&key_file).exists() {
-                let server_cert = read_certs_from_files(&cert_file, &key_file)?;
+                let server_cert = read_cert_from_files(&cert_file, &key_file)?;
                 trace!("Successfuly loaded cert and key from files");
                 Ok(server_cert)
             } else {
                 warn!("{} and/or {} do not exist, could not load existing certificate. Generating a new self-signed certificate.", cert_file, key_file);
                 let (server_cert, rcgen_cert) = generate_self_signed_certificate(&server_hostname)?;
                 if save_on_disk {
-                    write_certs_to_files(&rcgen_cert, &cert_file, &key_file)?;
+                    write_cert_to_files(&rcgen_cert, &cert_file, &key_file)?;
                     trace!("Successfuly saved cert and key to files");
                 }
                 Ok(server_cert)
