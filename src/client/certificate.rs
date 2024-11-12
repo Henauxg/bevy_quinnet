@@ -11,7 +11,6 @@ use std::{
 use bevy::{prelude::Event, utils::tracing::warn};
 use futures::executor::block_on;
 use rustls::pki_types::{CertificateDer, ServerName as RustlsServerName, UnixTime};
-
 use tokio::sync::{mpsc, oneshot};
 
 use crate::shared::{certificate::CertificateFingerprint, error::QuinnetError};
@@ -152,31 +151,12 @@ pub struct CertVerificationInfo {
 
 /// Encodes ways a client can know the expected name of the server. See [`rustls::ServerName`]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ServerName(String);
-
-impl ServerName {
-    fn new(server_name: &RustlsServerName) -> Self {
-        ServerName(match server_name {
-            RustlsServerName::DnsName(dns) => dns.as_ref().to_string(),
-            RustlsServerName::IpAddress(ip) => {
-                match ip {
-                    rustls::pki_types::IpAddr::V4(ip) => {
-                        std::net::IpAddr::V4(std::net::Ipv4Addr::from(ip.as_ref().to_owned())).to_string()
-                    },
-                    rustls::pki_types::IpAddr::V6(ip) => {
-                        std::net::IpAddr::V6(std::net::Ipv6Addr::from(ip.as_ref().to_owned())).to_string()
-                    },
-                }
-            },
-            _ => todo!(),
-        })
-    }
-}
+pub struct ServerName(RustlsServerName<'static>);
 
 impl fmt::Display for ServerName {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
+        fmt::Display::fmt(&self.0.to_str(), f)
     }
 }
 
@@ -222,7 +202,6 @@ impl SkipServerVerification {
         Arc::new(Self(Arc::new(rustls::crypto::ring::default_provider())))
     }
 }
-
 
 impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
     fn verify_server_cert(
@@ -354,7 +333,9 @@ impl TofuServerVerification {
                     ))),
                 }
             }
-            CertVerifierAction::TrustOnce => Ok(rustls::client::danger::ServerCertVerified::assertion()),
+            CertVerifierAction::TrustOnce => {
+                Ok(rustls::client::danger::ServerCertVerified::assertion())
+            }
             CertVerifierAction::TrustAndStore => {
                 // If we need to store them to a file
                 if let Some(file) = &self.hosts_file {
@@ -394,11 +375,12 @@ impl rustls::client::danger::ServerCertVerifier for TofuServerVerification {
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         // TODO Could add some optional validity checks on the cert content.
         let status;
-        let server_name = ServerName::new(_server_name);
+        let server_name = ServerName(_server_name.to_owned());
+        let known_fingerprint = self.store.get(&server_name).cloned();
         let cert_info = CertVerificationInfo {
-            server_name: server_name.clone(),
+            server_name,
             fingerprint: CertificateFingerprint::from(_end_entity),
-            known_fingerprint: self.store.get(&server_name).cloned(),
+            known_fingerprint,
         };
         if let Some(ref known_fingerprint) = cert_info.known_fingerprint {
             if *known_fingerprint == cert_info.fingerprint {
@@ -441,7 +423,9 @@ impl rustls::client::danger::ServerCertVerifier for TofuServerVerification {
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.provider.signature_verification_algorithms.supported_schemes()
+        self.provider
+            .signature_verification_algorithms
+            .supported_schemes()
     }
 }
 
@@ -463,7 +447,7 @@ fn parse_known_host_line(
     let mut parts = line.split_whitespace();
 
     let adr_str = parts.next().ok_or(QuinnetError::InvalidHostFile)?;
-    let serv_name = ServerName::new(&RustlsServerName::try_from(adr_str)?);
+    let serv_name = ServerName(RustlsServerName::try_from(adr_str)?.to_owned());
 
     let fingerprint_b64 = parts.next().ok_or(QuinnetError::InvalidHostFile)?;
     let fingerprint_bytes = base64::decode(&fingerprint_b64)?;
