@@ -96,15 +96,15 @@ impl ServerEndpointConfiguration {
     ///
     /// # Examples
     ///
-    /// Listen on port 6000, on an IPv4 endpoint, for all incoming IPs.
+    /// Listen on port 6000, on an IPv6 endpoint, for all incoming IPs.
     /// ```
-    /// use std::net::{IpAddr, Ipv4Addr};
+    /// use std::net::Ipv6Addr;
     /// use bevy_quinnet::server::ServerEndpointConfiguration;
-    /// let config = ServerEndpointConfiguration::from_ip(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000);
+    /// let config = ServerEndpointConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000);
     /// ```
-    pub fn from_ip(local_bind_ip: IpAddr, local_bind_port: u16) -> Self {
+    pub fn from_ip(local_bind_ip: impl Into<IpAddr>, local_bind_port: u16) -> Self {
         Self {
-            local_bind_addr: SocketAddr::new(local_bind_ip, local_bind_port),
+            local_bind_addr: SocketAddr::new(local_bind_ip.into(), local_bind_port),
         }
     }
 
@@ -117,12 +117,12 @@ impl ServerEndpointConfiguration {
     ///
     /// # Examples
     ///
-    /// Listen on port 6000, on an IPv4 endpoint, for all incoming IPs.
+    /// Listen on port 6000, on an IPv6 endpoint, for all incoming IPs.
     /// ```
     /// use bevy_quinnet::server::ServerEndpointConfiguration;
     /// use std::{net::{IpAddr, Ipv4Addr, SocketAddr}};
     /// let config = ServerEndpointConfiguration::from_addr(
-    ///           SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 6000),
+    ///           SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 6000),
     ///       );
     /// ```
     pub fn from_addr(local_bind_addr: SocketAddr) -> Self {

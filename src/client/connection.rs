@@ -146,39 +146,39 @@ impl ClientEndpointConfiguration {
     ///
     /// Connect to an IPv4 server hosted on localhost (127.0.0.1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
     /// ```
-    /// use std::net::{IpAddr, Ipv4Addr};
+    /// use std::net::Ipv6Addr;
     /// use bevy_quinnet::client::connection::ClientEndpointConfiguration;
     /// let config = ClientEndpointConfiguration::from_ips(
-    ///                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+    ///                 Ipv6Addr::LOCALHOST,
     ///                 6000,
-    ///                 IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+    ///                 Ipv6Addr::UNSPECIFIED,
     ///                 0
     ///             );
     /// ```
     pub fn from_ips(
-        server_ip: IpAddr,
+        server_ip: impl Into<IpAddr>,
         server_port: u16,
-        local_bind_ip: IpAddr,
+        local_bind_ip: impl Into<IpAddr>,
         local_bind_port: u16,
     ) -> Self {
         Self::from_addrs(
-            SocketAddr::new(server_ip, server_port),
-            SocketAddr::new(local_bind_ip, local_bind_port),
+            SocketAddr::new(server_ip.into(), server_port),
+            SocketAddr::new(local_bind_ip.into(), local_bind_port),
         )
     }
 
     /// Same as [`ClientEndpointConfiguration::from_ips`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
     pub fn from_ips_with_name(
-        server_ip: IpAddr,
+        server_ip: impl Into<IpAddr>,
         server_port: u16,
         server_hostname: String,
-        local_bind_ip: IpAddr,
+        local_bind_ip: impl Into<IpAddr>,
         local_bind_port: u16,
     ) -> Self {
         Self::from_addrs_with_name(
-            SocketAddr::new(server_ip, server_port),
+            SocketAddr::new(server_ip.into(), server_port),
             server_hostname,
-            SocketAddr::new(local_bind_ip, local_bind_port),
+            SocketAddr::new(local_bind_ip.into(), local_bind_port),
         )
     }
 
