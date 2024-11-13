@@ -1,8 +1,4 @@
-use std::{
-    net::{IpAddr, Ipv6Addr},
-    thread::sleep,
-    time::Duration,
-};
+use std::{net::Ipv6Addr, thread::sleep, time::Duration};
 
 use bevy::{
     app::ScheduleRunnerPlugin,
@@ -62,8 +58,8 @@ pub enum SharedMessage {
     TestMessage(String),
 }
 
-pub const SERVER_IP: IpAddr = IpAddr::V6(Ipv6Addr::new(0 ,0, 0, 0, 0, 0, 0, 1));
-pub const LOCAL_BIND_IP: IpAddr = IpAddr::V6(Ipv6Addr::new(0 ,0, 0, 0, 0, 0, 0, 0));
+pub const SERVER_IP: Ipv6Addr = Ipv6Addr::LOCALHOST;
+pub const LOCAL_BIND_IP: Ipv6Addr = Ipv6Addr::UNSPECIFIED;
 
 pub fn build_client_app() -> App {
     let mut client_app = App::new();

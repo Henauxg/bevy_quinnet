@@ -251,7 +251,7 @@ impl TicTacToePlugin {
             Cli::Server { port, symbol } => {
                 server
                     .start_endpoint(
-                        ServerEndpointConfiguration::from_ip(IpAddr::V6(Ipv6Addr::LOCALHOST), port),
+                        ServerEndpointConfiguration::from_ip(Ipv6Addr::LOCALHOST, port),
                         CertificateRetrievalMode::GenerateSelfSigned {
                             server_hostname: Ipv6Addr::LOCALHOST.to_string(),
                         },
@@ -263,12 +263,7 @@ impl TicTacToePlugin {
             Cli::Client { port, ip } => {
                 client
                     .open_connection(
-                        ClientEndpointConfiguration::from_ips(
-                            ip,
-                            port,
-                            IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)),
-                            0,
-                        ),
+                        ClientEndpointConfiguration::from_ips(ip, port, Ipv6Addr::UNSPECIFIED, 0),
                         CertificateVerificationMode::SkipVerification,
                         channels.get_client_configs(),
                     )

@@ -81,7 +81,7 @@ fn trust_on_first_use() {
         let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
         let server_cert = server
             .start_endpoint(
-                ServerEndpointConfiguration::from_ip("::".parse().unwrap(), port),
+                ServerEndpointConfiguration::from_ip(LOCAL_BIND_IP, port),
                 CertificateRetrievalMode::LoadFromFile {
                     cert_file: TEST_CERT_FILE.to_string(),
                     key_file: TEST_KEY_FILE.to_string(),

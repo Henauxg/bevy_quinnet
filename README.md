@@ -99,9 +99,9 @@ fn start_connection(client: ResMut<QuinnetClient>) {
     client
         .open_connection(
             ClientEndpointConfiguration::from_ips(
-                IpAddr::V6(Ipv6Addr::new('::1')),
+                Ipv6Addr::LOCALHOST,
                 6000,
-                IpAddr::V6(Ipv6Addr::new('::')),
+                Ipv6Addr::UNSPECIFIED,
                 0,
             ),
             CertificateVerificationMode::SkipVerification,
@@ -147,7 +147,7 @@ fn handle_server_messages(
 fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
         .start_endpoint(
-            ServerEndpointConfiguration::from_ip(IpAddr::V6(Ipv6Addr::new('::')), 6000),
+            ServerEndpointConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000),
             CertificateRetrievalMode::GenerateSelfSigned,
             ChannelsConfiguration::default(),
         )
@@ -276,7 +276,7 @@ On the server:
 ```rust
     // To generate a new self-signed certificate on each startup 
     server.start_endpoint(/*...*/, CertificateRetrievalMode::GenerateSelfSigned { 
-        server_hostname: "::1".to_string(),
+        server_hostname: Ipv6Addr::LOCALHOST.to_string(),
     });
     // To load a pre-existing one from files
     server.start_endpoint(/*...*/, CertificateRetrievalMode::LoadFromFile {
@@ -288,7 +288,7 @@ On the server:
         cert_file: "./certificates.pem".into(),
         key_file: "./privkey.pem".into(),
         save_on_disk: true, // To persist on disk if generated
-        server_hostname: "::1".to_string(),
+        server_hostname: Ipv6Addr::LOCALHOST.to_string(),
     });
 ```
 
