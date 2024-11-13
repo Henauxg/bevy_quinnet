@@ -98,12 +98,7 @@ struct WallBundle {
 pub(crate) fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(
-            ClientEndpointConfiguration::from_ips(
-                SERVER_HOST.parse().unwrap(),
-                SERVER_PORT,
-                LOCAL_BIND_IP,
-                0,
-            ),
+            ClientEndpointConfiguration::from_ips(SERVER_HOST, SERVER_PORT, LOCAL_BIND_IP, 0),
             CertificateVerificationMode::SkipVerification,
             ClientChannel::channels_configuration(),
         )

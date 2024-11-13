@@ -4,7 +4,7 @@
 use std::{
     error::Error,
     fmt::{self, Formatter},
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv6Addr},
 };
 
 use bevy::prelude::*;
@@ -251,9 +251,9 @@ impl TicTacToePlugin {
             Cli::Server { port, symbol } => {
                 server
                     .start_endpoint(
-                        ServerEndpointConfiguration::from_ip(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+                        ServerEndpointConfiguration::from_ip(Ipv6Addr::LOCALHOST, port),
                         CertificateRetrievalMode::GenerateSelfSigned {
-                            server_hostname: Ipv4Addr::LOCALHOST.to_string(),
+                            server_hostname: Ipv6Addr::LOCALHOST.to_string(),
                         },
                         channels.get_server_configs(),
                     )
@@ -263,12 +263,7 @@ impl TicTacToePlugin {
             Cli::Client { port, ip } => {
                 client
                     .open_connection(
-                        ClientEndpointConfiguration::from_ips(
-                            ip,
-                            port,
-                            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                            0,
-                        ),
+                        ClientEndpointConfiguration::from_ips(ip, port, Ipv6Addr::UNSPECIFIED, 0),
                         CertificateVerificationMode::SkipVerification,
                         channels.get_client_configs(),
                     )
@@ -515,7 +510,7 @@ enum Cli {
         symbol: Symbol,
     },
     Client {
-        #[arg(short, long, default_value_t = Ipv4Addr::LOCALHOST.into())]
+        #[arg(short, long, default_value_t = Ipv6Addr::LOCALHOST.into())]
         ip: IpAddr,
 
         #[arg(short, long, default_value_t = PORT)]

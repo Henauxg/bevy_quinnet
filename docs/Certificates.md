@@ -90,8 +90,8 @@ There is one line per entry, and each entry is a server name (as dns or ip) foll
 
 Example:
 ```
-127.0.0.1 o1cpTe602uTq4pVwT+km8QtEPQE/xCAgk+3AicW/i9g=
-123.123.123.123 kzXIwhvMSbWCQOimT3btnFlmc/Lq0UN0JhSeQadaGbg=
+::1 o1cpTe602uTq4pVwT+km8QtEPQE/xCAgk+3AicW/i9g=
+1234::1234 kzXIwhvMSbWCQOimT3btnFlmc/Lq0UN0JhSeQadaGbg=
 ```
 
 #### Limitations 
