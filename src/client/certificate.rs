@@ -10,7 +10,7 @@ use std::{
 
 use bevy::{prelude::Event, utils::tracing::warn};
 use futures::executor::block_on;
-use rustls::ServerName as RustlsServerName;
+use rustls::pki_types::{CertificateDer, ServerName as RustlsServerName, UnixTime};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::shared::{certificate::CertificateFingerprint, error::QuinnetError};
@@ -151,16 +151,12 @@ pub struct CertVerificationInfo {
 
 /// Encodes ways a client can know the expected name of the server. See [`rustls::ServerName`]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ServerName(RustlsServerName);
+pub struct ServerName(RustlsServerName<'static>);
 
 impl fmt::Display for ServerName {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            RustlsServerName::DnsName(dns) => fmt::Display::fmt(dns.as_ref(), f),
-            RustlsServerName::IpAddress(ip) => fmt::Display::fmt(&ip, f),
-            _ => todo!(),
-        }
+        fmt::Display::fmt(&self.0.to_str(), f)
     }
 }
 
@@ -198,29 +194,62 @@ pub enum KnownHosts {
 }
 
 /// Implementation of `ServerCertVerifier` that verifies everything as trustworthy.
-pub(crate) struct SkipServerVerification;
+#[derive(Debug)]
+pub(crate) struct SkipServerVerification(Arc<rustls::crypto::CryptoProvider>);
 
 impl SkipServerVerification {
     pub(crate) fn new() -> Arc<Self> {
-        Arc::new(Self)
+        Arc::new(Self(Arc::new(rustls::crypto::ring::default_provider())))
     }
 }
 
-impl rustls::client::ServerCertVerifier for SkipServerVerification {
+impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
     fn verify_server_cert(
         &self,
-        _end_entity: &rustls::Certificate,
-        _intermediates: &[rustls::Certificate],
-        _server_name: &rustls::ServerName,
-        _scts: &mut dyn Iterator<Item = &[u8]>,
-        _ocsp_response: &[u8],
-        _now: std::time::SystemTime,
-    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::ServerCertVerified::assertion())
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &RustlsServerName<'_>,
+        _ocsp: &[u8],
+        _now: UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.0.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.0.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.0.signature_verification_algorithms.supported_schemes()
     }
 }
 
 /// Implementation of `ServerCertVerifier` that follows the Trust on first use authentication scheme.
+#[derive(Debug)]
 pub(crate) struct TofuServerVerification {
     store: CertStore,
     verifier_behaviour: HashMap<CertVerificationStatus, CertVerifierBehaviour>,
@@ -228,6 +257,8 @@ pub(crate) struct TofuServerVerification {
 
     /// If present, the file where new fingerprints should be stored
     hosts_file: Option<String>,
+
+    provider: Arc<rustls::crypto::CryptoProvider>,
 }
 
 impl TofuServerVerification {
@@ -236,12 +267,14 @@ impl TofuServerVerification {
         verifier_behaviour: HashMap<CertVerificationStatus, CertVerifierBehaviour>,
         to_sync_client: mpsc::Sender<ClientAsyncMessage>,
         hosts_file: Option<String>,
+        provider: Arc<rustls::crypto::CryptoProvider>,
     ) -> Arc<Self> {
         Arc::new(Self {
             store,
             verifier_behaviour,
             to_sync_client,
             hosts_file,
+            provider,
         })
     }
 
@@ -249,7 +282,7 @@ impl TofuServerVerification {
         &self,
         status: CertVerificationStatus,
         cert_info: CertVerificationInfo,
-    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         let behaviour = self
             .verifier_behaviour
             .get(&status)
@@ -283,7 +316,7 @@ impl TofuServerVerification {
         action: &CertVerifierAction,
         status: CertVerificationStatus,
         cert_info: CertVerificationInfo,
-    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         match action {
             CertVerifierAction::AbortConnection => {
                 match self
@@ -300,7 +333,9 @@ impl TofuServerVerification {
                     ))),
                 }
             }
-            CertVerifierAction::TrustOnce => Ok(rustls::client::ServerCertVerified::assertion()),
+            CertVerifierAction::TrustOnce => {
+                Ok(rustls::client::danger::ServerCertVerified::assertion())
+            }
             CertVerifierAction::TrustAndStore => {
                 // If we need to store them to a file
                 if let Some(file) = &self.hosts_file {
@@ -319,7 +354,7 @@ impl TofuServerVerification {
                     .to_sync_client
                     .try_send(ClientAsyncMessage::CertificateTrustUpdate(cert_info))
                 {
-                    Ok(_) => Ok(rustls::client::ServerCertVerified::assertion()),
+                    Ok(_) => Ok(rustls::client::danger::ServerCertVerified::assertion()),
                     Err(_) => Err(rustls::Error::General(format!(
                         "Failed to signal new trusted certificate entry"
                     ))),
@@ -329,23 +364,23 @@ impl TofuServerVerification {
     }
 }
 
-impl rustls::client::ServerCertVerifier for TofuServerVerification {
+impl rustls::client::danger::ServerCertVerifier for TofuServerVerification {
     fn verify_server_cert(
         &self,
-        _end_entity: &rustls::Certificate,
-        _intermediates: &[rustls::Certificate],
-        _server_name: &rustls::ServerName,
-        _scts: &mut dyn Iterator<Item = &[u8]>,
-        _ocsp_response: &[u8],
-        _now: std::time::SystemTime,
-    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &RustlsServerName<'_>,
+        _ocsp: &[u8],
+        _now: UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
         // TODO Could add some optional validity checks on the cert content.
         let status;
-        let server_name = ServerName(_server_name.clone());
+        let server_name = ServerName(_server_name.to_owned());
+        let known_fingerprint = self.store.get(&server_name).cloned();
         let cert_info = CertVerificationInfo {
-            server_name: server_name.clone(),
+            server_name,
             fingerprint: CertificateFingerprint::from(_end_entity),
-            known_fingerprint: self.store.get(&server_name).cloned(),
+            known_fingerprint,
         };
         if let Some(ref known_fingerprint) = cert_info.known_fingerprint {
             if *known_fingerprint == cert_info.fingerprint {
@@ -357,6 +392,40 @@ impl rustls::client::ServerCertVerifier for TofuServerVerification {
             status = CertVerificationStatus::UnknownCertificate;
         }
         self.apply_verifier_behaviour_for_status(status, cert_info)
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.provider
+            .signature_verification_algorithms
+            .supported_schemes()
     }
 }
 
@@ -378,7 +447,7 @@ fn parse_known_host_line(
     let mut parts = line.split_whitespace();
 
     let adr_str = parts.next().ok_or(QuinnetError::InvalidHostFile)?;
-    let serv_name = ServerName(RustlsServerName::try_from(adr_str)?);
+    let serv_name = ServerName(RustlsServerName::try_from(adr_str)?.to_owned());
 
     let fingerprint_b64 = parts.next().ok_or(QuinnetError::InvalidHostFile)?;
     let fingerprint_bytes = base64::decode(&fingerprint_b64)?;

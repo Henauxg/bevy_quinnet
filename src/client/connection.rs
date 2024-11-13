@@ -8,9 +8,10 @@ use std::{
 use bevy::utils::tracing::{error, info};
 use bevy::{log::trace, prelude::Event};
 use bytes::Bytes;
-use quinn::{ClientConfig, Endpoint};
+use quinn::{crypto::rustls::QuicClientConfig, ClientConfig, Endpoint};
 use quinn_proto::ConnectionStats;
 
+use rustls_platform_verifier::BuilderVerifierExt;
 use serde::Deserialize;
 use tokio::{
     runtime,
@@ -912,30 +913,43 @@ fn configure_client(
     cert_mode: CertificateVerificationMode,
     to_sync_client: mpsc::Sender<ClientAsyncMessage>,
 ) -> Result<ClientConfig, Box<dyn Error>> {
-    match cert_mode {
-        CertificateVerificationMode::SkipVerification => {
-            let crypto = rustls::ClientConfig::builder()
-                .with_safe_defaults()
-                .with_custom_certificate_verifier(SkipServerVerification::new())
-                .with_no_client_auth();
-
-            Ok(ClientConfig::new(Arc::new(crypto)))
-        }
+    let mut crypto = match cert_mode {
+        CertificateVerificationMode::SkipVerification => rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(SkipServerVerification::new())
+            .with_no_client_auth(),
         CertificateVerificationMode::SignedByCertificateAuthority => {
-            Ok(ClientConfig::with_native_roots())
+            // Using Quinn's helper `ClientConfig::with_platform_verifier` does not let us specify the CryptoProvider used,
+            // and relies on the per-process default one (https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html#using-the-per-process-default-cryptoprovider) which may not be set.
+            // As a library, we do not want to set it ourselves using `CryptoProvider::install_default`
+            rustls::ClientConfig::builder_with_provider(
+                rustls::crypto::ring::default_provider().into(),
+            )
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .unwrap()
+            // We use `rustls-platform-verifier::with_platform_verifier` directly instead (used internally by Quinn).
+            .with_platform_verifier()
+            .with_no_client_auth()
         }
         CertificateVerificationMode::TrustOnFirstUse(config) => {
             let (store, store_file) = load_known_hosts_store_from_config(config.known_hosts)?;
-            let crypto = rustls::ClientConfig::builder()
-                .with_safe_defaults()
+            rustls::ClientConfig::builder()
+                .dangerous()
                 .with_custom_certificate_verifier(TofuServerVerification::new(
                     store,
                     config.verifier_behaviour,
                     to_sync_client,
                     store_file,
+                    Arc::new(rustls::crypto::ring::default_provider()),
                 ))
-                .with_no_client_auth();
-            Ok(ClientConfig::new(Arc::new(crypto)))
+                .with_no_client_auth()
         }
-    }
+    };
+
+    // Quinn defaults to true
+    crypto.enable_early_data = true;
+
+    Ok(ClientConfig::new(Arc::new(QuicClientConfig::try_from(
+        crypto,
+    )?)))
 }

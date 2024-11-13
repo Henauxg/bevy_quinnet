@@ -16,9 +16,9 @@ impl CertificateFingerprint {
     }
 }
 
-impl From<&rustls::Certificate> for CertificateFingerprint {
-    fn from(cert: &rustls::Certificate) -> CertificateFingerprint {
-        let hash = ring::digest::digest(&ring::digest::SHA256, &cert.0);
+impl From<&rustls::pki_types::CertificateDer<'_>> for CertificateFingerprint {
+    fn from(cert: &rustls::pki_types::CertificateDer<'_>) -> CertificateFingerprint {
+        let hash = ring::digest::digest(&ring::digest::SHA256, &cert);
         let fingerprint_bytes = hash.as_ref().try_into().unwrap();
         CertificateFingerprint(fingerprint_bytes)
     }
