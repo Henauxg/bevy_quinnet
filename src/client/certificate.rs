@@ -149,7 +149,7 @@ pub struct CertVerificationInfo {
     pub known_fingerprint: Option<CertificateFingerprint>,
 }
 
-/// Encodes ways a client can know the expected name of the server. See [`rustls::ServerName`]
+/// Encodes ways a client can know the expected name of the server. See [`rustls::pki_types::ServerName`]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ServerName(RustlsServerName<'static>);
 
