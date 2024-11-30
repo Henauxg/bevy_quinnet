@@ -1,6 +1,6 @@
 [package]
 name = "bevy_replicon_quinnet"
-version = "0.5.0"
+version = "0.6.0"
 description = "Integration with bevy_quinnet for bevy_replicon"
 repository = "https://github.com/Henauxg/bevy_quinnet"
 documentation = "https://docs.rs/bevy_replicon_quinnet"
@@ -13,7 +13,7 @@ exclude = ["assets/"]
 
 [dependencies]
 bevy_replicon = { version = "0.28", default-features = false }
-bevy_quinnet = { version = "0.10.0", path = "..", default-features = false }
+bevy_quinnet = { version = "0.11.0", path = "..", default-features = false }
 bevy = { version = "0.14", default-features = false }
 
 [features]
