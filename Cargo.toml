@@ -1,6 +1,6 @@
 [package]
 name = "bevy_quinnet"
-version = "0.10.0"
+version = "0.11.0"
 description = "Bevy plugin for Client/Server multiplayer games using QUIC"
 repository = "https://github.com/Henauxg/bevy_quinnet"
 documentation = "https://docs.rs/bevy_quinnet"
@@ -15,7 +15,7 @@ exclude = ["assets/"]
 members = ["bevy_replicon_quinnet"]
 
 [dependencies]
-bevy = { version = "0.14", default-features = false, features = [] }
+bevy = { version = "0.15", default-features = false, features = [] }
 rustls = { version = "0.23", default-features = false, features = [] }
 rustls-pemfile = "2"
 rustls-platform-verifier = "0.4"
@@ -23,8 +23,8 @@ ring = "0.17.7"
 tokio = { version = "1.36.0", features = ["sync", "rt-multi-thread", "macros"] }
 tokio-util = { version = "0.7.4", features = ["codec"] }
 rcgen = "0.13"
-quinn = { version = "0.11.5", default-features = true }
-quinn-proto = "0.11.8"
+quinn = { version = "0.11.6", default-features = true }
+quinn-proto = "0.11.9"
 futures-util = "0.3.24"
 futures = "0.3.24"
 bincode = "1.3.3"
@@ -43,7 +43,7 @@ client = []
 server = []
 
 [dev-dependencies]
-bevy = { version = "0.14", default-features = false, features = [
+bevy = { version = "0.15", default-features = false, features = [
 	"bevy_asset",         # Provides asset functionality
 	"bevy_audio",         # Provides audio functionality
 	"vorbis",             # OGG/VORBIS audio format support
