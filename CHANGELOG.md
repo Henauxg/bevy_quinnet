@@ -1,5 +1,12 @@
 # Changelog
 
+## Version 0.11.0 (2024-11-30)
+
+- Updated `rustls` to 0.23 and `quinn` to 0.11 (thanks to [Cyannide](https://github.com/Cyannide), PR [#28](https://github.com/Henauxg/bevy_quinnet/pull/28))
+- Changed doc & examples to use IPv6 by default (thanks to [MyZeD](https://github.com/MyZeD), PR [#29](https://github.com/Henauxg/bevy_quinnet/pull/29))
+- Changed some errors logs to be warnnings
+- Fixed: channels send tasks won't try to flush anymore if we know that the peer connection is closed/lost: less warnings logs emitted.
+
 ## Version 0.10.0 (2024-09-09)
 
 - Add `client` & `server` features.
