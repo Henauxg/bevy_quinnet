@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.12.0 (2024-12-01)
+
+- Updated `bevy` to 0.15
+
 ## Version 0.11.0 (2024-11-30)
 
 - Updated `rustls` to 0.23 and `quinn` to 0.11 (thanks to [Cyannide](https://github.com/Cyannide), PR [#28](https://github.com/Henauxg/bevy_quinnet/pull/28))
@@ -9,7 +13,7 @@
 
 ## Version 0.10.0 (2024-09-09)
 
-- Add `client` & `server` features.
+- Added `client` & `server` features.
 
 ## Version 0.9.0 (2024-07-05)
 
