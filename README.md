@@ -325,7 +325,7 @@ Examples can be found in the [examples](examples) directory.
 
 ## Replicon integration
 
-Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/projectharmonia/bevy_replicon) with the provided [`bevy_replicon_quinnet`](https://github.com/Henauxg/bevy_quinnet/tree/main/bevy_replicon_quinnet).
+Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/projectharmonia/bevy_replicon) with the provided [`bevy_replicon_quinnet`](https://github.com/Henauxg/bevy_replicon_quinnet).
 
 ## Compatible Bevy versions
 
