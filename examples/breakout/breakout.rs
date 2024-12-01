@@ -72,7 +72,7 @@ struct CollisionEvent;
 #[derive(Component)]
 struct Score;
 
-#[derive(Resource)]
+#[derive(Resource, Deref)]
 struct CollisionSound(Handle<AudioSource>);
 
 pub type BrickId = u64;

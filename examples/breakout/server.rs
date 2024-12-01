@@ -6,7 +6,6 @@ use bevy::{
         default, Bundle, Commands, Component, Entity, EventReader, Query, Res, ResMut, Resource,
         Transform, Vec2, Vec3, With,
     },
-    transform::bundles::TransformBundle,
 };
 use bevy_quinnet::{
     server::{
@@ -74,7 +73,7 @@ pub(crate) struct Ball {
 
 #[derive(Bundle)]
 struct WallBundle {
-    transform_bundle: TransformBundle,
+    transform: Transform,
     collider: Collider,
 }
 
@@ -369,15 +368,12 @@ fn start_game(
 
             // brick
             commands.spawn((
-                Brick(brick_id),
-                TransformBundle {
-                    local: Transform {
-                        translation: brick_position.extend(0.0),
-                        scale: Vec3::new(BRICK_SIZE.x, BRICK_SIZE.y, 1.0),
-                        ..default()
-                    },
+                Transform {
+                    translation: brick_position.extend(0.0),
+                    scale: Vec3::new(BRICK_SIZE.x, BRICK_SIZE.y, 1.0),
                     ..default()
                 },
+                Brick(brick_id),
                 Collider,
             ));
             brick_id += 1;
@@ -408,12 +404,9 @@ fn spawn_paddle(commands: &mut Commands, client_id: ClientId, pos: &Vec3) -> Ent
             Paddle {
                 player_id: client_id,
             },
-            TransformBundle {
-                local: Transform {
-                    translation: *pos,
-                    scale: PADDLE_SIZE,
-                    ..default()
-                },
+            Transform {
+                translation: *pos,
+                scale: PADDLE_SIZE,
                 ..default()
             },
             Collider,
@@ -432,12 +425,9 @@ fn spawn_ball(
             Ball {
                 last_hit_by: client_id,
             },
-            TransformBundle {
-                local: Transform {
-                    scale: BALL_SIZE,
-                    translation: *pos,
-                    ..default()
-                },
+            Transform {
+                scale: BALL_SIZE,
+                translation: *pos,
                 ..default()
             },
             Velocity(direction.normalize() * BALL_SPEED),
@@ -448,15 +438,12 @@ fn spawn_ball(
 impl WallBundle {
     fn new(location: WallLocation) -> WallBundle {
         WallBundle {
-            transform_bundle: TransformBundle {
-                local: Transform {
-                    translation: location.position().extend(0.0),
-                    // The z-scale of 2D objects must always be 1.0,
-                    // or their ordering will be affected in surprising ways.
-                    // See https://github.com/bevyengine/bevy/issues/4149
-                    scale: location.size().extend(1.0),
-                    ..default()
-                },
+            transform: Transform {
+                translation: location.position().extend(0.0),
+                // The z-scale of 2D objects must always be 1.0,
+                // or their ordering will be affected in surprising ways.
+                // See https://github.com/bevyengine/bevy/issues/4149
+                scale: location.size().extend(1.0),
                 ..default()
             },
             collider: Collider,
