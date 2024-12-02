@@ -277,7 +277,7 @@ pub(crate) struct PaddleState {
 }
 
 pub(crate) fn move_paddle(
-    client: Res<QuinnetClient>,
+    mut client: ResMut<QuinnetClient>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut local: Local<PaddleState>,
 ) {
@@ -292,7 +292,7 @@ pub(crate) fn move_paddle(
     }
 
     if local.current_input != paddle_input {
-        client.connection().try_send_message_on(
+        client.connection_mut().try_send_message_on(
             ClientChannel::PaddleCommands,
             ClientMessage::PaddleInput {
                 input: paddle_input.clone(),

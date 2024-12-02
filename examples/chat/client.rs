@@ -9,8 +9,8 @@ use bevy::{
     ecs::schedule::IntoSystemConfigs,
     log::LogPlugin,
     prelude::{
-        App, Commands, Deref, DerefMut, EventReader, EventWriter, PostUpdate, Res, ResMut,
-        Resource, Startup, Update,
+        App, Commands, Deref, DerefMut, EventReader, EventWriter, PostUpdate, ResMut, Resource,
+        Startup, Update,
     },
     utils::tracing::{info, warn},
 };
@@ -39,10 +39,10 @@ struct Users {
 #[derive(Resource, Deref, DerefMut)]
 struct TerminalReceiver(mpsc::Receiver<String>);
 
-pub fn on_app_exit(app_exit_events: EventReader<AppExit>, client: Res<QuinnetClient>) {
+pub fn on_app_exit(app_exit_events: EventReader<AppExit>, mut client: ResMut<QuinnetClient>) {
     if !app_exit_events.is_empty() {
         client
-            .connection()
+            .connection_mut()
             .send_message(ClientMessage::Disconnect {})
             .unwrap();
         // TODO Clean: event to let the async client send his last messages.
@@ -93,14 +93,14 @@ fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<QuinnetCl
 fn handle_terminal_messages(
     mut terminal_messages: ResMut<TerminalReceiver>,
     mut app_exit_events: EventWriter<AppExit>,
-    client: Res<QuinnetClient>,
+    mut client: ResMut<QuinnetClient>,
 ) {
     while let Ok(message) = terminal_messages.try_recv() {
         if message == "quit" {
             app_exit_events.send(AppExit::Success);
         } else {
             client
-                .connection()
+                .connection_mut()
                 .try_send_message(ClientMessage::ChatMessage { message: message });
         }
     }
@@ -135,7 +135,7 @@ fn start_connection(mut client: ResMut<QuinnetClient>) {
 fn handle_client_events(
     mut connection_events: EventReader<ConnectionEvent>,
     mut connection_failed_events: EventReader<ConnectionFailedEvent>,
-    client: ResMut<QuinnetClient>,
+    mut client: ResMut<QuinnetClient>,
 ) {
     if !connection_events.is_empty() {
         // We are connected
@@ -149,7 +149,7 @@ fn handle_client_events(
         println!("--- Type 'quit' to disconnect");
 
         client
-            .connection()
+            .connection_mut()
             .send_message(ClientMessage::Join { name: username })
             .unwrap();
 

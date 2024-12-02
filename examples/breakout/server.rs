@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use bevy::{
     math::bounding::{Aabb2d, BoundingCircle, BoundingVolume, IntersectsVolume},
     prelude::{
-        default, Bundle, Commands, Component, Entity, EventReader, Query, Res, ResMut, Resource,
+        default, Bundle, Commands, Component, Entity, EventReader, Query, ResMut, Resource,
         Transform, Vec2, Vec3, With,
     },
 };
@@ -134,7 +134,7 @@ pub(crate) fn handle_server_events(
 }
 
 pub(crate) fn update_paddles(
-    server: Res<QuinnetServer>,
+    mut server: ResMut<QuinnetServer>,
     players: ResMut<Players>,
     mut paddles: Query<(&mut Transform, &Paddle, Entity)>,
 ) {
@@ -160,7 +160,7 @@ pub(crate) fn update_paddles(
 
                 paddle_transform.translation.x = new_paddle_position.clamp(left_bound, right_bound);
 
-                server.endpoint().try_send_group_message_on(
+                server.endpoint_mut().try_send_group_message_on(
                     players.map.keys().into_iter(),
                     ServerChannel::PaddleUpdates,
                     ServerMessage::PaddleMoved {
@@ -175,7 +175,7 @@ pub(crate) fn update_paddles(
 
 pub(crate) fn check_for_collisions(
     mut commands: Commands,
-    server: ResMut<QuinnetServer>,
+    mut server: ResMut<QuinnetServer>,
     mut ball_query: Query<(&mut Velocity, &Transform, Entity, &mut Ball)>,
     collider_query: Query<(Entity, &Transform, Option<&Brick>, Option<&Paddle>), With<Collider>>,
 ) {
@@ -196,7 +196,7 @@ pub(crate) fn check_for_collisions(
                     ball.last_hit_by = paddle.player_id;
                 }
 
-                let endpoint = server.endpoint();
+                let endpoint = server.endpoint_mut();
                 // Bricks should be despawned on collision
                 if let Some(brick) = maybe_brick {
                     commands.entity(collider_entity).despawn();
