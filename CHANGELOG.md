@@ -1,5 +1,15 @@
 # Changelog
 
+## Version 0.13.0 (2024-12-02)
+
+- Renamed client `Connection` to `ClientSideConnection` and server `ClientConnection` to `ServerSideConnection`
+- Added `get_connection` and `get_connection_mut` on `Endpoint` to retrieve a `ServerSideConnection`
+- Added `connection_stats` to `ServerSideConnection`
+- Renamed `connection_stats` on `Endpoint` to `get_connection_stats`
+- Added `received_bytes_count`, `clear_received_bytes_count`, `sent_bytes_count` and `clear_sent_bytes_count` to both `ClientSideConnection` and `ServerSideConnection`
+- Changed `try_send_payload`, `try_send_payload_on`, `send_payload_on`, `send_payload`, `send_message`, `send_message_on`, `try_send_message`, `try_send_message_on` on `ClientSideConnection` to take `&mut self`
+- Changed `..._send_message_...`, `..._send_group_message_...`, `..._broadcast_...` methods on `Endpoint` to take `&mut self`
+
 ## Version 0.12.0 (2024-12-01)
 
 - Updated `bevy` to 0.15
