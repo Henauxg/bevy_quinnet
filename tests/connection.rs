@@ -58,9 +58,9 @@ fn connection_with_two_apps() {
 
     let sent_client_message = SharedMessage::TestMessage("Test message content".to_string());
     client_app
-        .world()
-        .resource::<QuinnetClient>()
-        .connection()
+        .world_mut()
+        .resource_mut::<QuinnetClient>()
+        .connection_mut()
         .send_message(sent_client_message.clone())
         .unwrap();
 
@@ -80,9 +80,9 @@ fn connection_with_two_apps() {
     let sent_server_message = SharedMessage::TestMessage("Server response".to_string());
 
     server_app
-        .world()
-        .resource::<QuinnetServer>()
-        .endpoint()
+        .world_mut()
+        .resource_mut::<QuinnetServer>()
+        .endpoint_mut()
         .broadcast_message(sent_server_message.clone())
         .unwrap();
 

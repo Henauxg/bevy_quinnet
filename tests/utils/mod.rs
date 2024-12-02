@@ -318,9 +318,9 @@ pub fn send_and_test_client_message(
         .to_string(),
     );
 
-    let client = client_app.world_mut().resource_mut::<QuinnetClient>();
+    let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
     client
-        .connection()
+        .connection_mut()
         .send_message_on(channel, client_message.clone())
         .unwrap();
 
