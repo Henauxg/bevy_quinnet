@@ -100,7 +100,7 @@ impl Channel {
     }
 }
 
-/// Stores a configuration that represents multiple channels to be opened by a [`crate::client::connection::Connection`] or [`crate::server::Endpoint`]
+/// Stores a configuration that represents multiple channels to be opened by a [`crate::client::connection::ClientSideConnection`] or [`crate::server::Endpoint`]
 #[derive(Debug, Clone)]
 pub struct ChannelsConfiguration {
     channels: Vec<ChannelType>,

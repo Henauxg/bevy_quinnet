@@ -25,9 +25,9 @@ use self::{
         CertVerificationStatus, CertVerifierAction, CertificateVerificationMode,
     },
     connection::{
-        async_connection_task, create_async_channels, ClientEndpointConfiguration, Connection,
-        ConnectionEvent, ConnectionFailedEvent, ConnectionLocalId, ConnectionLostEvent,
-        ConnectionState, InternalConnectionState,
+        async_connection_task, create_async_channels, ClientEndpointConfiguration,
+        ClientSideConnection, ConnectionEvent, ConnectionFailedEvent, ConnectionLocalId,
+        ConnectionLostEvent, ConnectionState, InternalConnectionState,
     },
 };
 
@@ -70,13 +70,13 @@ pub(crate) enum ClientAsyncMessage {
     },
 }
 
-/// Main quinnet client. Can open multiple [`Connection`] with multiple quinnet servers
+/// Main quinnet client. Can open multiple [`ClientSideConnection`] with multiple quinnet servers
 ///
 /// Created by the [`QuinnetClientPlugin`] or inserted manually via a call to [`bevy::prelude::World::insert_resource`]. When created, it will look for an existing [`AsyncRuntime`] resource and use it or create one itself.
 #[derive(Resource)]
 pub struct QuinnetClient {
     runtime: runtime::Handle,
-    connections: HashMap<ConnectionLocalId, Connection>,
+    connections: HashMap<ConnectionLocalId, ClientSideConnection>,
     connection_local_id_gen: ConnectionLocalId,
     default_connection_id: Option<ConnectionLocalId>,
 }
@@ -131,7 +131,7 @@ impl QuinnetClient {
     }
 
     /// Returns the default connection or None.
-    pub fn get_connection(&self) -> Option<&Connection> {
+    pub fn get_connection(&self) -> Option<&ClientSideConnection> {
         match self.default_connection_id {
             Some(id) => self.connections.get(&id),
             None => None,
@@ -139,7 +139,7 @@ impl QuinnetClient {
     }
 
     /// Returns the default connection as mut or None.
-    pub fn get_connection_mut(&mut self) -> Option<&mut Connection> {
+    pub fn get_connection_mut(&mut self) -> Option<&mut ClientSideConnection> {
         match self.default_connection_id {
             Some(id) => self.connections.get_mut(&id),
             None => None,
@@ -147,36 +147,39 @@ impl QuinnetClient {
     }
 
     /// Returns the default connection. **Warning**, this function panics if there is no default connection.
-    pub fn connection(&self) -> &Connection {
+    pub fn connection(&self) -> &ClientSideConnection {
         self.connections
             .get(&self.default_connection_id.unwrap())
             .unwrap()
     }
 
     /// Returns the default connection as mut. **Warning**, this function panics if there is no default connection.
-    pub fn connection_mut(&mut self) -> &mut Connection {
+    pub fn connection_mut(&mut self) -> &mut ClientSideConnection {
         self.connections
             .get_mut(&self.default_connection_id.unwrap())
             .unwrap()
     }
 
     /// Returns the requested connection.
-    pub fn get_connection_by_id(&self, id: ConnectionLocalId) -> Option<&Connection> {
+    pub fn get_connection_by_id(&self, id: ConnectionLocalId) -> Option<&ClientSideConnection> {
         self.connections.get(&id)
     }
 
     /// Returns the requested connection as mut.
-    pub fn get_connection_mut_by_id(&mut self, id: ConnectionLocalId) -> Option<&mut Connection> {
+    pub fn get_connection_mut_by_id(
+        &mut self,
+        id: ConnectionLocalId,
+    ) -> Option<&mut ClientSideConnection> {
         self.connections.get_mut(&id)
     }
 
     /// Returns an iterator over all connections
-    pub fn connections(&self) -> Iter<ConnectionLocalId, Connection> {
+    pub fn connections(&self) -> Iter<ConnectionLocalId, ClientSideConnection> {
         self.connections.iter()
     }
 
     /// Returns an iterator over all connections as muts
-    pub fn connections_mut(&mut self) -> IterMut<ConnectionLocalId, Connection> {
+    pub fn connections_mut(&mut self) -> IterMut<ConnectionLocalId, ClientSideConnection> {
         self.connections.iter_mut()
     }
 
@@ -206,7 +209,7 @@ impl QuinnetClient {
             close_recv,
         ) = create_async_channels();
 
-        let mut connection = Connection::new(
+        let mut connection = ClientSideConnection::new(
             local_id,
             self.runtime.clone(),
             endpoint_config.clone(),
@@ -257,7 +260,7 @@ impl QuinnetClient {
     ///
     /// Closign a connection immediately prevents new messages from being sent on the connection and signal it to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
     ///
-    /// This may fail if no [Connection] if found for connection_id, or if the [Connection] is already closed.
+    /// This may fail if no [ClientSideConnection] if found for connection_id, or if the connection is already closed.
     pub fn close_connection(
         &mut self,
         connection_id: ConnectionLocalId,

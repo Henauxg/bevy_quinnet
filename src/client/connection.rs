@@ -301,7 +301,7 @@ pub(crate) fn create_async_channels() -> (
 
 /// A connection from a [`crate::client::QuinnetClient`] to a [`crate::server::QuinnetServer`]
 #[derive(Debug)]
-pub struct Connection {
+pub struct ClientSideConnection {
     /// Non networked identifier
     local_id: ConnectionLocalId,
     /// handle to the async runtime
@@ -328,9 +328,11 @@ pub struct Connection {
 
     /// Quinnet stats
     received_messages_count: u64,
+    received_bytes_count: usize,
+    sent_bytes_count: usize,
 }
 
-impl Connection {
+impl ClientSideConnection {
     pub(crate) fn new(
         local_id: ConnectionLocalId,
         runtime: runtime::Handle,
@@ -350,7 +352,6 @@ impl Connection {
             channels: Vec::new(),
             default_channel: None,
             available_channel_ids: (0..255).collect(),
-            received_messages_count: 0,
             bytes_from_server_recv,
             close_sender,
             from_async_client_recv,
@@ -359,6 +360,9 @@ impl Connection {
             endpoint_config: config,
             cert_mode,
             channels_config,
+            received_messages_count: 0,
+            received_bytes_count: 0,
+            sent_bytes_count: 0,
         }
     }
 
@@ -380,7 +384,7 @@ impl Connection {
         }
     }
 
-    /// Same as [Connection::receive_message] but will log the error instead of returning it
+    /// Same as [Self::receive_message] but will log the error instead of returning it
     pub fn try_receive_message<T: serde::de::DeserializeOwned>(
         &mut self,
     ) -> Option<(ChannelId, T)> {
@@ -393,8 +397,8 @@ impl Connection {
         }
     }
 
-    /// Same as [Connection::send_message_on] but on the default channel
-    pub fn send_message<T: serde::Serialize>(&self, message: T) -> Result<(), QuinnetError> {
+    /// Same as [Self::send_message_on] but on the default channel
+    pub fn send_message<T: serde::Serialize>(&mut self, message: T) -> Result<(), QuinnetError> {
         match self.default_channel {
             Some(channel) => self.send_message_on(channel, message),
             None => Err(QuinnetError::NoDefaultChannel),
@@ -409,7 +413,7 @@ impl Connection {
     /// - or if a serialization error occurs
     /// - (or if the message queue is full)
     pub fn send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
-        &self,
+        &mut self,
         channel_id: C,
         message: T,
     ) -> Result<(), QuinnetError> {
@@ -418,7 +422,10 @@ impl Connection {
             InternalConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
             _ => match self.channels.get(channel_id as usize) {
                 Some(Some(channel)) => match bincode::serialize(&message) {
-                    Ok(payload) => channel.send_payload(payload.into()),
+                    Ok(payload) => {
+                        self.sent_bytes_count += payload.len();
+                        channel.send_payload(payload.into())
+                    }
                     Err(_) => Err(QuinnetError::Serialization),
                 },
                 Some(None) => Err(QuinnetError::ChannelClosed),
@@ -427,17 +434,17 @@ impl Connection {
         }
     }
 
-    /// Same as [Connection::send_message] but will log the error instead of returning it
-    pub fn try_send_message<T: serde::Serialize>(&self, message: T) {
+    /// Same as [Self::send_message] but will log the error instead of returning it
+    pub fn try_send_message<T: serde::Serialize>(&mut self, message: T) {
         match self.send_message(message) {
             Ok(_) => {}
             Err(err) => error!("try_send_message: {}", err),
         }
     }
 
-    /// Same as [Connection::send_message_on] but will log the error instead of returning it
+    /// Same as [Self::send_message_on] but will log the error instead of returning it
     pub fn try_send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
-        &self,
+        &mut self,
         channel_id: C,
         message: T,
     ) {
@@ -447,8 +454,8 @@ impl Connection {
         }
     }
 
-    /// Same as [Connection::send_payload_on] but on the default channel
-    pub fn send_payload<T: Into<Bytes>>(&self, payload: T) -> Result<(), QuinnetError> {
+    /// Same as [Self::send_payload_on] but on the default channel
+    pub fn send_payload<T: Into<Bytes>>(&mut self, payload: T) -> Result<(), QuinnetError> {
         match self.default_channel {
             Some(channel) => self.send_payload_on(channel, payload),
             None => Err(QuinnetError::NoDefaultChannel),
@@ -462,7 +469,7 @@ impl Connection {
     /// - or if the client is disconnected
     /// - (or if the message queue is full)
     pub fn send_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
-        &self,
+        &mut self,
         channel_id: C,
         payload: T,
     ) -> Result<(), QuinnetError> {
@@ -470,24 +477,28 @@ impl Connection {
         match &self.state {
             InternalConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
             _ => match self.channels.get(channel_id as usize) {
-                Some(Some(channel)) => channel.send_payload(payload.into()),
+                Some(Some(channel)) => {
+                    let bytes = payload.into();
+                    self.sent_bytes_count += bytes.len();
+                    channel.send_payload(bytes)
+                }
                 Some(None) => Err(QuinnetError::ChannelClosed),
                 None => Err(QuinnetError::UnknownChannel(channel_id)),
             },
         }
     }
 
-    /// Same as [Connection::send_payload] but will log the error instead of returning it
-    pub fn try_send_payload<T: Into<Bytes>>(&self, payload: T) {
+    /// Same as [Self::send_payload] but will log the error instead of returning it
+    pub fn try_send_payload<T: Into<Bytes>>(&mut self, payload: T) {
         match self.send_payload(payload) {
             Ok(_) => {}
             Err(err) => error!("try_send_payload: {}", err),
         }
     }
 
-    /// Same as [Connection::send_payload_on] but will log the error instead of returning it
+    /// Same as [Self::send_payload_on] but will log the error instead of returning it
     pub fn try_send_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
-        &self,
+        &mut self,
         channel_id: C,
         payload: T,
     ) {
@@ -507,6 +518,7 @@ impl Connection {
             InternalConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
             _ => match self.bytes_from_server_recv.try_recv() {
                 Ok(msg_payload) => {
+                    self.received_bytes_count += msg_payload.1.len();
                     self.received_messages_count += 1;
                     Ok(Some(msg_payload))
                 }
@@ -518,7 +530,7 @@ impl Connection {
         }
     }
 
-    /// Same as [Connection::receive_payload] but will log the error instead of returning it
+    /// Same as [Self::receive_payload] but will log the error instead of returning it
     pub fn try_receive_payload(&mut self) -> Option<(ChannelId, Bytes)> {
         match self.receive_payload() {
             Ok(payload) => payload,
@@ -552,7 +564,7 @@ impl Connection {
         self.internal_disconnect(CloseReason::LocalOrder)
     }
 
-    /// Same as [Connection::disconnect] but will log the error instead of returning it
+    /// Same as [Self::disconnect] but will log the error instead of returning it
     pub fn try_disconnect(&mut self) {
         match &self.disconnect() {
             Ok(_) => (),
@@ -586,6 +598,30 @@ impl Connection {
         self.received_messages_count
     }
 
+    /// Returns how many bytes were received on this connection since the last time it was cleared and reset this value to 0
+    pub fn clear_received_bytes_count(&mut self) -> usize {
+        let bytes_count = self.received_bytes_count;
+        self.received_bytes_count = 0;
+        bytes_count
+    }
+
+    /// Returns how many bytes were received on this connection since the last time it was cleared
+    pub fn received_bytes_count(&self) -> usize {
+        self.received_bytes_count
+    }
+
+    /// Returns how many bytes were received on this connection since the last time it was cleared and reset this value to 0
+    pub fn clear_sent_bytes_count(&mut self) -> usize {
+        let bytes_count = self.sent_bytes_count;
+        self.sent_bytes_count = 0;
+        bytes_count
+    }
+
+    /// Returns how many bytes were received on this connection since the last time it was cleared
+    pub fn sent_bytes_count(&self) -> usize {
+        self.sent_bytes_count
+    }
+
     /// Returns the client_id assigned to this client by the server.
     ///
     /// Will be [None] if the `shared-client-id` feature is disabled
@@ -598,7 +634,7 @@ impl Connection {
 
     /// Attempts to reconnect to the server.
     ///
-    /// This uses the initial connection configuration. Notably, channels opened by calling [`Connection::open_channel`] on the connection after it was initially opened won't be automatically re-opened.
+    /// This uses the initial connection configuration. Notably, channels opened by calling [`Self::open_channel`] on the connection after it was initially opened won't be automatically re-opened.
     ///
     /// Does nothing if the connection state is not [`ConnectionState::Disconnected`]
     pub fn reconnect(&mut self) -> Result<(), QuinnetError> {
@@ -629,6 +665,8 @@ impl Connection {
                 self.from_channels_recv = from_channels_recv;
                 // Connection stats reset
                 self.received_messages_count = 0;
+                self.received_bytes_count = 0;
+                self.sent_bytes_count = 0;
 
                 // Open default channels
                 self.open_configured_channels(self.channels_config.clone())?;
