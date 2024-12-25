@@ -52,7 +52,7 @@ use super::{
 pub type ConnectionLocalId = u64;
 
 /// Connection event raised when the client just connected to the server. Raised in the CoreStage::PreUpdate stage.
-#[derive(Event)]
+#[derive(Event, Debug, Copy, Clone)]
 pub struct ConnectionEvent {
     /// Local id of the connection
     pub id: ConnectionLocalId,
@@ -63,7 +63,7 @@ pub struct ConnectionEvent {
 }
 
 /// Connection event raised when the client failed to connect to the server. Raised in the CoreStage::PreUpdate stage.
-#[derive(Event)]
+#[derive(Event, Debug, Clone)]
 pub struct ConnectionFailedEvent {
     /// Local id of the connection which failed to connect
     pub id: ConnectionLocalId,
@@ -72,7 +72,7 @@ pub struct ConnectionFailedEvent {
 }
 
 /// ConnectionLost event raised when the client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
-#[derive(Event)]
+#[derive(Event, Debug, Copy, Clone)]
 pub struct ConnectionLostEvent {
     /// Local id of the connection
     pub id: ConnectionLocalId,

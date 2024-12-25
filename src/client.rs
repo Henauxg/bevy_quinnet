@@ -40,7 +40,7 @@ pub mod connection;
 pub const DEFAULT_KNOWN_HOSTS_FILE: &str = "quinnet/known_hosts";
 
 /// Possible errors occuring while a client is connecting to a server
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum QuinnetConnectionError {
     /// A quic error occurred during the connection
     #[error("Quic connection error")]
