@@ -1,5 +1,13 @@
 # Changelog
 
+## Version 0.14.0 (2025-01-16)
+
+- Updated `rustls-platform-verifier` from 0.4 to 0.5
+- Client:
+  - Added `Debug`, `Clone` and `Copy` derives to client events by @florianfelix
+- Server: 
+  - Changed `start_endpoint` to return an error (instead of a panic in the async task) if the socket binding fails (thanks to @NonbinaryCoder)
+
 ## Version 0.13.0 (2024-12-02)
 
 - Renamed client `Connection` to `ClientSideConnection` and server `ClientConnection` to `ServerSideConnection`
