@@ -1,12 +1,12 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
-    net::{AddrParseError, IpAddr, SocketAddr},
+    net::{AddrParseError, IpAddr, SocketAddr, UdpSocket},
     sync::Arc,
 };
 
 use bevy::prelude::*;
 use bytes::Bytes;
-use quinn::{Endpoint as QuinnEndpoint, ServerConfig};
+use quinn::{default_runtime, Endpoint as QuinnEndpoint, EndpointConfig, ServerConfig};
 use quinn_proto::ConnectionStats;
 use serde::Deserialize;
 use tokio::{
@@ -953,11 +953,11 @@ impl QuinnetServer {
     ) -> Result<ServerCertificate, QuinnetError> {
         // Endpoint configuration
         let server_cert = retrieve_certificate(cert_mode)?;
-        let mut server_config = ServerConfig::with_single_cert(
+        let mut endpoint_config = ServerConfig::with_single_cert(
             server_cert.cert_chain.clone(),
             server_cert.priv_key.clone_key(),
         )?;
-        Arc::get_mut(&mut server_config.transport)
+        Arc::get_mut(&mut endpoint_config.transport)
             .ok_or(QuinnetError::LockAcquisitionFailure)?
             .keep_alive_interval(Some(DEFAULT_KEEP_ALIVE_INTERVAL_S));
 
@@ -966,12 +966,13 @@ impl QuinnetServer {
         let (endpoint_close_send, endpoint_close_recv) =
             broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
-        info!("Starting endpoint on: {} ...", config.local_bind_addr);
+        let socket = std::net::UdpSocket::bind(config.local_bind_addr)?;
 
+        info!("Starting endpoint on: {} ...", config.local_bind_addr);
         self.runtime.spawn(async move {
             endpoint_task(
-                server_config,
-                config.local_bind_addr,
+                socket,
+                endpoint_config,
                 to_sync_server_send.clone(),
                 endpoint_close_recv,
             )
@@ -1011,13 +1012,19 @@ impl QuinnetServer {
 }
 
 async fn endpoint_task(
+    socket: UdpSocket,
     endpoint_config: ServerConfig,
-    endpoint_adr: SocketAddr,
     to_sync_server_send: mpsc::Sender<ServerAsyncMessage>,
     mut endpoint_close_recv: broadcast::Receiver<()>,
 ) {
-    let endpoint = QuinnEndpoint::server(endpoint_config, endpoint_adr)
-        .expect("Failed to create the endpoint");
+    let endpoint = QuinnEndpoint::new(
+        EndpointConfig::default(),
+        Some(endpoint_config),
+        socket,
+        default_runtime().expect("async runtime should be valid"),
+    )
+    .expect("should create quinn endpoint");
+
     // Handle incoming connections/clients.
     tokio::select! {
         _ = endpoint_close_recv.recv() => {

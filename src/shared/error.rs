@@ -66,8 +66,8 @@ pub enum QuinnetError {
     /// A Certificate action was already sent for a CertificateInteractionEvent
     #[error("A Certificate action was already sent for a CertificateInteractionEvent")]
     CertificateActionAlreadyApplied,
-    /// Failed to read/write file(s)
-    #[error("Failed to read/write file(s)")]
+    /// I/O Error
+    #[error("I/O error")]
     IoError(#[from] io::Error),
     ///Rustls protocol error
     #[error("Rustls protocol error")]
