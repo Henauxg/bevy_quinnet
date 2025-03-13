@@ -250,6 +250,11 @@ impl ServerSideConnection {
         }
     }
 
+    /// See [quinn::Connection::max_datagram_size]
+    pub fn max_datagram_size(&self) -> Option<usize> {
+        self.connection_handle.max_datagram_size()
+    }
+
     /// Returns statistics about a client connection
     pub fn connection_stats(&self) -> ConnectionStats {
         self.connection_handle.stats()

@@ -585,6 +585,14 @@ impl ClientSideConnection {
         (&self.state).into()
     }
 
+    /// See [quinn::Connection::max_datagram_size]
+    pub fn max_datagram_size(&self) -> Option<usize> {
+        match &self.state {
+            InternalConnectionState::Connected(connection, _) => connection.max_datagram_size(),
+            _ => None,
+        }
+    }
+
     /// Returns statistics about the current connection if connected.
     pub fn connection_stats(&self) -> Option<ConnectionStats> {
         match &self.state {
