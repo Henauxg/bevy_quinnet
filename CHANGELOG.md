@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.15.0 (2025-03-13)
+
+- Added `max_datagram_size` method to `ServerSideConnection` and `ClientSideConnection`
+
 ## Version 0.14.0 (2025-01-16)
 
 - Updated `rustls-platform-verifier` from 0.4 to 0.5
