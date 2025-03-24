@@ -33,7 +33,8 @@ use client_id::receive_client_id;
 use crate::shared::{
     channels::{
         spawn_recv_channels_tasks, spawn_send_channels_tasks, Channel, ChannelAsyncMessage,
-        ChannelId, ChannelSyncMessage, ChannelType, ChannelsConfiguration, CloseReason,
+        ChannelId, ChannelKind, ChannelSyncMessage, ChannelsConfiguration, CloseReason, CloseRecv,
+        CloseSend,
     },
     error::QuinnetError,
     ClientId, InternalConnectionRef, DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE,
@@ -261,8 +262,6 @@ pub(crate) type ChannelAsyncMsgSend = mpsc::Sender<ChannelAsyncMessage>;
 pub(crate) type ChannelAsyncMsgRecv = mpsc::Receiver<ChannelAsyncMessage>;
 pub(crate) type ChannelSyncMsgSend = mpsc::Sender<ChannelSyncMessage>;
 pub(crate) type ChannelSyncMsgRecv = mpsc::Receiver<ChannelSyncMessage>;
-pub(crate) type CloseSend = broadcast::Sender<CloseReason>;
-pub(crate) type CloseRecv = broadcast::Receiver<CloseReason>;
 
 pub(crate) fn create_async_channels() -> (
     MessageSend,
@@ -722,12 +721,12 @@ impl ClientSideConnection {
         &self.cert_mode
     }
 
-    /// Opens a channel of the requested [ChannelType] and returns its [ChannelId].
+    /// Opens a channel of the requested [ChannelKind] and returns its [ChannelId].
     ///
     /// If no channels were previously opened, the opened channel will be the new default channel.
     ///
     /// Can fail if the Connection is closed.
-    pub fn open_channel(&mut self, channel_type: ChannelType) -> Result<ChannelId, QuinnetError> {
+    pub fn open_channel(&mut self, channel_type: ChannelKind) -> Result<ChannelId, QuinnetError> {
         let channel_id = match self.available_channel_ids.pop_first() {
             Some(channel_id) => channel_id,
             None => return Err(QuinnetError::MaxChannelsCountReached),
@@ -749,7 +748,7 @@ impl ClientSideConnection {
 
     /// Closes the channel with the corresponding [ChannelId].
     ///
-    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelType], before fully closing.
+    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelKind], before fully closing.
     ///
     /// If the closed channel is the current default channel, the default channel gets set to `None`.
     ///
@@ -784,7 +783,7 @@ impl ClientSideConnection {
     fn create_channel(
         &mut self,
         channel_id: ChannelId,
-        channel_type: ChannelType,
+        channel_type: ChannelKind,
     ) -> Result<ChannelId, QuinnetError> {
         let (bytes_to_channel_send, bytes_to_channel_recv) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
@@ -794,8 +793,8 @@ impl ClientSideConnection {
         match self
             .to_channels_send
             .try_send(ChannelSyncMessage::CreateChannel {
-                channel_id,
-                channel_type,
+                id: channel_id,
+                kind: channel_type,
                 bytes_to_channel_recv,
                 channel_close_recv,
             }) {

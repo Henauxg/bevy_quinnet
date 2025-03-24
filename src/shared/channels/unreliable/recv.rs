@@ -3,10 +3,7 @@ use bytes::Bytes;
 use std::fmt::Display;
 use tokio::sync::mpsc::{self};
 
-use crate::{
-    client::connection::CloseRecv,
-    shared::channels::{ChannelId, CHANNEL_ID_LEN},
-};
+use crate::shared::channels::{ChannelId, CloseRecv, CHANNEL_ID_LEN};
 
 pub(crate) async fn unreliable_channel_receiver_task<T: Display>(
     task_id: T,

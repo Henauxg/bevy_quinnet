@@ -3,7 +3,10 @@ use bevy::prelude::App;
 use bevy_quinnet::{
     client::QuinnetClient,
     server::QuinnetServer,
-    shared::{channels::ChannelType, error::QuinnetError},
+    shared::{
+        channels::{ChannelKind, DEFAULT_MAX_RELIABLE_FRAME_LEN},
+        error::QuinnetError,
+    },
 };
 
 // https://github.com/rust-lang/rust/issues/46379
@@ -70,8 +73,8 @@ fn default_channel() {
         );
     }
 
-    let client_channel = open_client_channel(ChannelType::OrderedReliable, &mut client_app);
-    let server_channel = open_server_channel(ChannelType::OrderedReliable, &mut server_app);
+    let client_channel = open_client_channel(ChannelKind::default(), &mut client_app);
+    let server_channel = open_server_channel(ChannelKind::default(), &mut server_app);
 
     let client_id = wait_for_client_connected(&mut client_app, &mut server_app);
 
@@ -104,9 +107,13 @@ fn multi_instance_channels() {
     let mut server_app: App = start_simple_server_app(port);
 
     for channel_type in vec![
-        ChannelType::OrderedReliable,
-        ChannelType::UnorderedReliable,
-        ChannelType::Unreliable,
+        ChannelKind::OrderedReliable {
+            max_frame_size: DEFAULT_MAX_RELIABLE_FRAME_LEN,
+        },
+        ChannelKind::UnorderedReliable {
+            max_frame_size: DEFAULT_MAX_RELIABLE_FRAME_LEN,
+        },
+        ChannelKind::Unreliable,
     ] {
         let mut client_app_1: App = start_simple_client_app(port);
 

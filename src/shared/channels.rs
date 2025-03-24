@@ -23,6 +23,8 @@ use self::{
 mod reliable;
 mod unreliable;
 
+pub use reliable::DEFAULT_MAX_RELIABLE_FRAME_LEN;
+
 /// Id of an opened channel
 pub type ChannelId = u8;
 /// Maximum number of channels that can be opened simultaneously
@@ -30,6 +32,8 @@ pub const MAX_CHANNEL_COUNT: usize = u8::MAX as usize + 1;
 
 pub(crate) const CHANNEL_ID_LEN: usize = 1;
 pub(crate) const PROTOCOL_HEADER_LEN: usize = CHANNEL_ID_LEN;
+pub(crate) type CloseSend = broadcast::Sender<CloseReason>;
+pub(crate) type CloseRecv = broadcast::Receiver<CloseReason>;
 
 #[derive(PartialEq, Clone, Copy)]
 pub(crate) enum CloseReason {
@@ -39,15 +43,29 @@ pub(crate) enum CloseReason {
 
 /// Type of a channel, offering different delivery guarantees.
 #[derive(Debug, Copy, Clone)]
-pub enum ChannelType {
+pub enum ChannelKind {
     /// An OrderedReliable channel ensures that messages sent are delivered, and are processed by the receiving end in the same order as they were sent.
-    OrderedReliable,
+    OrderedReliable {
+        /// Maximum size of payloads sent on this channel, in bytes
+        max_frame_size: usize,
+    },
     /// An UnorderedReliable channel ensures that messages sent are delivered, but they may be delivered out of order.
-    UnorderedReliable,
+    UnorderedReliable {
+        /// Maximum size of payloads sent on this channel, in bytes
+        max_frame_size: usize,
+    },
     /// Channel which transmits messages as unreliable and unordered datagrams (may be lost or delivered out of order).
     ///
     /// The maximum allowed size of a datagram may change over the lifetime of a connection according to variation in the path MTU estimate. This is guaranteed to be a little over a kilobyte at minimum.
     Unreliable,
+}
+
+impl Default for ChannelKind {
+    fn default() -> Self {
+        ChannelKind::OrderedReliable {
+            max_frame_size: DEFAULT_MAX_RELIABLE_FRAME_LEN,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -58,8 +76,8 @@ pub(crate) enum ChannelAsyncMessage {
 #[derive(Debug)]
 pub(crate) enum ChannelSyncMessage {
     CreateChannel {
-        channel_id: ChannelId,
-        channel_type: ChannelType,
+        id: ChannelId,
+        kind: ChannelKind,
         bytes_to_channel_recv: mpsc::Receiver<Bytes>,
         channel_close_recv: mpsc::Receiver<()>,
     },
@@ -103,13 +121,15 @@ impl Channel {
 /// Stores a configuration that represents multiple channels to be opened by a [`crate::client::connection::ClientSideConnection`] or [`crate::server::Endpoint`]
 #[derive(Debug, Clone)]
 pub struct ChannelsConfiguration {
-    channels: Vec<ChannelType>,
+    channels: Vec<ChannelKind>,
 }
 
 impl Default for ChannelsConfiguration {
     fn default() -> Self {
         Self {
-            channels: vec![ChannelType::OrderedReliable],
+            channels: vec![ChannelKind::OrderedReliable {
+                max_frame_size: DEFAULT_MAX_RELIABLE_FRAME_LEN,
+            }],
         }
     }
 }
@@ -122,9 +142,9 @@ impl ChannelsConfiguration {
         }
     }
 
-    /// New configuration from a simple list of [`ChannelType`]. Opened channels (and their [`ChannelId`]) will have the same order as in this collection
+    /// New configuration from a simple list of [`ChannelKind`]. Opened channels (and their [`ChannelId`]) will have the same order as in this collection
     pub fn from_types(
-        channel_types: Vec<ChannelType>,
+        channel_types: Vec<ChannelKind>,
     ) -> Result<ChannelsConfiguration, QuinnetError> {
         if channel_types.len() > MAX_CHANNEL_COUNT {
             Err(QuinnetError::MaxChannelsCountReached)
@@ -135,8 +155,8 @@ impl ChannelsConfiguration {
         }
     }
 
-    /// Adds one element to the configuration from a [`ChannelType`]. Opened channels (and their [`ChannelId`]) will have the same order as their insertion order.
-    pub fn add(&mut self, channel_type: ChannelType) -> Option<ChannelId> {
+    /// Adds one element to the configuration from a [`ChannelKind`]. Opened channels (and their [`ChannelId`]) will have the same order as their insertion order.
+    pub fn add(&mut self, channel_type: ChannelKind) -> Option<ChannelId> {
         if self.channels.len() < MAX_CHANNEL_COUNT {
             self.channels.push(channel_type);
             Some((self.channels.len() - 1) as u8)
@@ -145,7 +165,7 @@ impl ChannelsConfiguration {
         }
     }
 
-    pub(crate) fn configs(&self) -> &Vec<ChannelType> {
+    pub(crate) fn configs(&self) -> &Vec<ChannelKind> {
         &self.channels
     }
 }
@@ -168,6 +188,16 @@ pub(crate) fn spawn_send_channels_tasks(
     });
 }
 
+struct SendChannelTask {
+    connection: quinn::Connection,
+    id: ChannelId,
+    channels_keepalive: mpsc::Sender<()>,
+    from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
+    close_recv: CloseRecv,
+    channel_close_recv: mpsc::Receiver<()>,
+    bytes_recv: mpsc::Receiver<Bytes>,
+}
+
 pub(crate) async fn send_channel_task_spawner(
     connection: quinn::Connection,
     mut close_recv: broadcast::Receiver<CloseReason>,
@@ -183,57 +213,35 @@ pub(crate) async fn send_channel_task_spawner(
             trace!("Connection Channels listener received a close signal")
         }
         _ = async {
-            while let Some(sync_message) = to_channels_recv.recv().await {
-                let ChannelSyncMessage::CreateChannel{ channel_id,  channel_type,bytes_to_channel_recv, channel_close_recv } = sync_message;
+            while let Some(ChannelSyncMessage::CreateChannel {
+                id,
+                kind,
+                bytes_to_channel_recv: bytes_recv,
+                channel_close_recv,
+            }) = to_channels_recv.recv().await {
 
-                let close_receiver = close_receiver_clone.resubscribe();
-                let connection_handle = connection.clone();
-                let from_channels_send = from_channels_send.clone();
-                let channels_keepalive_clone = channel_tasks_keepalive.clone();
+                let channel_task_data = SendChannelTask {
+                    connection: connection.clone(),
+                    id,
+                    channels_keepalive: channel_tasks_keepalive.clone(),
+                    from_channels_send: from_channels_send.clone(),
+                    close_recv: close_receiver_clone.resubscribe(),
+                    channel_close_recv,
+                    bytes_recv,
+                };
 
-                match channel_type {
-                    ChannelType::OrderedReliable => {
-                        tokio::spawn(async move {
-                            ordered_reliable_channel_task(
-                                connection_handle,
-                                channel_id,
-                                channels_keepalive_clone,
-                                from_channels_send,
-                                close_receiver,
-                                channel_close_recv,
-                                bytes_to_channel_recv
-                            )
-                            .await
-                        });
-                    },
-                    ChannelType::UnorderedReliable => {
-                        tokio::spawn(async move {
-                            unordered_reliable_channel_task(
-                                connection_handle,
-                                channel_id,
-                                channels_keepalive_clone,
-                                from_channels_send,
-                                close_receiver,
-                                channel_close_recv,
-                                bytes_to_channel_recv
-                            )
-                            .await
-                        });
-                    },
-                    ChannelType::Unreliable => {
-                        tokio::spawn(async move {
-                            unreliable_channel_task(
-                                connection_handle,
-                                channel_id,
-                                channels_keepalive_clone,
-                                from_channels_send,
-                                close_receiver,
-                                channel_close_recv,
-                                bytes_to_channel_recv
-                            )
-                            .await
-                        });
-                    },
+                match kind {
+                    ChannelKind::OrderedReliable { max_frame_size } => {
+                        tokio::spawn(async move { ordered_reliable_channel_task(channel_task_data, max_frame_size).await });
+                    }
+                    ChannelKind::UnorderedReliable { max_frame_size } => {
+                        tokio::spawn(
+                            async move { unordered_reliable_channel_task(channel_task_data, max_frame_size).await },
+                        );
+                    }
+                    ChannelKind::Unreliable => {
+                        tokio::spawn(async move { unreliable_channel_task(channel_task_data).await });
+                    }
                 }
             }
         } => {

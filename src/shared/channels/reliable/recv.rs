@@ -6,12 +6,9 @@ use std::{fmt::Display, io::Cursor};
 use tokio::sync::mpsc::{self};
 use tokio_util::codec::FramedRead;
 
-use crate::{
-    client::connection::CloseRecv,
-    shared::channels::{
-        reliable::{codec::QuinnetProtocolCodecDecoder, DEFAULT_MAX_RELIABLE_FRAME_LEN},
-        ChannelId, CHANNEL_ID_LEN,
-    },
+use crate::shared::channels::{
+    reliable::{codec::QuinnetProtocolCodecDecoder, DEFAULT_MAX_RELIABLE_FRAME_LEN},
+    ChannelId, CloseRecv, CHANNEL_ID_LEN,
 };
 
 pub(crate) async fn reliable_channels_receiver_task<T: Display>(

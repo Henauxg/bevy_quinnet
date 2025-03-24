@@ -25,7 +25,7 @@ use crate::{
     shared::{
         channels::{
             spawn_recv_channels_tasks, spawn_send_channels_tasks, Channel, ChannelAsyncMessage,
-            ChannelId, ChannelSyncMessage, ChannelType, ChannelsConfiguration, CloseReason,
+            ChannelId, ChannelKind, ChannelSyncMessage, ChannelsConfiguration, CloseReason,
         },
         error::QuinnetError,
         AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncUpdate,
@@ -197,7 +197,7 @@ impl ServerSideConnection {
     pub(crate) fn create_channel(
         &mut self,
         channel_id: ChannelId,
-        channel_type: ChannelType,
+        channel_type: ChannelKind,
     ) -> Result<ChannelId, QuinnetError> {
         let (bytes_to_channel_send, bytes_to_channel_recv) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
@@ -207,8 +207,8 @@ impl ServerSideConnection {
         match self
             .to_channels_send
             .try_send(ChannelSyncMessage::CreateChannel {
-                channel_id,
-                channel_type,
+                id: channel_id,
+                kind: channel_type,
                 bytes_to_channel_recv,
                 channel_close_recv,
             }) {
@@ -285,13 +285,13 @@ impl ServerSideConnection {
     }
 }
 
-/// By default, when starting an [Endpoint], Quinnet creates 1 channel instance of each [ChannelType], each with their own [ChannelId].
-/// Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelType::OrderedReliable] channel.
+/// By default, when starting an [Endpoint], Quinnet creates 1 channel instance of each [ChannelKind], each with their own [ChannelId].
+/// Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelKind::OrderedReliable] channel.
 pub struct Endpoint {
     clients: HashMap<ClientId, ServerSideConnection>,
     client_id_gen: ClientId,
 
-    opened_channels: HashMap<ChannelId, ChannelType>,
+    opened_channels: HashMap<ChannelId, ChannelKind>,
     available_channel_ids: BTreeSet<ChannelId>,
     default_channel: Option<ChannelId>,
 
@@ -785,12 +785,12 @@ impl Endpoint {
         &self.stats
     }
 
-    /// Opens a channel of the requested [ChannelType] and returns its [ChannelId].
+    /// Opens a channel of the requested [ChannelKind] and returns its [ChannelId].
     ///
     /// If no channels were previously opened, the opened channel will be the new default channel.
     ///
     /// Can fail if the Endpoint is closed.
-    pub fn open_channel(&mut self, channel_type: ChannelType) -> Result<ChannelId, QuinnetError> {
+    pub fn open_channel(&mut self, channel_type: ChannelKind) -> Result<ChannelId, QuinnetError> {
         let channel_id = match self.available_channel_ids.pop_first() {
             Some(channel_id) => channel_id,
             None => return Err(QuinnetError::MaxChannelsCountReached),
@@ -807,7 +807,7 @@ impl Endpoint {
 
     /// Closes the channel with the corresponding [ChannelId].
     ///
-    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelType], before fully closing.
+    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelKind], before fully closing.
     ///
     /// If the closed channel is the current default channel, the default channel gets set to `None`.
     ///
@@ -842,7 +842,7 @@ impl Endpoint {
     fn create_channel(
         &mut self,
         channel_id: ChannelId,
-        channel_type: ChannelType,
+        channel_type: ChannelKind,
     ) -> Result<ChannelId, QuinnetError> {
         for (_, client_connection) in self.clients.iter_mut() {
             client_connection.create_channel(channel_id, channel_type)?;

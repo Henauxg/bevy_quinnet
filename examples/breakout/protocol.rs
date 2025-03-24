@@ -1,6 +1,6 @@
 use bevy::prelude::{Entity, Vec2, Vec3};
 use bevy_quinnet::shared::{
-    channels::{ChannelId, ChannelType, ChannelsConfiguration},
+    channels::{ChannelId, ChannelKind, ChannelsConfiguration, DEFAULT_MAX_RELIABLE_FRAME_LEN},
     ClientId,
 };
 use serde::{Deserialize, Serialize};
@@ -71,7 +71,7 @@ impl Into<ChannelId> for ClientChannel {
 }
 impl ClientChannel {
     pub fn channels_configuration() -> ChannelsConfiguration {
-        ChannelsConfiguration::from_types(vec![ChannelType::OrderedReliable]).unwrap()
+        ChannelsConfiguration::from_types(vec![ChannelKind::default()]).unwrap()
     }
 }
 
@@ -89,9 +89,13 @@ impl Into<ChannelId> for ServerChannel {
 impl ServerChannel {
     pub fn channels_configuration() -> ChannelsConfiguration {
         ChannelsConfiguration::from_types(vec![
-            ChannelType::OrderedReliable,
-            ChannelType::UnorderedReliable,
-            ChannelType::Unreliable,
+            ChannelKind::OrderedReliable {
+                max_frame_size: DEFAULT_MAX_RELIABLE_FRAME_LEN,
+            },
+            ChannelKind::UnorderedReliable {
+                max_frame_size: DEFAULT_MAX_RELIABLE_FRAME_LEN,
+            },
+            ChannelKind::Unreliable,
         ])
         .unwrap()
     }

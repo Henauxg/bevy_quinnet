@@ -4,45 +4,34 @@ use bevy::{
 };
 use bytes::{BufMut, Bytes, BytesMut};
 use quinn::SendDatagramError;
-use tokio::sync::mpsc;
 
-use crate::{
-    client::connection::CloseRecv,
-    shared::channels::{ChannelAsyncMessage, ChannelId, CloseReason, PROTOCOL_HEADER_LEN},
+use crate::shared::channels::{
+    ChannelAsyncMessage, ChannelId, CloseReason, SendChannelTask, PROTOCOL_HEADER_LEN,
 };
 
-pub(crate) async fn unreliable_channel_task(
-    connection: quinn::Connection,
-    channel_id: ChannelId,
-    _: mpsc::Sender<()>,
-    from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
-    mut close_recv: CloseRecv,
-    mut channel_close_recv: mpsc::Receiver<()>,
-    mut bytes_to_channel_recv: mpsc::Receiver<Bytes>,
-) {
+pub(crate) async fn unreliable_channel_task(mut task: SendChannelTask) {
     let close_reason = tokio::select! {
-        close_reason = close_recv.recv() => {
+        close_reason = task.close_recv.recv() => {
             trace!("Unreliable Channel task received a close signal");
             match close_reason {
                 Ok(reason) => reason,
                 Err(_) => CloseReason::LocalOrder,
             }
         }
-        _ = channel_close_recv.recv() => {
+        _ = task.channel_close_recv.recv() => {
             trace!("Unreliable Channel task received a channel close signal");
             CloseReason::LocalOrder
         }
         _ = async {
-            while let Some(msg_bytes) = bytes_to_channel_recv.recv().await {
-
-                if let Err(err) = send_unreliable_message(&connection, msg_bytes, channel_id) {
+            while let Some(msg_bytes) = task.bytes_recv.recv().await {
+                if let Err(err) = send_unreliable_message(&task.connection, msg_bytes, task.id) {
                     error!("Error while sending message on Unreliable Channel, {}", err);
                     match err {
                         SendDatagramError::UnsupportedByPeer => (),
                         SendDatagramError::Disabled => (),
                         SendDatagramError::TooLarge => (),
                         SendDatagramError::ConnectionLost(_) => {
-                            from_channels_send.send(
+                            task.from_channels_send.send(
                                 ChannelAsyncMessage::LostConnection)
                                 .await
                                 .expect("Failed to signal connection lost from channels");
@@ -57,8 +46,9 @@ pub(crate) async fn unreliable_channel_task(
     };
     // No need to try to flush if we know that the peer is already closed
     if close_reason != CloseReason::PeerClosed {
-        while let Ok(msg_bytes) = bytes_to_channel_recv.try_recv() {
-            if let Err(err) = send_unreliable_message(&connection, msg_bytes, channel_id) {
+        while let Ok(msg_bytes) = task.bytes_recv.try_recv() {
+            if let Err(err) = send_unreliable_message(&task.connection, msg_bytes, task.id)
+            {
                 warn!(
                     "Failed to send a remaining message on Unreliable Channel, {}",
                     err

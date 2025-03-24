@@ -37,7 +37,6 @@ impl std::error::Error for QuinnetProtocolCodecError {}
 
 #[derive(Debug)]
 pub struct QuinnetProtocolCodecEncoder {
-    // Maximum frame length
     max_frame_len: usize,
     raw_channel_id: u8,
 }
