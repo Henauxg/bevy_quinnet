@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.16.0 (2025-03-24)
+
+- Renamed `ChannelType` to `ChannelKind`
+- Added `max_frame_size` configuration value to `ChannelKind::OrderedReliable` and `ChannelKind::UnorderedReliable`
+
 ## Version 0.15.0 (2025-03-13)
 
 - Added `max_datagram_size` method to `ServerSideConnection` and `ClientSideConnection`

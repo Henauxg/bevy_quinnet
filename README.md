@@ -118,7 +118,7 @@ fn handle_server_messages(
     mut client: ResMut<QuinnetClient>,
     /*...*/
 ) {
-    while let Ok(Some(message)) = client.connection_mut().receive_message::<ServerMessage>() {
+    while let Ok(Some((channel_id, message))) = client.connection_mut().receive_message::<ServerMessage>() {
         match message {
             // Match on your own message types ...
             ServerMessage::ClientConnected { client_id, username} => {/*...*/}
@@ -148,7 +148,9 @@ fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
         .start_endpoint(
             ServerEndpointConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000),
-            CertificateRetrievalMode::GenerateSelfSigned,
+            CertificateRetrievalMode::GenerateSelfSigned {
+                server_hostname: Ipv6Addr::LOCALHOST.to_string(),
+            },
             ChannelsConfiguration::default(),
         )
         .unwrap();
@@ -164,7 +166,7 @@ fn handle_client_messages(
 ) {
     let mut endpoint = server.endpoint_mut();
     for client_id in endpoint.clients() {
-        while let Some(message) = endpoint.try_receive_message_from::<ClientMessage>(client_id) {
+        while let Some((channel_id, message)) = endpoint.try_receive_message_from::<ClientMessage>(client_id) {
             match message {
                 // Match on your own message types ...
                 ClientMessage::Join { username} => {
@@ -210,9 +212,9 @@ let channels_config = ChannelsConfiguration::default();
 // Creates 2 OrderedReliable channels, and 1 unreliable channel,
 // with channel ids being respectively 0, 1 and 2.
 let channels_config = ChannelsConfiguration::from_types(vec![
-    ChannelType::OrderedReliable,
-    ChannelType::OrderedReliable,
-    ChannelType::Unreliable]);
+    ChannelKind::default(),
+    ChannelKind::default(),
+    ChannelKind::Unreliable]);
 ```
 
 Each channel is identified by its own `ChannelId`. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, the first opened channel becomes the default channel.
@@ -231,13 +233,13 @@ In some cases, you may want to create more than one channel instance of the same
 
 ```rust
 // If you want to create more channels
-let chat_channel = client.connection().open_channel(ChannelType::OrderedReliable).unwrap();
+let chat_channel = client.connection().open_channel(ChannelKind::default()).unwrap();
 client.connection().send_message_on(chat_channel, chat_message);
 ```
 
 On the server, channels are created and closed at the endpoint level and exist for all current & future clients.
 ```rust
-let chat_channel = server.endpoint().open_channel(ChannelType::OrderedReliable).unwrap();
+let chat_channel = server.endpoint().open_channel(ChannelKind::default()).unwrap();
 server.endpoint().send_message_on(client_id, chat_channel, chat_message);
 ```
 
@@ -331,7 +333,7 @@ Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/
 
 | bevy_quinnet | bevy |
 | :----------- | :--- |
-| 0.12-0.15    | 0.15 |
+| 0.12-0.16    | 0.15 |
 | 0.9-0.11     | 0.14 |
 | 0.7-0.8      | 0.13 |
 | 0.6          | 0.12 |
