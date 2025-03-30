@@ -119,6 +119,25 @@ impl Channel {
 }
 
 /// Stores a configuration that represents multiple channels to be opened by a [`crate::client::connection::ClientSideConnection`] or [`crate::server::Endpoint`]
+///
+/// Each channel in a [ChannelsConfiguration] is assigned a [ChannelId], starting from 0 and incrementing sequentially by 1.
+///
+/// ### Example
+///
+/// Declare 3 configured channels with their respective ids `0`, `1` and `2`:
+/// ```
+/// let configs = ChannelsConfiguration::from_types(vec![
+///     ChannelKind::OrderedReliable {
+///         max_frame_size: 8 * 1_024 * 1_024,
+///     },
+///     ChannelKind::UnorderedReliable {
+///         max_frame_size: 10 * 1_024,
+///     },
+///     ChannelKind::OrderedReliable {
+///         max_frame_size: 10 * 1_024,
+///     },
+/// ]).unwrap();
+/// ```
 #[derive(Debug, Clone)]
 pub struct ChannelsConfiguration {
     channels: Vec<ChannelKind>,
@@ -142,7 +161,9 @@ impl ChannelsConfiguration {
         }
     }
 
-    /// New configuration from a simple list of [`ChannelKind`]. Opened channels (and their [`ChannelId`]) will have the same order as in this collection
+    /// New configuration from a simple list of [`ChannelKind`].
+    ///
+    /// Opened channels (and their [`ChannelId`]) will have the same order as in this collection
     pub fn from_types(
         channel_types: Vec<ChannelKind>,
     ) -> Result<ChannelsConfiguration, QuinnetError> {
@@ -155,7 +176,9 @@ impl ChannelsConfiguration {
         }
     }
 
-    /// Adds one element to the configuration from a [`ChannelKind`]. Opened channels (and their [`ChannelId`]) will have the same order as their insertion order.
+    /// Adds one element to the configuration from a [`ChannelKind`].
+    ///
+    /// Opened channels (and their [`ChannelId`]) will have the same order as their insertion order.
     pub fn add(&mut self, channel_type: ChannelKind) -> Option<ChannelId> {
         if self.channels.len() < MAX_CHANNEL_COUNT {
             self.channels.push(channel_type);
