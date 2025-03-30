@@ -662,7 +662,7 @@ impl ClientSideConnection {
 
                 // Connection state reset
                 self.state = InternalConnectionState::Connecting;
-                self.channels = Vec::new();
+                self.channels = Vec::with_capacity(self.channels_config.configs().len());
                 self.default_channel = None;
                 self.available_channel_ids = (0..255).collect();
                 self.bytes_from_server_recv = bytes_from_server_recv;
