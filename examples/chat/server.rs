@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use bevy_quinnet::{
     server::{
-        certificate::CertificateRetrievalMode, ConnectionLostEvent, Endpoint, QuinnetServerPlugin,
-        QuinnetServer, ServerEndpointConfiguration,
+        certificate::CertificateRetrievalMode, ConnectionLostEvent, Endpoint, QuinnetServer,
+        QuinnetServerPlugin, ServerEndpointConfiguration,
     },
     shared::{channels::ChannelsConfiguration, ClientId},
 };
@@ -46,7 +46,7 @@ fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut users: ResMut<U
                         // Broadcast the connection event
                         endpoint
                             .send_group_message(
-                                users.names.keys().into_iter(),
+                                users.names.keys(),
                                 ServerMessage::ClientConnected {
                                     client_id: client_id,
                                     username: name,
@@ -67,7 +67,7 @@ fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut users: ResMut<U
                         message
                     );
                     endpoint.try_send_group_message(
-                        users.names.keys().into_iter(),
+                        users.names.keys(),
                         ServerMessage::ChatMessage {
                             client_id: client_id,
                             message: message,
@@ -98,7 +98,7 @@ fn handle_disconnect(endpoint: &mut Endpoint, users: &mut ResMut<Users>, client_
 
         endpoint
             .send_group_message(
-                users.names.keys().into_iter(),
+                users.names.keys(),
                 ServerMessage::ClientDisconnected {
                     client_id: client_id,
                 },

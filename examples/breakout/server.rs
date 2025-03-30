@@ -161,7 +161,7 @@ pub(crate) fn update_paddles(
                 paddle_transform.translation.x = new_paddle_position.clamp(left_bound, right_bound);
 
                 server.endpoint_mut().try_send_group_message_on(
-                    players.map.keys().into_iter(),
+                    players.map.keys(),
                     ServerChannel::PaddleUpdates,
                     ServerMessage::PaddleMoved {
                         entity: paddle_entity,
@@ -261,7 +261,7 @@ fn start_game(
 ) {
     let endpoint = server.endpoint_mut();
     // Assign ids
-    for client_id in players.map.keys().into_iter() {
+    for client_id in players.map.keys() {
         endpoint
             .send_message(
                 *client_id,
@@ -280,7 +280,7 @@ fn start_game(
         let paddle = spawn_paddle(commands, *client_id, &position);
         endpoint
             .send_group_message_on(
-                players.map.keys().into_iter(),
+                players.map.keys(),
                 ServerChannel::GameSetup,
                 ServerMessage::SpawnPaddle {
                     owner_client_id: *client_id,
@@ -300,7 +300,7 @@ fn start_game(
         let ball = spawn_ball(commands, *client_id, position, direction);
         endpoint
             .send_group_message_on(
-                players.map.keys().into_iter(),
+                players.map.keys(),
                 ServerChannel::GameSetup,
                 ServerMessage::SpawnBall {
                     owner_client_id: *client_id,
@@ -381,7 +381,7 @@ fn start_game(
     }
     endpoint
         .send_group_message(
-            players.map.keys().into_iter(),
+            players.map.keys(),
             ServerMessage::SpawnBricks {
                 offset: Vec2 {
                     x: offset_x,
@@ -394,7 +394,7 @@ fn start_game(
         .unwrap();
 
     endpoint
-        .send_group_message(players.map.keys().into_iter(), ServerMessage::StartGame {})
+        .send_group_message(players.map.keys(), ServerMessage::StartGame {})
         .unwrap();
 }
 
