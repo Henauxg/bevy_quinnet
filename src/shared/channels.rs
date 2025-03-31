@@ -126,6 +126,8 @@ impl Channel {
 ///
 /// Declare 3 configured channels with their respective ids `0`, `1` and `2`:
 /// ```
+/// use bevy_quinnet::shared::channels::{ChannelKind, ChannelsConfiguration};
+///
 /// let configs = ChannelsConfiguration::from_types(vec![
 ///     ChannelKind::OrderedReliable {
 ///         max_frame_size: 8 * 1_024 * 1_024,
