@@ -1154,7 +1154,7 @@ pub fn update_sync_server(
                     match endpoint.handle_connection(connection) {
                         Ok(client_id) => {
                             endpoint.stats.connect_count += 1;
-                            connection_events.send(ConnectionEvent { id: client_id });
+                            connection_events.write(ConnectionEvent { id: client_id });
                         }
                         Err(_) => {
                             error!("Failed to handle connection of a client");
@@ -1166,7 +1166,7 @@ pub fn update_sync_server(
                         true => {
                             endpoint.stats.disconnect_count += 1;
                             endpoint.try_disconnect_closed_client(client_id);
-                            connection_lost_events.send(ConnectionLostEvent { id: client_id });
+                            connection_lost_events.write(ConnectionLostEvent { id: client_id });
                         }
                         false => (),
                     }
@@ -1181,7 +1181,7 @@ pub fn update_sync_server(
                     ChannelAsyncMessage::LostConnection => {
                         if !lost_clients.contains(client_id) {
                             lost_clients.insert(*client_id);
-                            connection_lost_events.send(ConnectionLostEvent { id: *client_id });
+                            connection_lost_events.write(ConnectionLostEvent { id: *client_id });
                         }
                     }
                 }

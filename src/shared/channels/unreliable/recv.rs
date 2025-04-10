@@ -1,4 +1,4 @@
-use bevy::utils::tracing::trace;
+use bevy::log::trace;
 use bytes::Bytes;
 use std::fmt::Display;
 use tokio::sync::mpsc::{self};

@@ -1,7 +1,4 @@
-use bevy::{
-    log::warn,
-    utils::tracing::{error, trace},
-};
+use bevy::log::{error, trace, warn};
 use bytes::{BufMut, Bytes, BytesMut};
 use quinn::SendDatagramError;
 
@@ -47,8 +44,7 @@ pub(crate) async fn unreliable_channel_task(mut task: SendChannelTask) {
     // No need to try to flush if we know that the peer is already closed
     if close_reason != CloseReason::PeerClosed {
         while let Ok(msg_bytes) = task.bytes_recv.try_recv() {
-            if let Err(err) = send_unreliable_message(&task.connection, msg_bytes, task.id)
-            {
+            if let Err(err) = send_unreliable_message(&task.connection, msg_bytes, task.id) {
                 warn!(
                     "Failed to send a remaining message on Unreliable Channel, {}",
                     err

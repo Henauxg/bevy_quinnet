@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.16.0 (TBD)
+
+- Updated `bevy` to 0.16
+
 ## Version 0.16.0 (2025-03-24)
 
 - Renamed `ChannelType` to `ChannelKind`

@@ -1,7 +1,4 @@
-use bevy::{
-    log::warn,
-    utils::tracing::{error, trace},
-};
+use bevy::log::{error, trace, warn};
 use futures::sink::SinkExt;
 use quinn::SendStream;
 use tokio_util::codec::FramedWrite;

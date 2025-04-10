@@ -1,4 +1,4 @@
-use bevy::utils::tracing::trace;
+use bevy::log::trace;
 use bytes::{Buf, Bytes, BytesMut};
 use futures::StreamExt;
 use quinn::RecvStream;

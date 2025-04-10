@@ -1,14 +1,14 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::DerefMut};
 
 use bevy::{
     asset::Assets,
     audio::{AudioPlayer, Volume},
+    ecs::system::Single,
     input::ButtonInput,
     prelude::{
-        default, AssetServer, BuildChildren, Bundle, Button, Camera2d, Changed, ChildBuild, Circle,
-        Color, Commands, Component, DespawnRecursiveExt, Entity, EventReader, EventWriter, KeyCode,
-        Local, Mesh, Mesh2d, PlaybackSettings, Query, Res, ResMut, Resource, Text, Transform, Vec2,
-        Vec3, With, Without,
+        default, AssetServer, Bundle, Button, Camera2d, Changed, Circle, Color, Commands,
+        Component, Entity, EventReader, EventWriter, KeyCode, Local, Mesh, Mesh2d,
+        PlaybackSettings, Query, Res, ResMut, Resource, Text, Transform, Vec2, Vec3, With, Without,
     },
     sprite::{ColorMaterial, MeshMaterial2d, Sprite},
     state::state::NextState,
@@ -258,7 +258,7 @@ pub(crate) fn handle_server_messages(
                     }
                 }
                 // Sends a collision event so that other systems can react to the collision
-                collision_events.send_default();
+                collision_events.write_default();
             }
             ServerMessage::PaddleMoved { entity, position } => {
                 if let Some(local_paddle) = entity_mapping.map.get(&entity) {
@@ -304,9 +304,9 @@ pub(crate) fn move_paddle(
 
 pub(crate) fn update_scoreboard(
     scoreboard: Res<Scoreboard>,
-    mut query: Query<(&mut TextSpan, &mut TextColor), With<Score>>,
+    mut query: Single<(&mut TextSpan, &mut TextColor), With<Score>>,
 ) {
-    let (mut text, mut text_color) = query.single_mut();
+    let (ref mut text, ref mut text_color) = query.deref_mut();
     text.0 = scoreboard.score.to_string();
     text_color.0 = player_color_from_bool(scoreboard.score >= 0);
 }
@@ -323,7 +323,7 @@ pub(crate) fn play_collision_sound(
         commands.spawn((
             AudioPlayer(sound.clone()),
             // auto-despawn the entity when playback finishes
-            PlaybackSettings::DESPAWN.with_volume(Volume::new(0.2)),
+            PlaybackSettings::DESPAWN.with_volume(Volume::Linear(0.03)),
         ));
     }
 }
@@ -409,7 +409,7 @@ pub(crate) fn handle_menu_buttons(
 
 pub(crate) fn teardown_main_menu(mut commands: Commands, query: Query<Entity, With<Button>>) {
     for entity in query.iter() {
-        commands.entity(entity).despawn_recursive();
+        commands.entity(entity).despawn();
     }
 }
 

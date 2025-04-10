@@ -308,14 +308,14 @@ pub fn update_sync_client(
                 ClientAsyncMessage::Connected(internal_connection, client_id) => {
                     connection.state =
                         InternalConnectionState::Connected(internal_connection, client_id);
-                    connection_events.send(ConnectionEvent {
+                    connection_events.write(ConnectionEvent {
                         id: *connection_id,
                         client_id,
                     });
                 }
                 ClientAsyncMessage::ConnectionFailed(err) => {
                     connection.state = InternalConnectionState::Disconnected;
-                    connection_failed_events.send(ConnectionFailedEvent {
+                    connection_failed_events.write(ConnectionFailedEvent {
                         id: *connection_id,
                         err,
                     });
@@ -324,7 +324,7 @@ pub fn update_sync_client(
                     InternalConnectionState::Disconnected => (),
                     _ => {
                         connection.try_disconnect_closed_connection();
-                        connection_lost_events.send(ConnectionLostEvent { id: *connection_id });
+                        connection_lost_events.write(ConnectionLostEvent { id: *connection_id });
                     }
                 },
                 ClientAsyncMessage::CertificateInteractionRequest {
@@ -332,7 +332,7 @@ pub fn update_sync_client(
                     info,
                     action_sender,
                 } => {
-                    certificate_interaction_events.send(CertInteractionEvent {
+                    certificate_interaction_events.write(CertInteractionEvent {
                         connection_id: *connection_id,
                         status,
                         info,
@@ -340,13 +340,13 @@ pub fn update_sync_client(
                     });
                 }
                 ClientAsyncMessage::CertificateTrustUpdate(info) => {
-                    cert_trust_update_events.send(CertTrustUpdateEvent {
+                    cert_trust_update_events.write(CertTrustUpdateEvent {
                         connection_id: *connection_id,
                         cert_info: info,
                     });
                 }
                 ClientAsyncMessage::CertificateConnectionAbort { status, cert_info } => {
-                    cert_connection_abort_events.send(CertConnectionAbortEvent {
+                    cert_connection_abort_events.write(CertConnectionAbortEvent {
                         connection_id: *connection_id,
                         status,
                         cert_info,
@@ -360,7 +360,7 @@ pub fn update_sync_client(
                     InternalConnectionState::Disconnected => (),
                     _ => {
                         connection.try_disconnect_closed_connection();
-                        connection_lost_events.send(ConnectionLostEvent { id: *connection_id });
+                        connection_lost_events.write(ConnectionLostEvent { id: *connection_id });
                     }
                 },
             }

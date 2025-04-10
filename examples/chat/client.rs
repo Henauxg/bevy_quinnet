@@ -6,13 +6,12 @@ use std::{
 
 use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
-    ecs::schedule::IntoSystemConfigs,
-    log::LogPlugin,
+    ecs::schedule::IntoScheduleConfigs,
+    log::{info, warn, LogPlugin},
     prelude::{
         App, Commands, Deref, DerefMut, EventReader, EventWriter, PostUpdate, ResMut, Resource,
         Startup, Update,
     },
-    utils::tracing::{info, warn},
 };
 use bevy_quinnet::{
     client::{
@@ -97,7 +96,7 @@ fn handle_terminal_messages(
 ) {
     while let Ok(message) = terminal_messages.try_recv() {
         if message == "quit" {
-            app_exit_events.send(AppExit::Success);
+            app_exit_events.write(AppExit::Success);
         } else {
             client
                 .connection_mut()
