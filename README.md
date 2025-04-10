@@ -10,28 +10,9 @@ A Client/Server game networking plugin using [QUIC](https://www.chromium.org/qui
 
 </div>
 
-- [Bevy Quinnet](#bevy-quinnet)
-  - [QUIC as a game networking protocol](#quic-as-a-game-networking-protocol)
-  - [Features](#features)
-  - [Roadmap](#roadmap)
-  - [Quickstart](#quickstart)
-    - [Client](#client)
-    - [Server](#server)
-  - [Channels](#channels)
-  - [Certificates and server authentication](#certificates-and-server-authentication)
-  - [Examples](#examples)
-  - [Replicon integration](#replicon-integration)
-  - [Compatible Bevy versions](#compatible-bevy-versions)
-  - [Misc](#misc)
-    - [Cargo features](#cargo-features)
-    - [Logs](#logs)
-    - [Limitations](#limitations)
-  - [Credits](#credits)
-  - [License](#license)
-
 ## QUIC as a game networking protocol
 
-QUIC was really attractive to me as a game networking protocol because most of the hard-work is done by the protocol specification and the implementation (here [Quinn](https://github.com/quinn-rs/quinn)). No need to reinvent the wheel once again on error-prones subjects such as a UDP reliability wrapper, encryption & authentication mechanisms, congestion-control, and so on.
+QUIC was really attractive to me as a game networking protocol because most of the hard-work is done by the protocol specification and the implementation (here [Quinn](https://github.com/quinn-rs/quinn)). No need to reinvent the wheel once again on error-prones subjects such as a UDP reliability wrapper, encryption & authentication mechanisms or congestion-control.
 
 Most of the features proposed by the big networking libs are supported by default through QUIC. As an example, here is the list of features presented in [GameNetworkingSockets](https://github.com/ValveSoftware/GameNetworkingSockets):
 
@@ -53,9 +34,7 @@ Most of the features proposed by the big networking libs are supported by defaul
 
 ## Features
 
-Quinnet has basic features, I made it mostly to satisfy my own needs for my own game projects.
-
-It currently features:
+Quinnet can be used as a transport layer. It currently features:
 
 - A Client plugin which can:
     - Connect/disconnect to/from one or more server
@@ -63,20 +42,11 @@ It currently features:
 - A Server plugin which can:
     - Accept client connections & disconnect them
     - Send & receive unreliable and ordered/unordered reliable messages
-- Both client & server accept custom protocol structs/enums defined by the user as the message format.
+- Both client & server accept custom protocol structs/enums defined by the user as the message format (as well as raw bytes).
 - Communications are encrypted, and the client can [authenticate the server](#certificates-and-server-authentication).
 
 Although Quinn and parts of Quinnet are asynchronous, the APIs exposed by Quinnet for the client and server are synchronous. This makes the surface API easy to work with and adapted to a Bevy usage.
 The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channels) internally to communicate with the networking async tasks.
-
-##  Roadmap
-
-This is a bird-eye view of the features/tasks that will probably be worked on next (in no particular order):
-
-- [ ] Feature: Implement `unreliable` messages larger than the path MTU from client & server
-- [ ] Performance: feed multiples messages before flushing ordered reliable channels
-- [ ] Clean: Rework the error handling in the async back-end
-- [ ] Clean: Rework the error handling on collections to not fail at the first error
 
 ## Quickstart
 
@@ -357,7 +327,7 @@ For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatboo
 
 ### Limitations
 
-* QUIC is not available directly in a Browser (used in browsers but not exposed as an API). For now I would rather wait on [WebTransport](https://web.dev/webtransport/)("QUIC" on the Web) than hack on WebRTC data channels.
+* QUIC is not available directly in a Browser (it is used by Browsers but not exposed directly as an API). [WebTransport](https://web.dev/webtransport/) is starting to be available on Browsers, however this crate does not provide nor use a WebTransport implementation, and as such, does not support Browser target.
 
 ## Credits
 
