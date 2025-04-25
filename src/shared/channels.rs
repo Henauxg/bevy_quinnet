@@ -7,12 +7,9 @@ use tokio::sync::{
     mpsc::{self, error::TrySendError},
 };
 
-use crate::shared::{
-    channels::{
-        reliable::send::{ordered_reliable_channel_task, unordered_reliable_channel_task},
-        unreliable::send::unreliable_channel_task,
-    },
-    error::QuinnetError,
+use crate::shared::channels::{
+    reliable::send::{ordered_reliable_channel_task, unordered_reliable_channel_task},
+    unreliable::send::unreliable_channel_task,
 };
 
 use self::{
@@ -24,6 +21,8 @@ mod reliable;
 mod unreliable;
 
 pub use reliable::DEFAULT_MAX_RELIABLE_FRAME_LEN;
+
+use super::error::{AsyncChannelError, ChannelCloseError, ChannelConfigError};
 
 /// Id of an opened channel
 pub type ChannelId = u8;
@@ -85,34 +84,44 @@ pub(crate) enum ChannelSyncMessage {
 
 #[derive(Debug)]
 pub(crate) struct Channel {
+    id: ChannelId,
     sender: mpsc::Sender<Bytes>,
     close_sender: mpsc::Sender<()>,
 }
 
 impl Channel {
-    pub(crate) fn new(sender: mpsc::Sender<Bytes>, close_sender: mpsc::Sender<()>) -> Self {
+    pub(crate) fn new(
+        id: ChannelId,
+        sender: mpsc::Sender<Bytes>,
+        close_sender: mpsc::Sender<()>,
+    ) -> Self {
         Self {
+            id,
             sender,
             close_sender,
         }
     }
 
-    pub(crate) fn send_payload(&self, payload: Bytes) -> Result<(), QuinnetError> {
+    pub fn id(&self) -> ChannelId {
+        self.id
+    }
+
+    pub(crate) fn send_payload(&self, payload: Bytes) -> Result<(), AsyncChannelError> {
         match self.sender.try_send(payload) {
             Ok(_) => Ok(()),
             Err(err) => match err {
-                TrySendError::Full(_) => Err(QuinnetError::FullQueue),
-                TrySendError::Closed(_) => Err(QuinnetError::InternalChannelClosed),
+                TrySendError::Full(_) => Err(AsyncChannelError::FullQueue),
+                TrySendError::Closed(_) => Err(AsyncChannelError::InternalChannelClosed),
             },
         }
     }
 
-    pub(crate) fn close(&self) -> Result<(), QuinnetError> {
+    pub(crate) fn close(&self) -> Result<(), ChannelCloseError> {
         match self.close_sender.blocking_send(()) {
             Ok(_) => Ok(()),
             Err(_) => {
                 // The only possible error for a send is that there is no active receivers, meaning that the tasks are already terminated.
-                Err(QuinnetError::ChannelClosed)
+                Err(ChannelCloseError::ChannelAlreadyClosed)
             }
         }
     }
@@ -168,9 +177,9 @@ impl ChannelsConfiguration {
     /// Opened channels (and their [`ChannelId`]) will have the same order as in this collection
     pub fn from_types(
         channel_types: Vec<ChannelKind>,
-    ) -> Result<ChannelsConfiguration, QuinnetError> {
+    ) -> Result<ChannelsConfiguration, ChannelConfigError> {
         if channel_types.len() > MAX_CHANNEL_COUNT {
-            Err(QuinnetError::MaxChannelsCountReached)
+            Err(ChannelConfigError::MaxChannelsCountReached)
         } else {
             Ok(Self {
                 channels: channel_types,
@@ -195,15 +204,15 @@ impl ChannelsConfiguration {
     }
 }
 
-pub(crate) fn spawn_send_channels_tasks(
+/// Spawn a task to handle send channels creation for this connection
+pub(crate) fn spawn_send_channels_tasks_spawner(
     connection_handle: quinn::Connection,
     close_recv: broadcast::Receiver<CloseReason>,
     to_channels_recv: mpsc::Receiver<ChannelSyncMessage>,
     from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
 ) {
-    // Spawn a task to handle send channels creation for this connection
     tokio::spawn(async move {
-        send_channel_task_spawner(
+        send_channels_tasks_spawner(
             connection_handle,
             close_recv,
             to_channels_recv,
@@ -223,7 +232,7 @@ struct SendChannelTask {
     bytes_recv: mpsc::Receiver<Bytes>,
 }
 
-pub(crate) async fn send_channel_task_spawner(
+pub(crate) async fn send_channels_tasks_spawner(
     connection: quinn::Connection,
     mut close_recv: broadcast::Receiver<CloseReason>,
     mut to_channels_recv: mpsc::Receiver<ChannelSyncMessage>,

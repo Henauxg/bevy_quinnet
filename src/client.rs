@@ -15,7 +15,7 @@ use tokio::{
 
 use crate::shared::{
     channels::{ChannelAsyncMessage, ChannelsConfiguration},
-    error::QuinnetError,
+    error::AsyncChannelError,
     AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncUpdate,
 };
 
@@ -35,6 +35,9 @@ use self::{
 pub mod certificate;
 /// Module for a client's connection to a server
 pub mod connection;
+
+mod error;
+pub use error::*;
 
 /// Default path for the known hosts file
 pub const DEFAULT_KNOWN_HOSTS_FILE: &str = "quinnet/known_hosts";
@@ -191,7 +194,7 @@ impl QuinnetClient {
         endpoint_config: ClientEndpointConfiguration,
         cert_mode: CertificateVerificationMode,
         channels_config: ChannelsConfiguration,
-    ) -> Result<ConnectionLocalId, QuinnetError> {
+    ) -> Result<ConnectionLocalId, AsyncChannelError> {
         // Generate a local connection id
         let local_id = self.connection_local_id_gen;
         self.connection_local_id_gen += 1;
@@ -256,15 +259,15 @@ impl QuinnetClient {
         self.default_connection_id
     }
 
-    /// Close a specific connection. Removes it from the client.
+    /// Closes a specific connection. Removes it from the client.
     ///
-    /// Closign a connection immediately prevents new messages from being sent on the connection and signal it to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
+    /// Closing a connection immediately prevents new messages from being sent on the connection and signal it to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
     ///
-    /// This may fail if no [ClientSideConnection] if found for connection_id, or if the connection is already closed.
+    /// This may fail if no [ClientSideConnection] if found for `connection_id`, or if the connection is already closed.
     pub fn close_connection(
         &mut self,
         connection_id: ConnectionLocalId,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), ConnectionCloseError> {
         match self.connections.remove(&connection_id) {
             Some(mut connection) => {
                 if Some(connection_id) == self.default_connection_id {
@@ -272,21 +275,20 @@ impl QuinnetClient {
                 }
                 connection.disconnect()
             }
-            None => Err(QuinnetError::UnknownConnection(connection_id)),
+            None => Err(ConnectionCloseError::InvalidConnectionId(connection_id)),
         }
     }
 
-    /// Calls close_connection on all the open connections.
-    pub fn close_all_connections(&mut self) -> Result<(), QuinnetError> {
+    /// Calls [Self::close_connection] on all the open connections.
+    pub fn close_all_connections(&mut self) {
         for connection_id in self
             .connections
             .keys()
             .cloned()
             .collect::<Vec<ConnectionLocalId>>()
         {
-            self.close_connection(connection_id)?;
+            let _ = self.close_connection(connection_id);
         }
-        Ok(())
     }
 }
 
