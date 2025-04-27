@@ -1,8 +1,45 @@
 # Changelog
 
-## Version 0.16.0 (TBD)
+## Version 0.17.0 (TBD)
 
 - Updated `bevy` to 0.16
+- Reworked error handling in the sync client & server.
+  - Multi-target methods (`send_group_...`, `broadcast_...`, ...) now properly try to do the specified task for each target before returning. If any, errors will be collected and all returned.
+  - Removed `QuinnetError` type
+  - Added new error types :
+    - in the `client:error` module:
+      - `ClientSendError`
+      - `ClientPayloadSendError`
+      - `ClientMessageSendError`
+      - `ClientMessageReceiveError`
+      - `ConnectionClosed`
+      - `ClientConnectionCloseError`
+      - `InvalidHostFile`
+      - `CertificateInteractionError`
+    - in the `server::error`  module:
+      - `ServerSendError`
+      - `ServerPayloadSendError`
+      - `ServerMessageSendError`
+      - `ServerGroupSendError`
+      - `ServerGroupPayloadSendError`
+      - `ServerGroupMessageSendError`
+      - `ServerMessageReceiveError`
+      - `ServerReceiveError`
+      - `ServerDisconnectError`
+      - `EndpointAlreadyClosed`
+      - `EndpointStartError`
+      - `EndpointCertificateError`
+      - `EndpointConnectionAlreadyClosed`
+    - in the `shared::error` module:
+      - `AsyncChannelError`
+      - `ChannelCloseError`
+      - `ChannelCreationError`
+      - `ChannelConfigError`
+- Added new method variants to `Endpoint`:
+  - `send_group_payload`
+  - `try_send_group_payload`
+  - `send_group_payload_on`
+  - `try_send_group_payload_on`
 
 ## Version 0.16.0 (2025-03-24)
 
