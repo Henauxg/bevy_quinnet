@@ -12,9 +12,7 @@ readme = "README.md"
 exclude = ["assets/"]
 
 [dependencies]
-bevy = { version = "0.16.0-rc.3", default-features = false, features = [
-	"bevy_log",
-] }
+bevy = { version = "0.16.0", default-features = false, features = ["bevy_log"] }
 rustls = { version = "0.23", default-features = false, features = [] }
 rustls-pemfile = "2"
 rustls-platform-verifier = "0.5"
@@ -42,7 +40,7 @@ client = []
 server = []
 
 [dev-dependencies]
-bevy = { version = "0.16.0-rc.3", default-features = false, features = [
+bevy = { version = "0.16.0", default-features = false, features = [
 	"bevy_asset",         # Provides asset functionality
 	"bevy_audio",         # Provides audio functionality
 	"vorbis",             # OGG/VORBIS audio format support
