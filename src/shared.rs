@@ -4,6 +4,7 @@ use bevy::{
     ecs::schedule::SystemSet,
     prelude::{Deref, DerefMut, Resource},
 };
+use channels::MAX_CHANNEL_COUNT;
 use tokio::runtime::Runtime;
 
 /// Certificate features shared by client & server
@@ -21,7 +22,13 @@ pub const DEFAULT_MESSAGE_QUEUE_SIZE: usize = 150;
 pub const DEFAULT_KEEP_ALIVE_INTERVAL_S: Duration = Duration::from_secs(4);
 
 /// Default max size for quinnet internal message channels
-pub const DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE: usize = 100;
+pub const DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE: usize = 100;
+
+/// Default max size for Quinnet Channels messages
+///
+/// At least MAX_CHANNEL_COUNT capacity if all available channel slots are requested to open
+pub const DEFAULT_QCHANNEL_MESSAGES_CHANNEL_SIZE: usize = 2 * MAX_CHANNEL_COUNT;
+
 /// Default max size of the queues used to transmit close messages for async tasks
 pub(crate) const DEFAULT_KILL_MESSAGE_QUEUE_SIZE: usize = 10;
 

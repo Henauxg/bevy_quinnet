@@ -13,9 +13,12 @@ use futures::executor::block_on;
 use rustls::pki_types::{CertificateDer, ServerName as RustlsServerName, UnixTime};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::shared::{certificate::CertificateFingerprint, error::QuinnetError};
+use crate::shared::{certificate::CertificateFingerprint, error::AsyncChannelError};
 
-use super::{ClientAsyncMessage, ConnectionLocalId, DEFAULT_KNOWN_HOSTS_FILE};
+use super::{
+    CertificateInteractionError, ClientAsyncMessage, ConnectionLocalId, InvalidHostFile,
+    DEFAULT_KNOWN_HOSTS_FILE,
+};
 
 /// Default certificate behavior is to abort the connection
 pub const DEFAULT_CERT_VERIFIER_BEHAVIOUR: CertVerifierBehaviour =
@@ -39,15 +42,15 @@ impl CertInteractionEvent {
     pub fn apply_cert_verifier_action(
         &self,
         action: CertVerifierAction,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), CertificateInteractionError> {
         let mut sender = self.action_sender.lock()?;
         if let Some(sender) = sender.take() {
             match sender.send(action) {
                 Ok(_) => Ok(()),
-                Err(_) => Err(QuinnetError::InternalChannelClosed),
+                Err(_) => Err(AsyncChannelError::InternalChannelClosed.into()),
             }
         } else {
-            Err(QuinnetError::CertificateActionAlreadyApplied)
+            Err(CertificateInteractionError::CertificateActionAlreadyApplied)
         }
     }
 }
@@ -190,7 +193,7 @@ pub enum KnownHosts {
     /// Directly contains the server name to fingerprint mapping
     Store(CertStore),
     /// Path of a file caontaing the server name to fingerprint mapping.
-    HostsFile(String), // TODO More on the file format + the limitations
+    HostsFile(String),
 }
 
 /// Implementation of `ServerCertVerifier` that verifies everything as trustworthy.
@@ -446,15 +449,15 @@ fn parse_known_host_line(
 ) -> Result<(ServerName, CertificateFingerprint), Box<dyn Error>> {
     let mut parts = line.split_whitespace();
 
-    let adr_str = parts.next().ok_or(QuinnetError::InvalidHostFile)?;
+    let adr_str = parts.next().ok_or(InvalidHostFile)?;
     let serv_name = ServerName(RustlsServerName::try_from(adr_str)?.to_owned());
 
-    let fingerprint_b64 = parts.next().ok_or(QuinnetError::InvalidHostFile)?;
+    let fingerprint_b64 = parts.next().ok_or(InvalidHostFile)?;
     let fingerprint_bytes = base64::decode(&fingerprint_b64)?;
 
     match fingerprint_bytes.try_into() {
         Ok(buf) => Ok((serv_name, CertificateFingerprint::new(buf))),
-        Err(_) => Err(Box::new(QuinnetError::InvalidHostFile)),
+        Err(_) => Err(Box::new(InvalidHostFile)),
     }
 }
 

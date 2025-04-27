@@ -149,9 +149,7 @@ fn trust_on_first_use() {
 
         // Clients disconnects
         // Client reconnects with the updated cert store
-        client
-            .close_all_connections()
-            .expect("Failed to close connections on the client");
+        client.close_all_connections();
 
         client
             .open_connection(
@@ -185,8 +183,7 @@ fn trust_on_first_use() {
         client_app
             .world_mut()
             .resource_mut::<QuinnetClient>()
-            .close_all_connections()
-            .expect("Failed to close connections on the client");
+            .close_all_connections();
     }
 
     // Server reboots, and generates a new self-signed certificate

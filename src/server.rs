@@ -24,13 +24,15 @@ use crate::{
     server::certificate::{retrieve_certificate, CertificateRetrievalMode, ServerCertificate},
     shared::{
         channels::{
-            spawn_recv_channels_tasks, spawn_send_channels_tasks, Channel, ChannelAsyncMessage,
-            ChannelId, ChannelKind, ChannelSyncMessage, ChannelsConfiguration, CloseReason,
+            spawn_recv_channels_tasks, spawn_send_channels_tasks_spawner, Channel,
+            ChannelAsyncMessage, ChannelId, ChannelKind, ChannelSyncMessage, ChannelsConfiguration,
+            CloseReason,
         },
-        error::QuinnetError,
+        error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
         AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncUpdate,
-        DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE, DEFAULT_KEEP_ALIVE_INTERVAL_S,
+        DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE, DEFAULT_KEEP_ALIVE_INTERVAL_S,
         DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+        DEFAULT_QCHANNEL_MESSAGES_CHANNEL_SIZE,
     },
 };
 
@@ -39,6 +41,9 @@ use crate::server::client_id::spawn_client_id_sender;
 
 #[cfg(feature = "shared-client-id")]
 mod client_id;
+
+mod error;
+pub use error::*;
 
 /// Module for the server's certificate features
 pub mod certificate;
@@ -183,22 +188,32 @@ impl ServerSideConnection {
     /// Immediately prevents new messages from being sent on the channel and signal the channel to closes all its background tasks.
     /// Before trully closing, the channel will wait for all buffered messages to be properly sent according to the channel type.
     /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
-    pub(crate) fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), QuinnetError> {
+    pub(crate) fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), ChannelCloseError> {
         if (channel_id as usize) < self.channels.len() {
             match self.channels[channel_id as usize].take() {
                 Some(channel) => channel.close(),
-                None => Err(QuinnetError::ChannelClosed),
+                None => Err(ChannelCloseError::ChannelAlreadyClosed),
             }
         } else {
-            Err(QuinnetError::UnknownChannel(channel_id))
+            Err(ChannelCloseError::InvalidChannelId(channel_id))
         }
     }
 
-    pub(crate) fn create_channel(
+    pub(crate) fn create_connection_channel(
         &mut self,
-        channel_id: ChannelId,
-        channel_type: ChannelKind,
-    ) -> Result<ChannelId, QuinnetError> {
+        id: ChannelId,
+        kind: ChannelKind,
+    ) -> Result<(), AsyncChannelError> {
+        let channel = self.create_unregistered_connection_channel(id, kind)?;
+        self.register_connection_channel(channel);
+        Ok(())
+    }
+
+    pub(crate) fn create_unregistered_connection_channel(
+        &mut self,
+        id: ChannelId,
+        kind: ChannelKind,
+    ) -> Result<Channel, AsyncChannelError> {
         let (bytes_to_channel_send, bytes_to_channel_recv) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
         let (channel_close_send, channel_close_recv) =
@@ -207,38 +222,37 @@ impl ServerSideConnection {
         match self
             .to_channels_send
             .try_send(ChannelSyncMessage::CreateChannel {
-                id: channel_id,
-                kind: channel_type,
+                id,
+                kind,
                 bytes_to_channel_recv,
                 channel_close_recv,
             }) {
-            Ok(_) => {
-                let channel = Some(Channel::new(bytes_to_channel_send, channel_close_send));
-                if (channel_id as usize) < self.channels.len() {
-                    self.channels[channel_id as usize] = channel;
-                } else {
-                    for _ in self.channels.len()..channel_id as usize {
-                        self.channels.push(None);
-                    }
-                    self.channels.push(channel);
-                }
-
-                Ok(channel_id)
-            }
+            Ok(_) => Ok(Channel::new(id, bytes_to_channel_send, channel_close_send)),
             Err(err) => match err {
-                TrySendError::Full(_) => Err(QuinnetError::FullQueue),
-                TrySendError::Closed(_) => Err(QuinnetError::InternalChannelClosed),
+                TrySendError::Full(_) => Err(AsyncChannelError::FullQueue),
+                TrySendError::Closed(_) => Err(AsyncChannelError::InternalChannelClosed),
             },
         }
     }
 
+    pub(crate) fn register_connection_channel(&mut self, channel: Channel) {
+        let channel_index = channel.id() as usize;
+        if channel_index < self.channels.len() {
+            self.channels[channel_index] = Some(channel);
+        } else {
+            self.channels
+                .extend((self.channels.len()..channel_index).map(|_| None));
+            self.channels.push(Some(channel));
+        }
+    }
+
     /// Signal the connection to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
-    pub(crate) fn close(&mut self) -> Result<(), QuinnetError> {
+    pub(crate) fn close(&mut self) -> Result<(), EndpointConnectionAlreadyClosed> {
         match self.close_sender.send(CloseReason::LocalOrder) {
             Ok(_) => Ok(()),
             Err(_) => {
                 // The only possible error for a send is that there is no active receivers, meaning that the tasks are already terminated.
-                Err(QuinnetError::ConnectionAlreadyClosed)
+                Err(EndpointConnectionAlreadyClosed)
             }
         }
     }
@@ -297,7 +311,7 @@ pub struct Endpoint {
 
     close_sender: broadcast::Sender<()>,
 
-    pub(crate) from_async_server_recv: mpsc::Receiver<ServerAsyncMessage>,
+    from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
 
     stats: EndpointStats,
 }
@@ -327,7 +341,7 @@ impl EndpointStats {
 impl Endpoint {
     fn new(
         endpoint_close_send: broadcast::Sender<()>,
-        from_async_server_recv: mpsc::Receiver<ServerAsyncMessage>,
+        from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
     ) -> Self {
         Self {
             clients: HashMap::new(),
@@ -336,7 +350,7 @@ impl Endpoint {
             default_channel: None,
             available_channel_ids: (0..255).collect(),
             close_sender: endpoint_close_send,
-            from_async_server_recv,
+            from_async_endpoint_recv,
             stats: default(),
         }
     }
@@ -354,11 +368,11 @@ impl Endpoint {
     pub fn receive_message_from<T: serde::de::DeserializeOwned>(
         &mut self,
         client_id: ClientId,
-    ) -> Result<Option<(ChannelId, T)>, QuinnetError> {
+    ) -> Result<Option<(ChannelId, T)>, ServerMessageReceiveError> {
         match self.receive_payload_from(client_id)? {
             Some((channel_id, payload)) => match bincode::deserialize(&payload) {
                 Ok(msg) => Ok(Some((channel_id, msg))),
-                Err(_) => Err(QuinnetError::Deserialization),
+                Err(_) => Err(ServerMessageReceiveError::Deserialization),
             },
             None => Ok(None),
         }
@@ -388,7 +402,7 @@ impl Endpoint {
     pub fn receive_payload_from(
         &mut self,
         client_id: ClientId,
-    ) -> Result<Option<(ChannelId, Bytes)>, QuinnetError> {
+    ) -> Result<Option<(ChannelId, Bytes)>, ServerReceiveError> {
         match self.clients.get_mut(&client_id) {
             Some(client) => match client.bytes_from_client_recv.try_recv() {
                 Ok(msg) => {
@@ -398,10 +412,10 @@ impl Endpoint {
                 }
                 Err(err) => match err {
                     TryRecvError::Empty => Ok(None),
-                    TryRecvError::Disconnected => Err(QuinnetError::InternalChannelClosed),
+                    TryRecvError::Disconnected => Err(ServerReceiveError::ConnectionClosed),
                 },
             },
-            None => Err(QuinnetError::UnknownClient(client_id)),
+            None => Err(ServerReceiveError::UnknownClient(client_id)),
         }
     }
 
@@ -421,10 +435,10 @@ impl Endpoint {
         &mut self,
         client_id: ClientId,
         message: T,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), ServerMessageSendError> {
         match self.default_channel {
             Some(channel) => self.send_message_on(client_id, channel, message),
-            None => Err(QuinnetError::NoDefaultChannel),
+            None => Err(ServerMessageSendError::NoDefaultChannel),
         }
     }
 
@@ -440,10 +454,10 @@ impl Endpoint {
         client_id: ClientId,
         channel_id: C,
         message: T,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), ServerMessageSendError> {
         match bincode::serialize(&message) {
             Ok(payload) => Ok(self.send_payload_on(client_id, channel_id, payload)?),
-            Err(_) => Err(QuinnetError::Serialization),
+            Err(_) => Err(ServerMessageSendError::Serialization),
         }
     }
 
@@ -473,20 +487,16 @@ impl Endpoint {
         &mut self,
         client_ids: I,
         message: T,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), ServerGroupMessageSendError> {
         match self.default_channel {
             Some(channel) => self.send_group_message_on(client_ids, channel, message),
-            None => Err(QuinnetError::NoDefaultChannel),
+            None => Err(ServerGroupMessageSendError::NoDefaultChannel),
         }
     }
 
-    /// Sends the message to all the provided clients on the specified channel.
+    /// Sends the message to the specified clients on the specified channel.
     ///
-    /// Will return an [`Err`] if:
-    /// - the channel does not exist/is closed
-    /// - or if a client is disconnected
-    /// - or if a serialization error occurs
-    /// - (or if a message queue is full)
+    /// Tries to send to each client before returning. Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupMessageSendError`].
     pub fn send_group_message_on<
         'a,
         I: Iterator<Item = &'a ClientId>,
@@ -497,17 +507,21 @@ impl Endpoint {
         client_ids: I,
         channel_id: C,
         message: T,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), ServerGroupMessageSendError> {
         let channel_id = channel_id.into();
-        match bincode::serialize(&message) {
-            Ok(payload) => {
-                let bytes = Bytes::from(payload);
-                for id in client_ids {
-                    self.send_payload_on(*id, channel_id, bytes.clone())?;
-                }
-                Ok(())
+        let Ok(payload) = bincode::serialize(&message) else {
+            return Err(ServerGroupMessageSendError::Serialization);
+        };
+        let bytes = Bytes::from(payload);
+        let mut errs = vec![];
+        for &client_id in client_ids {
+            if let Err(e) = self.send_payload_on(client_id, channel_id, bytes.clone()) {
+                errs.push((client_id, e.into()));
             }
-            Err(_) => Err(QuinnetError::Serialization),
+        }
+        match errs.is_empty() {
+            true => Ok(()),
+            false => Err(ServerGroupSendError(errs).into()),
         }
     }
 
@@ -517,9 +531,8 @@ impl Endpoint {
         client_ids: I,
         message: T,
     ) {
-        match self.send_group_message(client_ids, message) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_group_message: {}", err),
+        if let Err(err) = self.send_group_message(client_ids, message) {
+            error!("try_send_group_message: {}", err);
         }
     }
 
@@ -535,9 +548,78 @@ impl Endpoint {
         channel_id: C,
         message: T,
     ) {
-        match self.send_group_message_on(client_ids, channel_id, message) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_group_message: {}", err),
+        if let Err(err) = self.send_group_message_on(client_ids, channel_id, message) {
+            error!("try_send_group_message: {}", err);
+        }
+    }
+
+    /// Same as [Endpoint::send_group_payload_on] but on the default channel
+    pub fn send_group_payload<'a, I: Iterator<Item = &'a ClientId>, T: Into<Bytes>>(
+        &mut self,
+        client_ids: I,
+        payload: T,
+    ) -> Result<(), ServerGroupPayloadSendError> {
+        match self.default_channel {
+            Some(channel) => self.send_group_payload_on(client_ids, channel, payload),
+            None => Err(ServerGroupPayloadSendError::NoDefaultChannel),
+        }
+    }
+
+    /// [`Endpoint::send_group_payload`] that logs the error instead of returning a result.
+    pub fn try_send_group_payload<'a, I: Iterator<Item = &'a ClientId>, T: Into<Bytes>>(
+        &mut self,
+        client_ids: I,
+        payload: T,
+    ) {
+        if let Err(err) = self.send_group_payload(client_ids, payload) {
+            error!("try_send_group_payload: {}", err);
+        }
+    }
+
+    /// Sends the payload to the specified clients on the specified channel.
+    ///
+    /// Tries to send to each client before returning. Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupMessageSendError`].
+    pub fn send_group_payload_on<
+        'a,
+        I: Iterator<Item = &'a ClientId>,
+        T: Into<Bytes>,
+        C: Into<ChannelId>,
+    >(
+        &mut self,
+        client_ids: I,
+        channel_id: C,
+        payload: T,
+    ) -> Result<(), ServerGroupPayloadSendError> {
+        let channel_id = channel_id.into();
+        let bytes = payload.into();
+        let mut errs = vec![];
+
+        for &client_id in client_ids {
+            if let Err(e) = self.send_payload_on(client_id, channel_id, bytes.clone()) {
+                errs.push((client_id, e.into()));
+            }
+        }
+
+        match errs.is_empty() {
+            true => Ok(()),
+            false => Err(ServerGroupSendError(errs).into()),
+        }
+    }
+
+    /// [`Endpoint::send_group_payload_on`] that logs the error instead of returning a result.
+    pub fn try_send_group_payload_on<
+        'a,
+        I: Iterator<Item = &'a ClientId>,
+        T: Into<Bytes>,
+        C: Into<ChannelId>,
+    >(
+        &mut self,
+        client_ids: I,
+        channel_id: C,
+        payload: T,
+    ) {
+        if let Err(err) = self.send_group_payload_on(client_ids, channel_id, payload) {
+            error!("try_send_group_payload_on: {}", err);
         }
     }
 
@@ -545,35 +627,29 @@ impl Endpoint {
     pub fn broadcast_message<T: serde::Serialize>(
         &mut self,
         message: T,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), ServerGroupMessageSendError> {
         match self.default_channel {
             Some(channel) => self.broadcast_message_on(channel, message),
-            None => Err(QuinnetError::NoDefaultChannel),
+            None => Err(ServerGroupMessageSendError::NoDefaultChannel),
         }
     }
 
-    /// Sends the message to all connected clients on the specified channel.
-    ///
-    /// Will return an [`Err`] if:
-    /// - the channel does not exist/is closed
-    /// - or if a serialization error occurs
-    /// - (or if a message queue is full)
+    /// Same as [Endpoint::broadcast_payload_on] but will serialize the message to a payload before
     pub fn broadcast_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &mut self,
         channel_id: C,
         message: T,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), ServerGroupMessageSendError> {
         match bincode::serialize(&message) {
             Ok(payload) => Ok(self.broadcast_payload_on(channel_id, payload)?),
-            Err(_) => Err(QuinnetError::Serialization),
+            Err(_) => Err(ServerGroupMessageSendError::Serialization),
         }
     }
 
     /// Same as [Endpoint::broadcast_message] but will log the error instead of returning it
     pub fn try_broadcast_message<T: serde::Serialize>(&mut self, message: T) {
-        match self.broadcast_message(message) {
-            Ok(_) => {}
-            Err(err) => error!("try_broadcast_message: {}", err),
+        if let Err(err) = self.broadcast_message(message) {
+            error!("try_broadcast_message: {}", err);
         }
     }
 
@@ -583,50 +659,51 @@ impl Endpoint {
         channel_id: C,
         message: T,
     ) {
-        match self.broadcast_message_on(channel_id, message) {
-            Ok(_) => {}
-            Err(err) => error!("try_broadcast_message: {}", err),
+        if let Err(err) = self.broadcast_message_on(channel_id, message) {
+            error!("try_broadcast_message: {}", err);
         }
     }
 
     /// Same as [Endpoint::broadcast_payload_on] but on the default channel
-    pub fn broadcast_payload<T: Into<Bytes>>(&mut self, payload: T) -> Result<(), QuinnetError> {
+    pub fn broadcast_payload<T: Into<Bytes>>(
+        &mut self,
+        payload: T,
+    ) -> Result<(), ServerGroupPayloadSendError> {
         match self.default_channel {
-            Some(channel) => self.broadcast_payload_on(channel, payload),
-            None => Err(QuinnetError::NoDefaultChannel),
+            Some(channel) => Ok(self.broadcast_payload_on(channel, payload)?),
+            None => Err(ServerGroupPayloadSendError::NoDefaultChannel),
         }
     }
 
     /// Sends the payload to all connected clients on the specified channel.
     ///
-    /// Will return an [`Err`] if:
-    /// - the channel does not exist/is closed
-    /// - (or if a message queue is full)
+    /// Tries to send to each client before returning. Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupSendError`].
     pub fn broadcast_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &mut self,
         channel_id: C,
         payload: T,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), ServerGroupSendError> {
         let payload: Bytes = payload.into();
         let channel_id = channel_id.into();
-        for client_connection in self.clients.values_mut() {
-            match client_connection.channels.get(channel_id as usize) {
-                Some(Some(channel)) => {
-                    client_connection.sent_bytes_count += payload.len();
-                    channel.send_payload(payload.clone())?
-                }
-                Some(None) => return Err(QuinnetError::ChannelClosed),
-                None => return Err(QuinnetError::UnknownChannel(channel_id)),
-            };
+
+        let mut errs = vec![];
+        for (&client_id, server_side_connection) in self.clients.iter_mut() {
+            if let Err(e) =
+                Self::internal_send_payload(server_side_connection, channel_id, payload.clone())
+            {
+                errs.push((client_id, e.into()));
+            }
         }
-        Ok(())
+        match errs.is_empty() {
+            true => Ok(()),
+            false => Err(ServerGroupSendError(errs)),
+        }
     }
 
     /// Same as [Endpoint::broadcast_payload] but will log the error instead of returning it
     pub fn try_broadcast_payload<T: Into<Bytes>>(&mut self, payload: T) {
-        match self.broadcast_payload(payload) {
-            Ok(_) => {}
-            Err(err) => error!("try_broadcast_payload: {}", err),
+        if let Err(err) = self.broadcast_payload(payload) {
+            error!("try_broadcast_payload: {}", err);
         }
     }
 
@@ -636,9 +713,8 @@ impl Endpoint {
         channel_id: C,
         payload: T,
     ) {
-        match self.broadcast_payload_on(channel_id, payload) {
-            Ok(_) => {}
-            Err(err) => error!("try_broadcast_payload_on: {}", err),
+        if let Err(err) = self.broadcast_payload_on(channel_id, payload) {
+            error!("try_broadcast_payload_on: {}", err);
         }
     }
 
@@ -647,10 +723,10 @@ impl Endpoint {
         &mut self,
         client_id: ClientId,
         payload: T,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), ServerPayloadSendError> {
         match self.default_channel {
-            Some(channel) => self.send_payload_on(client_id, channel, payload),
-            None => Err(QuinnetError::NoDefaultChannel),
+            Some(channel) => Ok(self.send_payload_on(client_id, channel, payload)?),
+            None => Err(ServerPayloadSendError::NoDefaultChannel.into()),
         }
     }
 
@@ -665,20 +741,27 @@ impl Endpoint {
         client_id: ClientId,
         channel_id: C,
         payload: T,
-    ) -> Result<(), QuinnetError> {
-        let channel_id = channel_id.into();
+    ) -> Result<(), ServerSendError> {
         if let Some(client_connection) = self.clients.get_mut(&client_id) {
-            match client_connection.channels.get(channel_id as usize) {
-                Some(Some(channel)) => {
-                    let bytes = payload.into();
-                    client_connection.sent_bytes_count += bytes.len();
-                    channel.send_payload(bytes)
-                }
-                Some(None) => return Err(QuinnetError::ChannelClosed),
-                None => return Err(QuinnetError::UnknownChannel(channel_id)),
-            }
+            let channel_id = channel_id.into();
+            Self::internal_send_payload(client_connection, channel_id, payload.into())
         } else {
-            Err(QuinnetError::UnknownClient(client_id))
+            Err(ServerSendError::UnknownClient(client_id))
+        }
+    }
+
+    fn internal_send_payload(
+        client_connection: &mut ServerSideConnection,
+        channel_id: ChannelId,
+        payload: Bytes,
+    ) -> Result<(), ServerSendError> {
+        match client_connection.channels.get(channel_id as usize) {
+            Some(Some(channel)) => {
+                client_connection.sent_bytes_count += payload.len();
+                Ok(channel.send_payload(payload)?)
+            }
+            Some(None) => return Err(ServerSendError::ChannelClosed),
+            None => return Err(ServerSendError::InvalidChannelId(channel_id)),
         }
     }
 
@@ -707,24 +790,23 @@ impl Endpoint {
         &mut self,
         client_id: ClientId,
         reason: CloseReason,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), ServerDisconnectError> {
         match self.clients.remove(&client_id) {
             Some(client_connection) => match client_connection.close_sender.send(reason) {
                 Ok(_) => Ok(()),
-                Err(_) => Err(QuinnetError::ClientAlreadyDisconnected(client_id)),
+                Err(_) => Err(ServerDisconnectError::ClientAlreadyDisconnected(client_id)),
             },
-            None => Err(QuinnetError::UnknownClient(client_id)),
+            None => Err(ServerDisconnectError::UnknownClient(client_id)),
         }
     }
 
     /// Logical "Disconnect", the client already closed/lost the connection.
     fn try_disconnect_closed_client(&mut self, client_id: ClientId) {
-        match self.internal_disconnect_client(client_id, CloseReason::PeerClosed) {
-            Ok(_) => (),
-            Err(err) => error!(
+        if let Err(err) = self.internal_disconnect_client(client_id, CloseReason::PeerClosed) {
+            error!(
                 "Failed to properly disconnect client {}: {}",
                 client_id, err
-            ),
+            );
         }
     }
 
@@ -733,27 +815,25 @@ impl Endpoint {
     /// Disconnecting a client immediately prevents new messages from being sent on its connection and signal the underlying connection to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
     ///
     /// This may fail if no client if found for client_id, or if the client is already disconnected.
-    pub fn disconnect_client(&mut self, client_id: ClientId) -> Result<(), QuinnetError> {
+    pub fn disconnect_client(&mut self, client_id: ClientId) -> Result<(), ServerDisconnectError> {
         self.internal_disconnect_client(client_id, CloseReason::LocalOrder)
     }
 
     /// Same as [Endpoint::disconnect_client] but errors are logged instead of returned
     pub fn try_disconnect_client(&mut self, client_id: ClientId) {
-        match self.disconnect_client(client_id) {
-            Ok(_) => (),
-            Err(err) => error!(
+        if let Err(err) = self.disconnect_client(client_id) {
+            error!(
                 "Failed to properly disconnect client {}: {}",
                 client_id, err
-            ),
+            );
         }
     }
 
-    /// Calls [Endpoint::disconnect_client] on all connected clients
-    pub fn disconnect_all_clients(&mut self) -> Result<(), QuinnetError> {
-        for client_id in self.clients.keys().cloned().collect::<Vec<ClientId>>() {
-            self.disconnect_client(client_id)?;
+    /// Disconnects all connect clients
+    pub fn disconnect_all_clients(&mut self) {
+        for (_, client_connection) in self.clients.drain() {
+            let _ = client_connection.close_sender.send(CloseReason::LocalOrder);
         }
-        Ok(())
     }
 
     /// Returns statistics about a client if connected.
@@ -789,20 +869,74 @@ impl Endpoint {
     ///
     /// If no channels were previously opened, the opened channel will be the new default channel.
     ///
-    /// Can fail if the Endpoint is closed.
-    pub fn open_channel(&mut self, channel_type: ChannelKind) -> Result<ChannelId, QuinnetError> {
+    /// Can fail if the Endpoint is closed or if too many channels are already opened.
+    pub fn open_channel(
+        &mut self,
+        channel_type: ChannelKind,
+    ) -> Result<ChannelId, ChannelCreationError> {
         let channel_id = match self.available_channel_ids.pop_first() {
             Some(channel_id) => channel_id,
-            None => return Err(QuinnetError::MaxChannelsCountReached),
+            None => return Err(ChannelCreationError::MaxChannelsCountReached),
         };
-        match self.create_channel(channel_id, channel_type) {
+        match self.create_endpoint_channel(channel_id, channel_type) {
             Ok(channel_id) => Ok(channel_id),
             Err(err) => {
-                // Reinsert the popped channel id
+                self.available_channel_ids.insert(channel_id);
+                Err(err.into())
+            }
+        }
+    }
+
+    /// Assumes presence of available ids in `available_channel_ids`
+    fn unchecked_open_channel(
+        &mut self,
+        channel_type: ChannelKind,
+    ) -> Result<ChannelId, AsyncChannelError> {
+        let channel_id = self.available_channel_ids.pop_first().unwrap();
+        match self.create_endpoint_channel(channel_id, channel_type) {
+            Ok(channel_id) => Ok(channel_id),
+            Err(err) => {
                 self.available_channel_ids.insert(channel_id);
                 Err(err)
             }
         }
+    }
+
+    /// `channel_id` must be an available [ChannelId]
+    fn create_endpoint_channel(
+        &mut self,
+        channel_id: ChannelId,
+        channel_type: ChannelKind,
+    ) -> Result<ChannelId, AsyncChannelError> {
+        let unregistered_channels =
+            self.create_unregistered_endpoint_channels(channel_id, channel_type)?;
+        // Only commit the changes once all channels have been confirmed to be created.
+        for (client_id, channel) in unregistered_channels {
+            self.clients
+                .get_mut(&client_id)
+                .unwrap()
+                .register_connection_channel(channel);
+        }
+        self.opened_channels.insert(channel_id, channel_type);
+        if self.default_channel.is_none() {
+            self.default_channel = Some(channel_id);
+        }
+        Ok(channel_id)
+    }
+
+    fn create_unregistered_endpoint_channels(
+        &mut self,
+        channel_id: ChannelId,
+        channel_type: ChannelKind,
+    ) -> Result<HashMap<ClientId, Channel>, AsyncChannelError> {
+        let mut unregistered_channels = HashMap::new();
+        for (&client_id, client_connection) in self.clients.iter_mut() {
+            // Unregistered channels are dropped here on error, created async tasks are closing too.
+            let channel = client_connection
+                .create_unregistered_connection_channel(channel_id, channel_type)?;
+            unregistered_channels.insert(client_id, channel);
+        }
+        Ok(unregistered_channels)
     }
 
     /// Closes the channel with the corresponding [ChannelId].
@@ -812,7 +946,7 @@ impl Endpoint {
     /// If the closed channel is the current default channel, the default channel gets set to `None`.
     ///
     /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
-    pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), QuinnetError> {
+    pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), ChannelCloseError> {
         match self.opened_channels.remove(&channel_id) {
             Some(_) => {
                 if Some(channel_id) == self.default_channel {
@@ -824,7 +958,7 @@ impl Endpoint {
                 self.available_channel_ids.insert(channel_id);
                 Ok(())
             }
-            None => Err(QuinnetError::UnknownChannel(channel_id)),
+            None => Err(ChannelCloseError::InvalidChannelId(channel_id)),
         }
     }
 
@@ -838,35 +972,20 @@ impl Endpoint {
         self.default_channel
     }
 
-    /// `channel_id` must be an available [ChannelId]
-    fn create_channel(
-        &mut self,
-        channel_id: ChannelId,
-        channel_type: ChannelKind,
-    ) -> Result<ChannelId, QuinnetError> {
-        for (_, client_connection) in self.clients.iter_mut() {
-            client_connection.create_channel(channel_id, channel_type)?;
-        }
-        self.opened_channels.insert(channel_id, channel_type);
-        if self.default_channel.is_none() {
-            self.default_channel = Some(channel_id);
-        }
-        Ok(channel_id)
-    }
-
-    fn close_incoming_connections_handler(&mut self) -> Result<(), QuinnetError> {
+    fn close_incoming_connections_handler(&mut self) -> Result<(), AsyncChannelError> {
         match self.close_sender.send(()) {
             Ok(_) => Ok(()),
-            Err(_) => Err(QuinnetError::InternalChannelClosed),
+            // Connections handler is already closed
+            Err(_) => Err(AsyncChannelError::InternalChannelClosed),
         }
     }
 
     fn handle_connection(
         &mut self,
         mut connection: ServerSideConnection,
-    ) -> Result<ClientId, QuinnetError> {
+    ) -> Result<ClientId, AsyncChannelError> {
         for (channel_id, channel_type) in self.opened_channels.iter() {
-            if let Err(err) = connection.create_channel(*channel_id, *channel_type) {
+            if let Err(err) = connection.create_connection_channel(*channel_id, *channel_type) {
                 connection.try_close();
                 return Err(err);
             };
@@ -885,7 +1004,7 @@ impl Endpoint {
             }
             Err(_) => {
                 connection.try_close();
-                Err(QuinnetError::InternalChannelClosed)
+                Err(AsyncChannelError::InternalChannelClosed)
             }
         }
     }
@@ -955,7 +1074,7 @@ impl QuinnetServer {
         config: ServerEndpointConfiguration,
         cert_mode: CertificateRetrievalMode,
         channels_config: ChannelsConfiguration,
-    ) -> Result<ServerCertificate, QuinnetError> {
+    ) -> Result<ServerCertificate, EndpointStartError> {
         // Endpoint configuration
         let server_cert = retrieve_certificate(cert_mode)?;
         let mut endpoint_config = ServerConfig::with_single_cert(
@@ -963,11 +1082,11 @@ impl QuinnetServer {
             server_cert.priv_key.clone_key(),
         )?;
         Arc::get_mut(&mut endpoint_config.transport)
-            .ok_or(QuinnetError::LockAcquisitionFailure)?
+            .ok_or(EndpointStartError::LockAcquisitionFailure)?
             .keep_alive_interval(Some(DEFAULT_KEEP_ALIVE_INTERVAL_S));
 
-        let (to_sync_server_send, from_async_server_recv) =
-            mpsc::channel::<ServerAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+        let (to_sync_endpoint_send, from_async_endpoint_recv) =
+            mpsc::channel::<ServerAsyncMessage>(DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE);
         let (endpoint_close_send, endpoint_close_recv) =
             broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
@@ -978,15 +1097,15 @@ impl QuinnetServer {
             endpoint_task(
                 socket,
                 endpoint_config,
-                to_sync_server_send.clone(),
+                to_sync_endpoint_send.clone(),
                 endpoint_close_recv,
             )
             .await;
         });
 
-        let mut endpoint = Endpoint::new(endpoint_close_send, from_async_server_recv);
+        let mut endpoint = Endpoint::new(endpoint_close_send, from_async_endpoint_recv);
         for channel_type in channels_config.configs() {
-            endpoint.open_channel(*channel_type)?;
+            endpoint.unchecked_open_channel(*channel_type)?;
         }
 
         self.endpoint = Some(endpoint);
@@ -996,14 +1115,17 @@ impl QuinnetServer {
 
     /// Closes the endpoint and all the connections associated with it
     ///
-    /// Returns [`QuinnetError::EndpointAlreadyClosed`] if the endpoint is already closed
-    pub fn stop_endpoint(&mut self) -> Result<(), QuinnetError> {
+    /// Returns [`EndpointAlreadyClosed`] if the endpoint is already closed
+    pub fn stop_endpoint(&mut self) -> Result<(), EndpointAlreadyClosed> {
         match self.endpoint.take() {
             Some(mut endpoint) => {
-                endpoint.close_incoming_connections_handler()?;
-                endpoint.disconnect_all_clients()
+                endpoint.disconnect_all_clients();
+                match endpoint.close_incoming_connections_handler() {
+                    Ok(_) => Ok(()),
+                    Err(_) => Err(EndpointAlreadyClosed),
+                }
             }
-            None => Err(QuinnetError::EndpointAlreadyClosed),
+            None => Err(EndpointAlreadyClosed),
         }
     }
 
@@ -1019,7 +1141,7 @@ impl QuinnetServer {
 async fn endpoint_task(
     socket: UdpSocket,
     endpoint_config: ServerConfig,
-    to_sync_server_send: mpsc::Sender<ServerAsyncMessage>,
+    to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
     mut endpoint_close_recv: broadcast::Receiver<()>,
 ) {
     let endpoint = QuinnEndpoint::new(
@@ -1040,11 +1162,11 @@ async fn endpoint_task(
                 match connecting.await {
                     Err(err) => error!("An incoming connection failed: {}", err),
                     Ok(connection) => {
-                        let to_sync_server_send = to_sync_server_send.clone();
+                        let to_sync_endpoint_send = to_sync_endpoint_send.clone();
                         tokio::spawn(async move {
                             client_connection_task(
                                 connection,
-                                to_sync_server_send
+                                to_sync_endpoint_send
                             )
                             .await
                         });
@@ -1057,21 +1179,21 @@ async fn endpoint_task(
 
 async fn client_connection_task(
     connection_handle: quinn::Connection,
-    to_sync_server_send: mpsc::Sender<ServerAsyncMessage>,
+    to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
 ) {
     let (client_close_send, client_close_recv) =
         broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
     let (bytes_from_client_send, bytes_from_client_recv) =
         mpsc::channel::<(ChannelId, Bytes)>(DEFAULT_MESSAGE_QUEUE_SIZE);
     let (to_connection_send, mut from_sync_server_recv) =
-        mpsc::channel::<ServerSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+        mpsc::channel::<ServerSyncMessage>(DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE);
     let (from_channels_send, from_channels_recv) =
-        mpsc::channel::<ChannelAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+        mpsc::channel::<ChannelAsyncMessage>(DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE);
     let (to_channels_send, to_channels_recv) =
-        mpsc::channel::<ChannelSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+        mpsc::channel::<ChannelSyncMessage>(DEFAULT_QCHANNEL_MESSAGES_CHANNEL_SIZE);
 
     // Signal the sync server of this new connection
-    to_sync_server_send
+    to_sync_endpoint_send
         .send(ServerAsyncMessage::ClientConnected(
             ServerSideConnection::new(
                 connection_handle.clone(),
@@ -1104,7 +1226,7 @@ async fn client_connection_task(
             // Spawn a task to listen for the underlying connection being closed
             {
                 let conn = connection_handle.clone();
-                let to_sync_server = to_sync_server_send.clone();
+                let to_sync_server = to_sync_endpoint_send.clone();
                 tokio::spawn(async move {
                     let _conn_err = conn.closed().await;
                     info!("Connection {} closed: {}", client_id, _conn_err);
@@ -1125,7 +1247,7 @@ async fn client_connection_task(
                 bytes_from_client_send,
             );
 
-            spawn_send_channels_tasks(
+            spawn_send_channels_tasks_spawner(
                 connection_handle,
                 client_close_recv,
                 to_channels_recv,
@@ -1148,7 +1270,7 @@ pub fn update_sync_server(
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
 ) {
     if let Some(endpoint) = server.get_endpoint_mut() {
-        while let Ok(message) = endpoint.from_async_server_recv.try_recv() {
+        while let Ok(message) = endpoint.from_async_endpoint_recv.try_recv() {
             match message {
                 ServerAsyncMessage::ClientConnected(connection) => {
                     match endpoint.handle_connection(connection) {
@@ -1157,7 +1279,7 @@ pub fn update_sync_server(
                             connection_events.write(ConnectionEvent { id: client_id });
                         }
                         Err(_) => {
-                            error!("Failed to handle connection of a client");
+                            error!("Failed to handle connection of a client, already disconnected");
                         }
                     };
                 }

@@ -34,13 +34,14 @@ use client_id::receive_client_id;
 
 use crate::shared::{
     channels::{
-        spawn_recv_channels_tasks, spawn_send_channels_tasks, Channel, ChannelAsyncMessage,
+        spawn_recv_channels_tasks, spawn_send_channels_tasks_spawner, Channel, ChannelAsyncMessage,
         ChannelId, ChannelKind, ChannelSyncMessage, ChannelsConfiguration, CloseReason, CloseRecv,
         CloseSend,
     },
-    error::QuinnetError,
-    ClientId, InternalConnectionRef, DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE,
+    error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
+    ClientId, InternalConnectionRef, DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE,
     DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+    DEFAULT_QCHANNEL_MESSAGES_CHANNEL_SIZE,
 };
 
 use super::{
@@ -48,7 +49,10 @@ use super::{
         load_known_hosts_store_from_config, CertificateVerificationMode, SkipServerVerification,
         TofuServerVerification,
     },
-    ClientAsyncMessage, QuinnetConnectionError,
+    error::{
+        ClientMessageReceiveError, ClientMessageSendError, ClientPayloadSendError, ClientSendError,
+    },
+    ClientAsyncMessage, ClientConnectionCloseError, ConnectionClosed, QuinnetConnectionError,
 };
 
 /// Alias type for a local id of a connection
@@ -280,11 +284,11 @@ pub(crate) fn create_async_channels() -> (
     let (bytes_from_server_send, bytes_from_server_recv) =
         mpsc::channel::<(ChannelId, Bytes)>(DEFAULT_MESSAGE_QUEUE_SIZE);
     let (to_sync_client_send, to_sync_client_recv) =
-        mpsc::channel::<ClientAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+        mpsc::channel::<ClientAsyncMessage>(DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE);
     let (from_channels_send, from_channels_recv) =
-        mpsc::channel::<ChannelAsyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+        mpsc::channel::<ChannelAsyncMessage>(DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE);
     let (to_channels_send, to_channels_recv) =
-        mpsc::channel::<ChannelSyncMessage>(DEFAULT_INTERNAL_MESSAGE_CHANNEL_SIZE);
+        mpsc::channel::<ChannelSyncMessage>(DEFAULT_QCHANNEL_MESSAGES_CHANNEL_SIZE);
     let (close_send, close_recv) = broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
     (
         bytes_from_server_send,
@@ -375,11 +379,11 @@ impl ClientSideConnection {
     /// - (or if the message queue is full)
     pub fn receive_message<T: serde::de::DeserializeOwned>(
         &mut self,
-    ) -> Result<Option<(ChannelId, T)>, QuinnetError> {
+    ) -> Result<Option<(ChannelId, T)>, ClientMessageReceiveError> {
         match self.receive_payload()? {
             Some((channel_id, payload)) => match bincode::deserialize(&payload) {
                 Ok(msg) => Ok(Some((channel_id, msg))),
-                Err(_) => Err(QuinnetError::Deserialization),
+                Err(_) => Err(ClientMessageReceiveError::Deserialization),
             },
             None => Ok(None),
         }
@@ -398,14 +402,6 @@ impl ClientSideConnection {
         }
     }
 
-    /// Same as [Self::send_message_on] but on the default channel
-    pub fn send_message<T: serde::Serialize>(&mut self, message: T) -> Result<(), QuinnetError> {
-        match self.default_channel {
-            Some(channel) => self.send_message_on(channel, message),
-            None => Err(QuinnetError::NoDefaultChannel),
-        }
-    }
-
     /// Queues a message to be sent to the server on the specified channel
     ///
     /// Will return an [`Err`] if:
@@ -417,29 +413,28 @@ impl ClientSideConnection {
         &mut self,
         channel_id: C,
         message: T,
-    ) -> Result<(), QuinnetError> {
-        let channel_id = channel_id.into();
-        match &self.state {
-            InternalConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
-            _ => match self.channels.get(channel_id as usize) {
-                Some(Some(channel)) => match bincode::serialize(&message) {
-                    Ok(payload) => {
-                        self.sent_bytes_count += payload.len();
-                        channel.send_payload(payload.into())
-                    }
-                    Err(_) => Err(QuinnetError::Serialization),
-                },
-                Some(None) => Err(QuinnetError::ChannelClosed),
-                None => Err(QuinnetError::UnknownChannel(channel_id)),
-            },
+    ) -> Result<(), ClientMessageSendError> {
+        match bincode::serialize(&message) {
+            Ok(payload) => Ok(self.send_payload_on(channel_id, payload)?),
+            Err(_) => Err(ClientMessageSendError::Serialization),
+        }
+    }
+
+    /// Same as [Self::send_message_on] but on the default channel
+    pub fn send_message<T: serde::Serialize>(
+        &mut self,
+        message: T,
+    ) -> Result<(), ClientMessageSendError> {
+        match self.default_channel {
+            Some(channel) => self.send_message_on(channel, message),
+            None => Err(ClientMessageSendError::NoDefaultChannel),
         }
     }
 
     /// Same as [Self::send_message] but will log the error instead of returning it
     pub fn try_send_message<T: serde::Serialize>(&mut self, message: T) {
-        match self.send_message(message) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_message: {}", err),
+        if let Err(err) = self.send_message(message) {
+            error!("try_send_message: {}", err);
         }
     }
 
@@ -449,17 +444,19 @@ impl ClientSideConnection {
         channel_id: C,
         message: T,
     ) {
-        match self.send_message_on(channel_id, message) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_message_on: {}", err),
+        if let Err(err) = self.send_message_on(channel_id, message) {
+            error!("try_send_message_on: {}", err);
         }
     }
 
     /// Same as [Self::send_payload_on] but on the default channel
-    pub fn send_payload<T: Into<Bytes>>(&mut self, payload: T) -> Result<(), QuinnetError> {
+    pub fn send_payload<T: Into<Bytes>>(
+        &mut self,
+        payload: T,
+    ) -> Result<(), ClientPayloadSendError> {
         match self.default_channel {
-            Some(channel) => self.send_payload_on(channel, payload),
-            None => Err(QuinnetError::NoDefaultChannel),
+            Some(channel) => Ok(self.send_payload_on(channel, payload)?),
+            None => Err(ClientPayloadSendError::NoDefaultChannel),
         }
     }
 
@@ -473,27 +470,26 @@ impl ClientSideConnection {
         &mut self,
         channel_id: C,
         payload: T,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), ClientSendError> {
         let channel_id = channel_id.into();
         match &self.state {
-            InternalConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
+            InternalConnectionState::Disconnected => Err(ClientSendError::ConnectionClosed),
             _ => match self.channels.get(channel_id as usize) {
                 Some(Some(channel)) => {
                     let bytes = payload.into();
                     self.sent_bytes_count += bytes.len();
-                    channel.send_payload(bytes)
+                    Ok(channel.send_payload(bytes)?)
                 }
-                Some(None) => Err(QuinnetError::ChannelClosed),
-                None => Err(QuinnetError::UnknownChannel(channel_id)),
+                Some(None) => Err(ClientSendError::ChannelClosed),
+                None => Err(ClientSendError::InvalidChannelId(channel_id)),
             },
         }
     }
 
     /// Same as [Self::send_payload] but will log the error instead of returning it
     pub fn try_send_payload<T: Into<Bytes>>(&mut self, payload: T) {
-        match self.send_payload(payload) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_payload: {}", err),
+        if let Err(err) = self.send_payload(payload) {
+            error!("try_send_payload: {}", err);
         }
     }
 
@@ -503,9 +499,8 @@ impl ClientSideConnection {
         channel_id: C,
         payload: T,
     ) {
-        match self.send_payload_on(channel_id, payload) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_payload_on: {}", err),
+        if let Err(err) = self.send_payload_on(channel_id, payload) {
+            error!("try_send_payload_on: {}", err);
         }
     }
 
@@ -514,9 +509,9 @@ impl ClientSideConnection {
     /// - Returns an [`Ok`] result containg [`Some`] if there is a message from the server in the message buffer
     /// - Returns an [`Ok`] result containg [`None`] if there is no message from the server in the message buffer
     /// - Can return an [`Err`] if the connection is closed
-    pub fn receive_payload(&mut self) -> Result<Option<(ChannelId, Bytes)>, QuinnetError> {
+    pub fn receive_payload(&mut self) -> Result<Option<(ChannelId, Bytes)>, ConnectionClosed> {
         match &self.state {
-            InternalConnectionState::Disconnected => Err(QuinnetError::ConnectionClosed),
+            InternalConnectionState::Disconnected => Err(ConnectionClosed),
             _ => match self.bytes_from_server_recv.try_recv() {
                 Ok(msg_payload) => {
                     self.received_bytes_count += msg_payload.1.len();
@@ -525,7 +520,7 @@ impl ClientSideConnection {
                 }
                 Err(err) => match err {
                     TryRecvError::Empty => Ok(None),
-                    TryRecvError::Disconnected => Err(QuinnetError::InternalChannelClosed),
+                    TryRecvError::Disconnected => Err(ConnectionClosed),
                 },
             },
         }
@@ -542,7 +537,10 @@ impl ClientSideConnection {
         }
     }
 
-    fn internal_disconnect(&mut self, reason: CloseReason) -> Result<(), QuinnetError> {
+    fn internal_disconnect(
+        &mut self,
+        reason: CloseReason,
+    ) -> Result<(), ClientConnectionCloseError> {
         match &self.state {
             &InternalConnectionState::Disconnected => Ok(()),
             _ => {
@@ -551,7 +549,7 @@ impl ClientSideConnection {
                     Ok(_) => Ok(()),
                     Err(_) => {
                         // The only possible error for a send is that there is no active receivers, meaning that the tasks are already terminated.
-                        Err(QuinnetError::ConnectionAlreadyClosed)
+                        Err(ClientConnectionCloseError::ConnectionAlreadyClosed)
                     }
                 }
             }
@@ -561,23 +559,21 @@ impl ClientSideConnection {
     /// Immediately prevents new messages from being sent on the connection and signal the connection to closes all its background tasks.
     ///
     /// Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
-    pub fn disconnect(&mut self) -> Result<(), QuinnetError> {
+    pub fn disconnect(&mut self) -> Result<(), ClientConnectionCloseError> {
         self.internal_disconnect(CloseReason::LocalOrder)
     }
 
     /// Same as [Self::disconnect] but will log the error instead of returning it
     pub fn try_disconnect(&mut self) {
-        match &self.disconnect() {
-            Ok(_) => (),
-            Err(err) => error!("Failed to properly close clonnection: {}", err),
+        if let Err(err) = &self.disconnect() {
+            error!("Failed to properly close clonnection: {}", err);
         }
     }
 
     /// Logical "Disconnect", the underlying connection si already closed/lost.
     pub(crate) fn try_disconnect_closed_connection(&mut self) {
-        match self.internal_disconnect(CloseReason::PeerClosed) {
-            Ok(_) => (),
-            Err(err) => error!("Failed to properly close clonnection: {}", err),
+        if let Err(err) = self.internal_disconnect(CloseReason::PeerClosed) {
+            error!("Failed to properly close clonnection: {}", err);
         }
     }
 
@@ -646,7 +642,7 @@ impl ClientSideConnection {
     /// This uses the initial connection configuration. Notably, channels opened by calling [`Self::open_channel`] on the connection after it was initially opened won't be automatically re-opened.
     ///
     /// Does nothing if the connection state is not [`ConnectionState::Disconnected`]
-    pub fn reconnect(&mut self) -> Result<(), QuinnetError> {
+    pub fn reconnect(&mut self) -> Result<(), AsyncChannelError> {
         match &self.state {
             InternalConnectionState::Disconnected => {
                 let (
@@ -706,9 +702,9 @@ impl ClientSideConnection {
     pub(crate) fn open_configured_channels(
         &mut self,
         channels_config: ChannelsConfiguration,
-    ) -> Result<(), QuinnetError> {
+    ) -> Result<(), AsyncChannelError> {
         for channel_type in channels_config.configs() {
-            self.open_channel(*channel_type)?;
+            self.unchecked_open_channel(*channel_type)?;
         }
         Ok(())
     }
@@ -728,11 +724,30 @@ impl ClientSideConnection {
     /// If no channels were previously opened, the opened channel will be the new default channel.
     ///
     /// Can fail if the Connection is closed.
-    pub fn open_channel(&mut self, channel_type: ChannelKind) -> Result<ChannelId, QuinnetError> {
+    pub fn open_channel(
+        &mut self,
+        channel_type: ChannelKind,
+    ) -> Result<ChannelId, ChannelCreationError> {
         let channel_id = match self.available_channel_ids.pop_first() {
             Some(channel_id) => channel_id,
-            None => return Err(QuinnetError::MaxChannelsCountReached),
+            None => return Err(ChannelCreationError::MaxChannelsCountReached),
         };
+        Ok(self.internal_open_channel(channel_id, channel_type)?)
+    }
+
+    fn unchecked_open_channel(
+        &mut self,
+        channel_type: ChannelKind,
+    ) -> Result<ChannelId, AsyncChannelError> {
+        let channel_id = self.available_channel_ids.pop_first().unwrap();
+        Ok(self.internal_open_channel(channel_id, channel_type)?)
+    }
+
+    fn internal_open_channel(
+        &mut self,
+        channel_id: ChannelId,
+        channel_type: ChannelKind,
+    ) -> Result<ChannelId, AsyncChannelError> {
         match self.create_channel(channel_id, channel_type) {
             Ok(channel_id) => {
                 if self.default_channel.is_none() {
@@ -755,7 +770,7 @@ impl ClientSideConnection {
     /// If the closed channel is the current default channel, the default channel gets set to `None`.
     ///
     /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
-    pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), QuinnetError> {
+    pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), ChannelCloseError> {
         if (channel_id as usize) < self.channels.len() {
             match self.channels[channel_id as usize].take() {
                 Some(channel) => {
@@ -765,10 +780,10 @@ impl ClientSideConnection {
                     self.available_channel_ids.insert(channel_id);
                     channel.close()
                 }
-                None => Err(QuinnetError::ChannelClosed),
+                None => Err(ChannelCloseError::ChannelAlreadyClosed),
             }
         } else {
-            Err(QuinnetError::UnknownChannel(channel_id))
+            Err(ChannelCloseError::InvalidChannelId(channel_id))
         }
     }
 
@@ -786,7 +801,7 @@ impl ClientSideConnection {
         &mut self,
         channel_id: ChannelId,
         channel_type: ChannelKind,
-    ) -> Result<ChannelId, QuinnetError> {
+    ) -> Result<ChannelId, AsyncChannelError> {
         let (bytes_to_channel_send, bytes_to_channel_recv) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);
         let (channel_close_send, channel_close_recv) =
@@ -801,7 +816,11 @@ impl ClientSideConnection {
                 channel_close_recv,
             }) {
             Ok(_) => {
-                let channel = Some(Channel::new(bytes_to_channel_send, channel_close_send));
+                let channel = Some(Channel::new(
+                    channel_id,
+                    bytes_to_channel_send,
+                    channel_close_send,
+                ));
                 if (channel_id as usize) < self.channels.len() {
                     self.channels[channel_id as usize] = channel;
                 } else {
@@ -814,8 +833,8 @@ impl ClientSideConnection {
                 Ok(channel_id)
             }
             Err(err) => match err {
-                TrySendError::Full(_) => Err(QuinnetError::FullQueue),
-                TrySendError::Closed(_) => Err(QuinnetError::InternalChannelClosed),
+                TrySendError::Full(_) => Err(AsyncChannelError::FullQueue),
+                TrySendError::Closed(_) => Err(AsyncChannelError::InternalChannelClosed),
             },
         }
     }
@@ -886,7 +905,7 @@ pub(crate) async fn async_connection_task(
                 bytes_from_server_send,
             );
 
-            spawn_send_channels_tasks(
+            spawn_send_channels_tasks_spawner(
                 connection_handle.clone(),
                 close_recv.resubscribe(),
                 to_channels_recv,
