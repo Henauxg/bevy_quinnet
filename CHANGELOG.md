@@ -1,6 +1,6 @@
 # Changelog
 
-## Version 0.17.0 (TBD)
+## Version 0.17.0 (2025-04-27)
 
 - Updated `bevy` to 0.16
 - Reworked error handling in the sync client & server.
