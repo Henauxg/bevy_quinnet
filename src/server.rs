@@ -247,12 +247,12 @@ impl ServerSideConnection {
     }
 
     /// Signal the connection to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
-    pub(crate) fn close(&mut self) -> Result<(), ConnectionCloseError> {
+    pub(crate) fn close(&mut self) -> Result<(), EndpointConnectionAlreadyClosed> {
         match self.close_sender.send(CloseReason::LocalOrder) {
             Ok(_) => Ok(()),
             Err(_) => {
                 // The only possible error for a send is that there is no active receivers, meaning that the tasks are already terminated.
-                Err(ConnectionCloseError::ConnectionAlreadyClosed)
+                Err(EndpointConnectionAlreadyClosed)
             }
         }
     }
@@ -368,11 +368,11 @@ impl Endpoint {
     pub fn receive_message_from<T: serde::de::DeserializeOwned>(
         &mut self,
         client_id: ClientId,
-    ) -> Result<Option<(ChannelId, T)>, MessageReceiveError> {
+    ) -> Result<Option<(ChannelId, T)>, ServerMessageReceiveError> {
         match self.receive_payload_from(client_id)? {
             Some((channel_id, payload)) => match bincode::deserialize(&payload) {
                 Ok(msg) => Ok(Some((channel_id, msg))),
-                Err(_) => Err(MessageReceiveError::Deserialization),
+                Err(_) => Err(ServerMessageReceiveError::Deserialization),
             },
             None => Ok(None),
         }
@@ -402,7 +402,7 @@ impl Endpoint {
     pub fn receive_payload_from(
         &mut self,
         client_id: ClientId,
-    ) -> Result<Option<(ChannelId, Bytes)>, ReceiveError> {
+    ) -> Result<Option<(ChannelId, Bytes)>, ServerReceiveError> {
         match self.clients.get_mut(&client_id) {
             Some(client) => match client.bytes_from_client_recv.try_recv() {
                 Ok(msg) => {
@@ -412,10 +412,10 @@ impl Endpoint {
                 }
                 Err(err) => match err {
                     TryRecvError::Empty => Ok(None),
-                    TryRecvError::Disconnected => Err(ReceiveError::InternalChannelClosed),
+                    TryRecvError::Disconnected => Err(ServerReceiveError::ConnectionClosed),
                 },
             },
-            None => Err(ReceiveError::UnknownClient(client_id)),
+            None => Err(ServerReceiveError::UnknownClient(client_id)),
         }
     }
 
@@ -435,10 +435,10 @@ impl Endpoint {
         &mut self,
         client_id: ClientId,
         message: T,
-    ) -> Result<(), MessageSendError> {
+    ) -> Result<(), ServerMessageSendError> {
         match self.default_channel {
             Some(channel) => self.send_message_on(client_id, channel, message),
-            None => Err(MessageSendError::NoDefaultChannel),
+            None => Err(ServerMessageSendError::NoDefaultChannel),
         }
     }
 
@@ -454,10 +454,10 @@ impl Endpoint {
         client_id: ClientId,
         channel_id: C,
         message: T,
-    ) -> Result<(), MessageSendError> {
+    ) -> Result<(), ServerMessageSendError> {
         match bincode::serialize(&message) {
             Ok(payload) => Ok(self.send_payload_on(client_id, channel_id, payload)?),
-            Err(_) => Err(MessageSendError::Serialization),
+            Err(_) => Err(ServerMessageSendError::Serialization),
         }
     }
 
@@ -487,20 +487,16 @@ impl Endpoint {
         &mut self,
         client_ids: I,
         message: T,
-    ) -> Result<(), MessageSendError> {
+    ) -> Result<(), ServerGroupMessageSendError> {
         match self.default_channel {
             Some(channel) => self.send_group_message_on(client_ids, channel, message),
-            None => Err(MessageSendError::NoDefaultChannel),
+            None => Err(ServerGroupMessageSendError::NoDefaultChannel),
         }
     }
 
-    /// Sends the message to all the provided clients on the specified channel.
+    /// Sends the message to the specified clients on the specified channel.
     ///
-    /// Will return an [`Err`] if:
-    /// - the channel does not exist/is closed
-    /// - or if a client is disconnected
-    /// - or if a serialization error occurs
-    /// - (or if a message queue is full)
+    /// Tries to send to each client before returning. Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupMessageSendError`].
     pub fn send_group_message_on<
         'a,
         I: Iterator<Item = &'a ClientId>,
@@ -511,17 +507,21 @@ impl Endpoint {
         client_ids: I,
         channel_id: C,
         message: T,
-    ) -> Result<(), MessageSendError> {
+    ) -> Result<(), ServerGroupMessageSendError> {
         let channel_id = channel_id.into();
-        match bincode::serialize(&message) {
-            Ok(payload) => {
-                let bytes = Bytes::from(payload);
-                for id in client_ids {
-                    self.send_payload_on(*id, channel_id, bytes.clone())?;
-                }
-                Ok(())
+        let Ok(payload) = bincode::serialize(&message) else {
+            return Err(ServerGroupMessageSendError::Serialization);
+        };
+        let bytes = Bytes::from(payload);
+        let mut errs = vec![];
+        for &client_id in client_ids {
+            if let Err(e) = self.send_payload_on(client_id, channel_id, bytes.clone()) {
+                errs.push((client_id, e.into()));
             }
-            Err(_) => Err(MessageSendError::Serialization),
+        }
+        match errs.is_empty() {
+            true => Ok(()),
+            false => Err(ServerGroupSendError(errs).into()),
         }
     }
 
@@ -531,9 +531,8 @@ impl Endpoint {
         client_ids: I,
         message: T,
     ) {
-        match self.send_group_message(client_ids, message) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_group_message: {}", err),
+        if let Err(err) = self.send_group_message(client_ids, message) {
+            error!("try_send_group_message: {}", err);
         }
     }
 
@@ -549,9 +548,78 @@ impl Endpoint {
         channel_id: C,
         message: T,
     ) {
-        match self.send_group_message_on(client_ids, channel_id, message) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_group_message: {}", err),
+        if let Err(err) = self.send_group_message_on(client_ids, channel_id, message) {
+            error!("try_send_group_message: {}", err);
+        }
+    }
+
+    /// Same as [Endpoint::send_group_payload_on] but on the default channel
+    pub fn send_group_payload<'a, I: Iterator<Item = &'a ClientId>, T: Into<Bytes>>(
+        &mut self,
+        client_ids: I,
+        payload: T,
+    ) -> Result<(), ServerGroupPayloadSendError> {
+        match self.default_channel {
+            Some(channel) => self.send_group_payload_on(client_ids, channel, payload),
+            None => Err(ServerGroupPayloadSendError::NoDefaultChannel),
+        }
+    }
+
+    /// [`Endpoint::send_group_payload`] that logs the error instead of returning a result.
+    pub fn try_send_group_payload<'a, I: Iterator<Item = &'a ClientId>, T: Into<Bytes>>(
+        &mut self,
+        client_ids: I,
+        payload: T,
+    ) {
+        if let Err(err) = self.send_group_payload(client_ids, payload) {
+            error!("try_send_group_payload: {}", err);
+        }
+    }
+
+    /// Sends the payload to the specified clients on the specified channel.
+    ///
+    /// Tries to send to each client before returning. Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupMessageSendError`].
+    pub fn send_group_payload_on<
+        'a,
+        I: Iterator<Item = &'a ClientId>,
+        T: Into<Bytes>,
+        C: Into<ChannelId>,
+    >(
+        &mut self,
+        client_ids: I,
+        channel_id: C,
+        payload: T,
+    ) -> Result<(), ServerGroupPayloadSendError> {
+        let channel_id = channel_id.into();
+        let bytes = payload.into();
+        let mut errs = vec![];
+
+        for &client_id in client_ids {
+            if let Err(e) = self.send_payload_on(client_id, channel_id, bytes.clone()) {
+                errs.push((client_id, e.into()));
+            }
+        }
+
+        match errs.is_empty() {
+            true => Ok(()),
+            false => Err(ServerGroupSendError(errs).into()),
+        }
+    }
+
+    /// [`Endpoint::send_group_payload_on`] that logs the error instead of returning a result.
+    pub fn try_send_group_payload_on<
+        'a,
+        I: Iterator<Item = &'a ClientId>,
+        T: Into<Bytes>,
+        C: Into<ChannelId>,
+    >(
+        &mut self,
+        client_ids: I,
+        channel_id: C,
+        payload: T,
+    ) {
+        if let Err(err) = self.send_group_payload_on(client_ids, channel_id, payload) {
+            error!("try_send_group_payload_on: {}", err);
         }
     }
 
@@ -559,35 +627,29 @@ impl Endpoint {
     pub fn broadcast_message<T: serde::Serialize>(
         &mut self,
         message: T,
-    ) -> Result<(), GroupMessageSendError> {
+    ) -> Result<(), ServerGroupMessageSendError> {
         match self.default_channel {
             Some(channel) => self.broadcast_message_on(channel, message),
-            None => Err(GroupMessageSendError::NoDefaultChannel),
+            None => Err(ServerGroupMessageSendError::NoDefaultChannel),
         }
     }
 
-    /// Sends the message to all connected clients on the specified channel.
-    ///
-    /// Will return an [`Err`] if:
-    /// - the channel does not exist/is closed
-    /// - or if a serialization error occurs
-    /// - (or if a message queue is full)
+    /// Same as [Endpoint::broadcast_payload_on] but will serialize the message to a payload before
     pub fn broadcast_message_on<T: serde::Serialize, C: Into<ChannelId>>(
         &mut self,
         channel_id: C,
         message: T,
-    ) -> Result<(), GroupMessageSendError> {
+    ) -> Result<(), ServerGroupMessageSendError> {
         match bincode::serialize(&message) {
             Ok(payload) => Ok(self.broadcast_payload_on(channel_id, payload)?),
-            Err(_) => Err(GroupMessageSendError::Serialization),
+            Err(_) => Err(ServerGroupMessageSendError::Serialization),
         }
     }
 
     /// Same as [Endpoint::broadcast_message] but will log the error instead of returning it
     pub fn try_broadcast_message<T: serde::Serialize>(&mut self, message: T) {
-        match self.broadcast_message(message) {
-            Ok(_) => {}
-            Err(err) => error!("try_broadcast_message: {}", err),
+        if let Err(err) = self.broadcast_message(message) {
+            error!("try_broadcast_message: {}", err);
         }
     }
 
@@ -597,9 +659,8 @@ impl Endpoint {
         channel_id: C,
         message: T,
     ) {
-        match self.broadcast_message_on(channel_id, message) {
-            Ok(_) => {}
-            Err(err) => error!("try_broadcast_message: {}", err),
+        if let Err(err) = self.broadcast_message_on(channel_id, message) {
+            error!("try_broadcast_message: {}", err);
         }
     }
 
@@ -607,50 +668,42 @@ impl Endpoint {
     pub fn broadcast_payload<T: Into<Bytes>>(
         &mut self,
         payload: T,
-    ) -> Result<(), GroupPayloadSendError> {
+    ) -> Result<(), ServerGroupPayloadSendError> {
         match self.default_channel {
             Some(channel) => Ok(self.broadcast_payload_on(channel, payload)?),
-            None => Err(GroupPayloadSendError::NoDefaultChannel),
+            None => Err(ServerGroupPayloadSendError::NoDefaultChannel),
         }
     }
 
     /// Sends the payload to all connected clients on the specified channel.
     ///
-    /// Will return an [`Err`] if:
-    /// - the channel does not exist/is closed
-    /// - (or if a message queue is full)
+    /// Tries to send to each client before returning. Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupSendError`].
     pub fn broadcast_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &mut self,
         channel_id: C,
         payload: T,
-    ) -> Result<(), GroupSendError> {
+    ) -> Result<(), ServerGroupSendError> {
         let payload: Bytes = payload.into();
         let channel_id = channel_id.into();
 
         let mut errs = vec![];
         for (&client_id, server_side_connection) in self.clients.iter_mut() {
-            match server_side_connection.channels.get(channel_id as usize) {
-                Some(Some(channel)) => {
-                    match channel.send_payload(payload.clone()) {
-                        Ok(_) => server_side_connection.sent_bytes_count += payload.len(),
-                        Err(e) => errs.push((client_id, e.into())),
-                    };
-                }
-                Some(None) => errs.push((client_id, SendError::ChannelClosed)),
-                None => errs.push((client_id, SendError::InvalidChannelId(channel_id))),
-            };
+            if let Err(e) =
+                Self::internal_send_payload(server_side_connection, channel_id, payload.clone())
+            {
+                errs.push((client_id, e.into()));
+            }
         }
         match errs.is_empty() {
             true => Ok(()),
-            false => Err(GroupSendError(errs)),
+            false => Err(ServerGroupSendError(errs)),
         }
     }
 
     /// Same as [Endpoint::broadcast_payload] but will log the error instead of returning it
     pub fn try_broadcast_payload<T: Into<Bytes>>(&mut self, payload: T) {
-        match self.broadcast_payload(payload) {
-            Ok(_) => {}
-            Err(err) => error!("try_broadcast_payload: {}", err),
+        if let Err(err) = self.broadcast_payload(payload) {
+            error!("try_broadcast_payload: {}", err);
         }
     }
 
@@ -660,9 +713,8 @@ impl Endpoint {
         channel_id: C,
         payload: T,
     ) {
-        match self.broadcast_payload_on(channel_id, payload) {
-            Ok(_) => {}
-            Err(err) => error!("try_broadcast_payload_on: {}", err),
+        if let Err(err) = self.broadcast_payload_on(channel_id, payload) {
+            error!("try_broadcast_payload_on: {}", err);
         }
     }
 
@@ -671,10 +723,10 @@ impl Endpoint {
         &mut self,
         client_id: ClientId,
         payload: T,
-    ) -> Result<(), PayloadSendError> {
+    ) -> Result<(), ServerPayloadSendError> {
         match self.default_channel {
             Some(channel) => Ok(self.send_payload_on(client_id, channel, payload)?),
-            None => Err(PayloadSendError::NoDefaultChannel.into()),
+            None => Err(ServerPayloadSendError::NoDefaultChannel.into()),
         }
     }
 
@@ -689,20 +741,27 @@ impl Endpoint {
         client_id: ClientId,
         channel_id: C,
         payload: T,
-    ) -> Result<(), SendError> {
-        let channel_id = channel_id.into();
+    ) -> Result<(), ServerSendError> {
         if let Some(client_connection) = self.clients.get_mut(&client_id) {
-            match client_connection.channels.get(channel_id as usize) {
-                Some(Some(channel)) => {
-                    let bytes = payload.into();
-                    client_connection.sent_bytes_count += bytes.len();
-                    Ok(channel.send_payload(bytes)?)
-                }
-                Some(None) => return Err(SendError::ChannelClosed),
-                None => return Err(SendError::InvalidChannelId(channel_id)),
-            }
+            let channel_id = channel_id.into();
+            Self::internal_send_payload(client_connection, channel_id, payload.into())
         } else {
-            Err(SendError::UnknownClient(client_id))
+            Err(ServerSendError::UnknownClient(client_id))
+        }
+    }
+
+    fn internal_send_payload(
+        client_connection: &mut ServerSideConnection,
+        channel_id: ChannelId,
+        payload: Bytes,
+    ) -> Result<(), ServerSendError> {
+        match client_connection.channels.get(channel_id as usize) {
+            Some(Some(channel)) => {
+                client_connection.sent_bytes_count += payload.len();
+                Ok(channel.send_payload(payload)?)
+            }
+            Some(None) => return Err(ServerSendError::ChannelClosed),
+            None => return Err(ServerSendError::InvalidChannelId(channel_id)),
         }
     }
 
@@ -731,24 +790,23 @@ impl Endpoint {
         &mut self,
         client_id: ClientId,
         reason: CloseReason,
-    ) -> Result<(), DisconnectError> {
+    ) -> Result<(), ServerDisconnectError> {
         match self.clients.remove(&client_id) {
             Some(client_connection) => match client_connection.close_sender.send(reason) {
                 Ok(_) => Ok(()),
-                Err(_) => Err(DisconnectError::ClientAlreadyDisconnected(client_id)),
+                Err(_) => Err(ServerDisconnectError::ClientAlreadyDisconnected(client_id)),
             },
-            None => Err(DisconnectError::UnknownClient(client_id)),
+            None => Err(ServerDisconnectError::UnknownClient(client_id)),
         }
     }
 
     /// Logical "Disconnect", the client already closed/lost the connection.
     fn try_disconnect_closed_client(&mut self, client_id: ClientId) {
-        match self.internal_disconnect_client(client_id, CloseReason::PeerClosed) {
-            Ok(_) => (),
-            Err(err) => error!(
+        if let Err(err) = self.internal_disconnect_client(client_id, CloseReason::PeerClosed) {
+            error!(
                 "Failed to properly disconnect client {}: {}",
                 client_id, err
-            ),
+            );
         }
     }
 
@@ -757,18 +815,17 @@ impl Endpoint {
     /// Disconnecting a client immediately prevents new messages from being sent on its connection and signal the underlying connection to closes all its background tasks. Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
     ///
     /// This may fail if no client if found for client_id, or if the client is already disconnected.
-    pub fn disconnect_client(&mut self, client_id: ClientId) -> Result<(), DisconnectError> {
+    pub fn disconnect_client(&mut self, client_id: ClientId) -> Result<(), ServerDisconnectError> {
         self.internal_disconnect_client(client_id, CloseReason::LocalOrder)
     }
 
     /// Same as [Endpoint::disconnect_client] but errors are logged instead of returned
     pub fn try_disconnect_client(&mut self, client_id: ClientId) {
-        match self.disconnect_client(client_id) {
-            Ok(_) => (),
-            Err(err) => error!(
+        if let Err(err) = self.disconnect_client(client_id) {
+            error!(
                 "Failed to properly disconnect client {}: {}",
                 client_id, err
-            ),
+            );
         }
     }
 
@@ -1222,7 +1279,7 @@ pub fn update_sync_server(
                             connection_events.write(ConnectionEvent { id: client_id });
                         }
                         Err(_) => {
-                            error!("Failed to handle connection of a client");
+                            error!("Failed to handle connection of a client, already disconnected");
                         }
                     };
                 }

@@ -2,7 +2,7 @@ use bevy::prelude::App;
 
 use bevy_quinnet::{
     client::QuinnetClient,
-    server::{GroupMessageSendError, QuinnetServer},
+    server::{QuinnetServer, ServerGroupMessageSendError},
     shared::channels::{ChannelKind, DEFAULT_MAX_RELIABLE_FRAME_LEN},
 };
 
@@ -46,7 +46,7 @@ fn default_channel() {
                 server
                     .endpoint_mut()
                     .broadcast_message(SharedMessage::TestMessage("".to_string())),
-                Err(GroupMessageSendError::NoDefaultChannel)
+                Err(ServerGroupMessageSendError::NoDefaultChannel)
             ),
             "Should not be able to send on default channel"
         );
@@ -64,7 +64,7 @@ fn default_channel() {
                 client
                     .connection_mut()
                     .send_message(SharedMessage::TestMessage("".to_string())),
-                Err(bevy_quinnet::client::MessageSendError::NoDefaultChannel)
+                Err(bevy_quinnet::client::ClientMessageSendError::NoDefaultChannel)
             ),
             "Should not be able to send on default channel"
         );

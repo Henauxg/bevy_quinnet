@@ -49,8 +49,10 @@ use super::{
         load_known_hosts_store_from_config, CertificateVerificationMode, SkipServerVerification,
         TofuServerVerification,
     },
-    error::{MessageReceiveError, MessageSendError, PayloadSendError, ReceiveError, SendError},
-    ClientAsyncMessage, ConnectionCloseError, QuinnetConnectionError,
+    error::{
+        ClientMessageReceiveError, ClientMessageSendError, ClientPayloadSendError, ClientSendError,
+    },
+    ClientAsyncMessage, ClientConnectionCloseError, ConnectionClosed, QuinnetConnectionError,
 };
 
 /// Alias type for a local id of a connection
@@ -377,11 +379,11 @@ impl ClientSideConnection {
     /// - (or if the message queue is full)
     pub fn receive_message<T: serde::de::DeserializeOwned>(
         &mut self,
-    ) -> Result<Option<(ChannelId, T)>, MessageReceiveError> {
+    ) -> Result<Option<(ChannelId, T)>, ClientMessageReceiveError> {
         match self.receive_payload()? {
             Some((channel_id, payload)) => match bincode::deserialize(&payload) {
                 Ok(msg) => Ok(Some((channel_id, msg))),
-                Err(_) => Err(MessageReceiveError::Deserialization),
+                Err(_) => Err(ClientMessageReceiveError::Deserialization),
             },
             None => Ok(None),
         }
@@ -411,10 +413,10 @@ impl ClientSideConnection {
         &mut self,
         channel_id: C,
         message: T,
-    ) -> Result<(), MessageSendError> {
+    ) -> Result<(), ClientMessageSendError> {
         match bincode::serialize(&message) {
             Ok(payload) => Ok(self.send_payload_on(channel_id, payload)?),
-            Err(_) => Err(MessageSendError::Serialization),
+            Err(_) => Err(ClientMessageSendError::Serialization),
         }
     }
 
@@ -422,18 +424,17 @@ impl ClientSideConnection {
     pub fn send_message<T: serde::Serialize>(
         &mut self,
         message: T,
-    ) -> Result<(), MessageSendError> {
+    ) -> Result<(), ClientMessageSendError> {
         match self.default_channel {
             Some(channel) => self.send_message_on(channel, message),
-            None => Err(MessageSendError::NoDefaultChannel),
+            None => Err(ClientMessageSendError::NoDefaultChannel),
         }
     }
 
     /// Same as [Self::send_message] but will log the error instead of returning it
     pub fn try_send_message<T: serde::Serialize>(&mut self, message: T) {
-        match self.send_message(message) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_message: {}", err),
+        if let Err(err) = self.send_message(message) {
+            error!("try_send_message: {}", err);
         }
     }
 
@@ -443,17 +444,19 @@ impl ClientSideConnection {
         channel_id: C,
         message: T,
     ) {
-        match self.send_message_on(channel_id, message) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_message_on: {}", err),
+        if let Err(err) = self.send_message_on(channel_id, message) {
+            error!("try_send_message_on: {}", err);
         }
     }
 
     /// Same as [Self::send_payload_on] but on the default channel
-    pub fn send_payload<T: Into<Bytes>>(&mut self, payload: T) -> Result<(), PayloadSendError> {
+    pub fn send_payload<T: Into<Bytes>>(
+        &mut self,
+        payload: T,
+    ) -> Result<(), ClientPayloadSendError> {
         match self.default_channel {
             Some(channel) => Ok(self.send_payload_on(channel, payload)?),
-            None => Err(PayloadSendError::NoDefaultChannel),
+            None => Err(ClientPayloadSendError::NoDefaultChannel),
         }
     }
 
@@ -467,27 +470,26 @@ impl ClientSideConnection {
         &mut self,
         channel_id: C,
         payload: T,
-    ) -> Result<(), SendError> {
+    ) -> Result<(), ClientSendError> {
         let channel_id = channel_id.into();
         match &self.state {
-            InternalConnectionState::Disconnected => Err(SendError::ConnectionClosed),
+            InternalConnectionState::Disconnected => Err(ClientSendError::ConnectionClosed),
             _ => match self.channels.get(channel_id as usize) {
                 Some(Some(channel)) => {
                     let bytes = payload.into();
                     self.sent_bytes_count += bytes.len();
                     Ok(channel.send_payload(bytes)?)
                 }
-                Some(None) => Err(SendError::ChannelClosed),
-                None => Err(SendError::InvalidChannelId(channel_id)),
+                Some(None) => Err(ClientSendError::ChannelClosed),
+                None => Err(ClientSendError::InvalidChannelId(channel_id)),
             },
         }
     }
 
     /// Same as [Self::send_payload] but will log the error instead of returning it
     pub fn try_send_payload<T: Into<Bytes>>(&mut self, payload: T) {
-        match self.send_payload(payload) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_payload: {}", err),
+        if let Err(err) = self.send_payload(payload) {
+            error!("try_send_payload: {}", err);
         }
     }
 
@@ -497,9 +499,8 @@ impl ClientSideConnection {
         channel_id: C,
         payload: T,
     ) {
-        match self.send_payload_on(channel_id, payload) {
-            Ok(_) => {}
-            Err(err) => error!("try_send_payload_on: {}", err),
+        if let Err(err) = self.send_payload_on(channel_id, payload) {
+            error!("try_send_payload_on: {}", err);
         }
     }
 
@@ -508,9 +509,9 @@ impl ClientSideConnection {
     /// - Returns an [`Ok`] result containg [`Some`] if there is a message from the server in the message buffer
     /// - Returns an [`Ok`] result containg [`None`] if there is no message from the server in the message buffer
     /// - Can return an [`Err`] if the connection is closed
-    pub fn receive_payload(&mut self) -> Result<Option<(ChannelId, Bytes)>, ReceiveError> {
+    pub fn receive_payload(&mut self) -> Result<Option<(ChannelId, Bytes)>, ConnectionClosed> {
         match &self.state {
-            InternalConnectionState::Disconnected => Err(ReceiveError::ConnectionClosed),
+            InternalConnectionState::Disconnected => Err(ConnectionClosed),
             _ => match self.bytes_from_server_recv.try_recv() {
                 Ok(msg_payload) => {
                     self.received_bytes_count += msg_payload.1.len();
@@ -519,7 +520,7 @@ impl ClientSideConnection {
                 }
                 Err(err) => match err {
                     TryRecvError::Empty => Ok(None),
-                    TryRecvError::Disconnected => Err(ReceiveError::InternalChannelClosed),
+                    TryRecvError::Disconnected => Err(ConnectionClosed),
                 },
             },
         }
@@ -536,7 +537,10 @@ impl ClientSideConnection {
         }
     }
 
-    fn internal_disconnect(&mut self, reason: CloseReason) -> Result<(), ConnectionCloseError> {
+    fn internal_disconnect(
+        &mut self,
+        reason: CloseReason,
+    ) -> Result<(), ClientConnectionCloseError> {
         match &self.state {
             &InternalConnectionState::Disconnected => Ok(()),
             _ => {
@@ -545,7 +549,7 @@ impl ClientSideConnection {
                     Ok(_) => Ok(()),
                     Err(_) => {
                         // The only possible error for a send is that there is no active receivers, meaning that the tasks are already terminated.
-                        Err(ConnectionCloseError::ConnectionAlreadyClosed)
+                        Err(ClientConnectionCloseError::ConnectionAlreadyClosed)
                     }
                 }
             }
@@ -555,23 +559,21 @@ impl ClientSideConnection {
     /// Immediately prevents new messages from being sent on the connection and signal the connection to closes all its background tasks.
     ///
     /// Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
-    pub fn disconnect(&mut self) -> Result<(), ConnectionCloseError> {
+    pub fn disconnect(&mut self) -> Result<(), ClientConnectionCloseError> {
         self.internal_disconnect(CloseReason::LocalOrder)
     }
 
     /// Same as [Self::disconnect] but will log the error instead of returning it
     pub fn try_disconnect(&mut self) {
-        match &self.disconnect() {
-            Ok(_) => (),
-            Err(err) => error!("Failed to properly close clonnection: {}", err),
+        if let Err(err) = &self.disconnect() {
+            error!("Failed to properly close clonnection: {}", err);
         }
     }
 
     /// Logical "Disconnect", the underlying connection si already closed/lost.
     pub(crate) fn try_disconnect_closed_connection(&mut self) {
-        match self.internal_disconnect(CloseReason::PeerClosed) {
-            Ok(_) => (),
-            Err(err) => error!("Failed to properly close clonnection: {}", err),
+        if let Err(err) = self.internal_disconnect(CloseReason::PeerClosed) {
+            error!("Failed to properly close clonnection: {}", err);
         }
     }
 

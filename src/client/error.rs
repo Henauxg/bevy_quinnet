@@ -4,8 +4,9 @@ use crate::shared::{channels::ChannelId, error::AsyncChannelError};
 
 use super::connection::ConnectionLocalId;
 
+/// Error when sending data from the client
 #[derive(thiserror::Error, Debug)]
-pub enum SendError {
+pub enum ClientSendError {
     /// A connection is closed
     #[error("Connection is 'disconnected'")]
     ConnectionClosed,
@@ -15,58 +16,55 @@ pub enum SendError {
     /// A channel is closed
     #[error("Channel is closed")]
     ChannelClosed,
-
-    #[error("TODO")]
+    /// Quinnet async channel error
+    #[error("Quinnet async channel error")]
     ChannelSendError(#[from] AsyncChannelError),
 }
 
+/// Error when sending a payload from the client
 #[derive(thiserror::Error, Debug)]
-pub enum PayloadSendError {
+pub enum ClientPayloadSendError {
     /// There is no default channel
     #[error("There is no default channel")]
     NoDefaultChannel,
-
-    #[error("TODO")]
-    SendError(#[from] SendError),
+    /// Error when sending
+    #[error("Error when sending")]
+    SendError(#[from] ClientSendError),
 }
 
+/// Error when sending a message to be serialized from the client
 #[derive(thiserror::Error, Debug)]
-pub enum MessageSendError {
+pub enum ClientMessageSendError {
     /// Failed serialization
     #[error("Failed serialization")]
     Serialization,
     /// There is no default channel
     #[error("There is no default channel")]
     NoDefaultChannel,
-
-    #[error("TODO")]
-    SendError(#[from] SendError),
+    /// Error when sending data
+    #[error("Error when sending data")]
+    SendError(#[from] ClientSendError),
 }
 
+/// Error while receiving a message on the client
 #[derive(thiserror::Error, Debug)]
-pub enum MessageReceiveError {
+pub enum ClientMessageReceiveError {
     /// Failed deserialization
     #[error("Failed deserialization")]
     Deserialization,
-
-    #[error("TODO")]
-    ReceiveError(#[from] ReceiveError),
+    /// Error while receiving data
+    #[error("Error while receiving data")]
+    ConnectionClosed(#[from] ConnectionClosed),
 }
 
+/// The client connection is closed
 #[derive(thiserror::Error, Debug)]
-pub enum ReceiveError {
-    /// A connection is closed
-    #[error("Connection is 'disconnected'")]
-    ConnectionClosed,
-    /// The receiving half of an internal channel was explicitly closed or has been dropped
-    #[error(
-        "The receiving half of the internal channel was explicitly closed or has been dropped"
-    )]
-    InternalChannelClosed,
-}
+#[error("The client connection is closed")]
+pub struct ConnectionClosed;
 
+/// Error while closing a connection
 #[derive(thiserror::Error, Debug)]
-pub enum ConnectionCloseError {
+pub enum ClientConnectionCloseError {
     /// A connection is already closed
     #[error("Connection is already closed")]
     ConnectionAlreadyClosed,
@@ -80,6 +78,7 @@ pub enum ConnectionCloseError {
 #[error("The hosts file is invalid")]
 pub struct InvalidHostFile;
 
+/// Error while applying a certificate action
 #[derive(thiserror::Error, Debug)]
 pub enum CertificateInteractionError {
     /// A Certificate action was already sent for a CertificateInteractionEvent
@@ -88,8 +87,8 @@ pub enum CertificateInteractionError {
     /// A lock acquisition failed
     #[error("Lock acquisition failure")]
     LockAcquisitionFailure,
-
-    #[error("TODO")]
+    /// Quinnet async channel error
+    #[error("Quinnet async channel error")]
     AsyncChannelError(#[from] AsyncChannelError),
 }
 

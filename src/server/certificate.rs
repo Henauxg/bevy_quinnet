@@ -6,7 +6,7 @@ use std::{
 
 use bevy::log::{trace, warn};
 
-use super::CertificateError;
+use super::EndpointCertificateError;
 use crate::shared::certificate::CertificateFingerprint;
 
 /// Represents the origin of a certificate.
@@ -63,7 +63,7 @@ pub struct ServerCertificate {
 fn read_cert_from_files(
     cert_file: &String,
     key_file: &String,
-) -> Result<ServerCertificate, CertificateError> {
+) -> Result<ServerCertificate, EndpointCertificateError> {
     let mut cert_chain_reader = BufReader::new(File::open(cert_file)?);
     let cert_chain: Vec<rustls::pki_types::CertificateDer> =
         rustls_pemfile::certs(&mut cert_chain_reader).collect::<Result<_, _>>()?;
@@ -100,7 +100,7 @@ fn write_cert_to_files(
 
 fn generate_self_signed_certificate(
     server_host: &String,
-) -> Result<(ServerCertificate, rcgen::CertifiedKey), CertificateError> {
+) -> Result<(ServerCertificate, rcgen::CertifiedKey), EndpointCertificateError> {
     let generated = rcgen::generate_simple_self_signed(vec![server_host.into()])?;
 
     let priv_key_der =
@@ -120,7 +120,7 @@ fn generate_self_signed_certificate(
 
 pub(crate) fn retrieve_certificate(
     cert_mode: CertificateRetrievalMode,
-) -> Result<ServerCertificate, CertificateError> {
+) -> Result<ServerCertificate, EndpointCertificateError> {
     match cert_mode {
         CertificateRetrievalMode::GenerateSelfSigned { server_hostname } => {
             let (server_cert, _rcgen_cert) = generate_self_signed_certificate(&server_hostname)?;

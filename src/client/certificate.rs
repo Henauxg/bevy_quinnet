@@ -193,7 +193,7 @@ pub enum KnownHosts {
     /// Directly contains the server name to fingerprint mapping
     Store(CertStore),
     /// Path of a file caontaing the server name to fingerprint mapping.
-    HostsFile(String), // TODO More on the file format + the limitations
+    HostsFile(String),
 }
 
 /// Implementation of `ServerCertVerifier` that verifies everything as trustworthy.

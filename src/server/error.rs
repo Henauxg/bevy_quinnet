@@ -1,7 +1,8 @@
 use crate::shared::{channels::ChannelId, error::AsyncChannelError, ClientId};
 
+/// Error when sending data from the server
 #[derive(thiserror::Error, Debug)]
-pub enum SendError {
+pub enum ServerSendError {
     /// A client id is unknown
     #[error("Client with id `{0}` is unknown")]
     UnknownClient(ClientId),
@@ -11,85 +12,91 @@ pub enum SendError {
     /// A channel is closed
     #[error("Channel is closed")]
     ChannelClosed,
-
-    #[error("TODO")]
+    /// Quinnet async channel error
+    #[error("Quinnet async channel error")]
     ChannelSendError(#[from] AsyncChannelError),
 }
 
+/// Error while sending a payload on the server
 #[derive(thiserror::Error, Debug)]
-pub enum PayloadSendError {
+pub enum ServerPayloadSendError {
     /// There is no default channel
     #[error("There is no default channel")]
     NoDefaultChannel,
-
-    #[error("TODO")]
-    SendError(#[from] SendError),
+    /// Error when sending data
+    #[error("Error when sending data")]
+    SendError(#[from] ServerSendError),
 }
 
+/// Error while sending a message to deserialize on the server
 #[derive(thiserror::Error, Debug)]
-pub enum MessageSendError {
+pub enum ServerMessageSendError {
     /// Failed serialization
     #[error("Failed serialization")]
     Serialization,
     /// There is no default channel
     #[error("There is no default channel")]
     NoDefaultChannel,
-
-    #[error("TODO")]
-    SendError(#[from] SendError),
+    /// Error when sending data
+    #[error("Error when sending data")]
+    SendError(#[from] ServerSendError),
 }
 
+/// Error while sending data on the server to a group of clients
 #[derive(thiserror::Error, Debug)]
 #[error("Error while sending to multiple recipients")]
-pub struct GroupSendError(pub Vec<(ClientId, SendError)>);
+pub struct ServerGroupSendError(pub Vec<(ClientId, ServerSendError)>);
 
+/// Error while sending a payload on the server to a group of clients
 #[derive(thiserror::Error, Debug)]
-pub enum GroupPayloadSendError {
+pub enum ServerGroupPayloadSendError {
     /// There is no default channel
     #[error("There is no default channel")]
     NoDefaultChannel,
-
-    #[error("TODO")]
-    GroupSendError(#[from] GroupSendError),
+    /// Error while sending data to a group of clients
+    #[error("Error while sending data to a group of clients")]
+    GroupSendError(#[from] ServerGroupSendError),
 }
 
+/// Error while sending a message to deserialize on the server to a group of clients
 #[derive(thiserror::Error, Debug)]
-pub enum GroupMessageSendError {
+pub enum ServerGroupMessageSendError {
     /// Failed serialization
     #[error("Failed serialization")]
     Serialization,
     /// There is no default channel
     #[error("There is no default channel")]
     NoDefaultChannel,
-
-    #[error("TODO")]
-    GroupSendError(#[from] GroupSendError),
+    /// Error while sending data to a group of clients
+    #[error("Error while sending data to a group of clients")]
+    GroupSendError(#[from] ServerGroupSendError),
 }
 
+/// Error while receiving a message to deserialize on the server
 #[derive(thiserror::Error, Debug)]
-pub enum MessageReceiveError {
+pub enum ServerMessageReceiveError {
     /// Failed deserialization
     #[error("Failed deserialization")]
     Deserialization,
-
-    #[error("TODO")]
-    ReceiveError(#[from] ReceiveError),
+    /// Error while receiving data
+    #[error("Error while receiving data")]
+    ReceiveError(#[from] ServerReceiveError),
 }
 
+/// Error while receiving data on the server
 #[derive(thiserror::Error, Debug)]
-pub enum ReceiveError {
+pub enum ServerReceiveError {
     /// A client id is unknown
     #[error("Client with id `{0}` is unknown")]
     UnknownClient(ClientId),
-    /// The receiving half of an internal channel was explicitly closed or has been dropped
-    #[error(
-        "The receiving half of the internal channel was explicitly closed or has been dropped"
-    )]
-    InternalChannelClosed,
+    /// The connection is closed
+    #[error("The connection is closed")]
+    ConnectionClosed,
 }
 
+/// Error while disconnecting a client on the server
 #[derive(thiserror::Error, Debug)]
-pub enum DisconnectError {
+pub enum ServerDisconnectError {
     /// A client id is unknown
     #[error("Client with id `{0}` is unknown")]
     UnknownClient(ClientId),
@@ -98,13 +105,12 @@ pub enum DisconnectError {
     ClientAlreadyDisconnected(ClientId),
 }
 
-pub enum StopEndpointError {}
-
 /// Endpoint is already closed
 #[derive(thiserror::Error, Debug)]
 #[error("Endpoint is already closed")]
 pub struct EndpointAlreadyClosed;
 
+/// Error while starting an Endpoint
 #[derive(thiserror::Error, Debug)]
 pub enum EndpointStartError {
     /// A lock acquisition failed
@@ -115,17 +121,18 @@ pub enum EndpointStartError {
     IoError(#[from] std::io::Error),
     /// Certificate error
     #[error("Certificate error")]
-    CertificateError(#[from] CertificateError),
+    CertificateError(#[from] EndpointCertificateError),
     ///Rustls protocol error
     #[error("Rustls protocol error")]
     RustlsError(#[from] rustls::Error),
-
-    #[error("TODO")]
+    /// Quinnet async channel error
+    #[error("Quinnet async channel error")]
     AsyncChannelError(#[from] AsyncChannelError),
 }
 
+/// Error while retrieving a certificate on the server
 #[derive(thiserror::Error, Debug)]
-pub enum CertificateError {
+pub enum EndpointCertificateError {
     /// Failed to generate a self-signed certificate
     #[error("Failed to generate a self-signed certificate")]
     CertificateGenerationFailed(#[from] rcgen::Error),
@@ -134,9 +141,7 @@ pub enum CertificateError {
     IoError(#[from] std::io::Error),
 }
 
+/// Endpoint connection is already closed
 #[derive(thiserror::Error, Debug)]
-pub enum ConnectionCloseError {
-    /// A connection is already closed
-    #[error("Connection is already closed")]
-    ConnectionAlreadyClosed,
-}
+#[error("Endpoint connection is already closed")]
+pub(crate) struct EndpointConnectionAlreadyClosed;

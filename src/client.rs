@@ -267,7 +267,7 @@ impl QuinnetClient {
     pub fn close_connection(
         &mut self,
         connection_id: ConnectionLocalId,
-    ) -> Result<(), ConnectionCloseError> {
+    ) -> Result<(), ClientConnectionCloseError> {
         match self.connections.remove(&connection_id) {
             Some(mut connection) => {
                 if Some(connection_id) == self.default_connection_id {
@@ -275,7 +275,9 @@ impl QuinnetClient {
                 }
                 connection.disconnect()
             }
-            None => Err(ConnectionCloseError::InvalidConnectionId(connection_id)),
+            None => Err(ClientConnectionCloseError::InvalidConnectionId(
+                connection_id,
+            )),
         }
     }
 
