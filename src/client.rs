@@ -177,12 +177,12 @@ impl QuinnetClient {
     }
 
     /// Returns an iterator over all connections
-    pub fn connections(&self) -> Iter<ConnectionLocalId, ClientSideConnection> {
+    pub fn connections(&'_ self) -> Iter<'_, ConnectionLocalId, ClientSideConnection> {
         self.connections.iter()
     }
 
     /// Returns an iterator over all connections as muts
-    pub fn connections_mut(&mut self) -> IterMut<ConnectionLocalId, ClientSideConnection> {
+    pub fn connections_mut(&'_ mut self) -> IterMut<'_, ConnectionLocalId, ClientSideConnection> {
         self.connections.iter_mut()
     }
 

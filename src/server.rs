@@ -370,10 +370,12 @@ impl Endpoint {
         client_id: ClientId,
     ) -> Result<Option<(ChannelId, T)>, ServerMessageReceiveError> {
         match self.receive_payload_from(client_id)? {
-            Some((channel_id, payload)) => match bincode::deserialize(&payload) {
-                Ok(msg) => Ok(Some((channel_id, msg))),
-                Err(_) => Err(ServerMessageReceiveError::Deserialization),
-            },
+            Some((channel_id, payload)) => {
+                match bincode::serde::decode_from_slice(&payload, bincode::config::standard()) {
+                    Ok((msg, _size)) => Ok(Some((channel_id, msg))),
+                    Err(_) => Err(ServerMessageReceiveError::Deserialization),
+                }
+            }
             None => Ok(None),
         }
     }
@@ -455,7 +457,7 @@ impl Endpoint {
         channel_id: C,
         message: T,
     ) -> Result<(), ServerMessageSendError> {
-        match bincode::serialize(&message) {
+        match bincode::serde::encode_to_vec(&message, bincode::config::standard()) {
             Ok(payload) => Ok(self.send_payload_on(client_id, channel_id, payload)?),
             Err(_) => Err(ServerMessageSendError::Serialization),
         }
@@ -509,7 +511,8 @@ impl Endpoint {
         message: T,
     ) -> Result<(), ServerGroupMessageSendError> {
         let channel_id = channel_id.into();
-        let Ok(payload) = bincode::serialize(&message) else {
+        let Ok(payload) = bincode::serde::encode_to_vec(&message, bincode::config::standard())
+        else {
             return Err(ServerGroupMessageSendError::Serialization);
         };
         let bytes = Bytes::from(payload);
@@ -640,7 +643,7 @@ impl Endpoint {
         channel_id: C,
         message: T,
     ) -> Result<(), ServerGroupMessageSendError> {
-        match bincode::serialize(&message) {
+        match bincode::serde::encode_to_vec(&message, bincode::config::standard()) {
             Ok(payload) => Ok(self.broadcast_payload_on(channel_id, payload)?),
             Err(_) => Err(ServerGroupMessageSendError::Serialization),
         }

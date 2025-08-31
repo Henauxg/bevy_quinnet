@@ -381,10 +381,12 @@ impl ClientSideConnection {
         &mut self,
     ) -> Result<Option<(ChannelId, T)>, ClientMessageReceiveError> {
         match self.receive_payload()? {
-            Some((channel_id, payload)) => match bincode::deserialize(&payload) {
-                Ok(msg) => Ok(Some((channel_id, msg))),
-                Err(_) => Err(ClientMessageReceiveError::Deserialization),
-            },
+            Some((channel_id, payload)) => {
+                match bincode::serde::decode_from_slice(&payload, bincode::config::standard()) {
+                    Ok((msg, _size)) => Ok(Some((channel_id, msg))),
+                    Err(_) => Err(ClientMessageReceiveError::Deserialization),
+                }
+            }
             None => Ok(None),
         }
     }
@@ -414,7 +416,7 @@ impl ClientSideConnection {
         channel_id: C,
         message: T,
     ) -> Result<(), ClientMessageSendError> {
-        match bincode::serialize(&message) {
+        match bincode::serde::encode_to_vec(&message, bincode::config::standard()) {
             Ok(payload) => Ok(self.send_payload_on(channel_id, payload)?),
             Err(_) => Err(ClientMessageSendError::Serialization),
         }
@@ -869,6 +871,7 @@ pub(crate) async fn async_connection_task(
         )
         .expect("Failed to connect: configuration error")
         .await;
+
     match connection {
         Err(e) => {
             error!("Connection {}, error while connecting: {}", local_id, e);

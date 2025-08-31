@@ -24,7 +24,6 @@ use bevy_quinnet::{
         ClientId,
     },
 };
-use serde::{Deserialize, Serialize};
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct ClientTestData {
@@ -53,7 +52,7 @@ pub struct ServerTestData {
 #[derive(Resource, Debug, Clone, Default)]
 pub struct Port(u16);
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub enum SharedMessage {
     TestMessage(String),
 }
