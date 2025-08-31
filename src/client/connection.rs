@@ -14,7 +14,6 @@ use quinn::{crypto::rustls::QuicClientConfig, ClientConfig, Endpoint};
 use quinn_proto::ConnectionStats;
 
 use rustls_platform_verifier::BuilderVerifierExt;
-use serde::Deserialize;
 use tokio::{
     runtime,
     sync::{
@@ -49,9 +48,7 @@ use super::{
         load_known_hosts_store_from_config, CertificateVerificationMode, SkipServerVerification,
         TofuServerVerification,
     },
-    error::{
-        ClientMessageReceiveError, ClientMessageSendError, ClientPayloadSendError, ClientSendError,
-    },
+    error::{ClientPayloadSendError, ClientSendError},
     ClientAsyncMessage, ClientConnectionCloseError, ConnectionClosed, QuinnetConnectionError,
 };
 
@@ -86,7 +83,7 @@ pub struct ConnectionLostEvent {
 }
 
 /// Configuration of a client connection, used when connecting to a server
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct ClientEndpointConfiguration {
     server_addr: SocketAddr,
     server_hostname: String,
@@ -368,86 +365,6 @@ impl ClientSideConnection {
             received_messages_count: 0,
             received_bytes_count: 0,
             sent_bytes_count: 0,
-        }
-    }
-
-    /// Attempt to deserialise a message into type `T`.
-    ///
-    /// Will return an [`Err`] if:
-    /// - the bytes accumulated from the server aren't deserializable to T
-    /// - or if the client is disconnected
-    /// - (or if the message queue is full)
-    pub fn receive_message<T: serde::de::DeserializeOwned>(
-        &mut self,
-    ) -> Result<Option<(ChannelId, T)>, ClientMessageReceiveError> {
-        match self.receive_payload()? {
-            Some((channel_id, payload)) => {
-                match bincode::serde::decode_from_slice(&payload, bincode::config::standard()) {
-                    Ok((msg, _size)) => Ok(Some((channel_id, msg))),
-                    Err(_) => Err(ClientMessageReceiveError::Deserialization),
-                }
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Same as [Self::receive_message] but will log the error instead of returning it
-    pub fn try_receive_message<T: serde::de::DeserializeOwned>(
-        &mut self,
-    ) -> Option<(ChannelId, T)> {
-        match self.receive_message() {
-            Ok(message) => message,
-            Err(err) => {
-                error!("try_receive_message: {}", err);
-                None
-            }
-        }
-    }
-
-    /// Queues a message to be sent to the server on the specified channel
-    ///
-    /// Will return an [`Err`] if:
-    /// - the specified channel does not exist/is closed
-    /// - or if the client is disconnected
-    /// - or if a serialization error occurs
-    /// - (or if the message queue is full)
-    pub fn send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
-        &mut self,
-        channel_id: C,
-        message: T,
-    ) -> Result<(), ClientMessageSendError> {
-        match bincode::serde::encode_to_vec(&message, bincode::config::standard()) {
-            Ok(payload) => Ok(self.send_payload_on(channel_id, payload)?),
-            Err(_) => Err(ClientMessageSendError::Serialization),
-        }
-    }
-
-    /// Same as [Self::send_message_on] but on the default channel
-    pub fn send_message<T: serde::Serialize>(
-        &mut self,
-        message: T,
-    ) -> Result<(), ClientMessageSendError> {
-        match self.default_channel {
-            Some(channel) => self.send_message_on(channel, message),
-            None => Err(ClientMessageSendError::NoDefaultChannel),
-        }
-    }
-
-    /// Same as [Self::send_message] but will log the error instead of returning it
-    pub fn try_send_message<T: serde::Serialize>(&mut self, message: T) {
-        if let Err(err) = self.send_message(message) {
-            error!("try_send_message: {}", err);
-        }
-    }
-
-    /// Same as [Self::send_message_on] but will log the error instead of returning it
-    pub fn try_send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
-        &mut self,
-        channel_id: C,
-        message: T,
-    ) {
-        if let Err(err) = self.send_message_on(channel_id, message) {
-            error!("try_send_message_on: {}", err);
         }
     }
 
@@ -838,6 +755,92 @@ impl ClientSideConnection {
                 TrySendError::Full(_) => Err(AsyncChannelError::FullQueue),
                 TrySendError::Closed(_) => Err(AsyncChannelError::InternalChannelClosed),
             },
+        }
+    }
+}
+
+#[cfg(feature = "bincode-messages")]
+use super::{ClientMessageReceiveError, ClientMessageSendError};
+
+#[cfg(feature = "bincode-messages")]
+impl ClientSideConnection {
+    /// Attempt to deserialise a message into type `T`.
+    ///
+    /// Will return an [`Err`] if:
+    /// - the bytes accumulated from the server aren't deserializable to T
+    /// - or if the client is disconnected
+    /// - (or if the message queue is full)
+    pub fn receive_message<T: serde::de::DeserializeOwned>(
+        &mut self,
+    ) -> Result<Option<(ChannelId, T)>, ClientMessageReceiveError> {
+        match self.receive_payload()? {
+            Some((channel_id, payload)) => {
+                match bincode::serde::decode_from_slice(&payload, bincode::config::standard()) {
+                    Ok((msg, _size)) => Ok(Some((channel_id, msg))),
+                    Err(_) => Err(ClientMessageReceiveError::Deserialization),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Same as [Self::receive_message] but will log the error instead of returning it
+    pub fn try_receive_message<T: serde::de::DeserializeOwned>(
+        &mut self,
+    ) -> Option<(ChannelId, T)> {
+        match self.receive_message() {
+            Ok(message) => message,
+            Err(err) => {
+                error!("try_receive_message: {}", err);
+                None
+            }
+        }
+    }
+
+    /// Queues a message to be sent to the server on the specified channel
+    ///
+    /// Will return an [`Err`] if:
+    /// - the specified channel does not exist/is closed
+    /// - or if the client is disconnected
+    /// - or if a serialization error occurs
+    /// - (or if the message queue is full)
+    pub fn send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
+        &mut self,
+        channel_id: C,
+        message: T,
+    ) -> Result<(), ClientMessageSendError> {
+        match bincode::serde::encode_to_vec(&message, bincode::config::standard()) {
+            Ok(payload) => Ok(self.send_payload_on(channel_id, payload)?),
+            Err(_) => Err(ClientMessageSendError::Serialization),
+        }
+    }
+
+    /// Same as [Self::send_message_on] but on the default channel
+    pub fn send_message<T: serde::Serialize>(
+        &mut self,
+        message: T,
+    ) -> Result<(), ClientMessageSendError> {
+        match self.default_channel {
+            Some(channel) => self.send_message_on(channel, message),
+            None => Err(ClientMessageSendError::NoDefaultChannel),
+        }
+    }
+
+    /// Same as [Self::send_message] but will log the error instead of returning it
+    pub fn try_send_message<T: serde::Serialize>(&mut self, message: T) {
+        if let Err(err) = self.send_message(message) {
+            error!("try_send_message: {}", err);
+        }
+    }
+
+    /// Same as [Self::send_message_on] but will log the error instead of returning it
+    pub fn try_send_message_on<T: serde::Serialize, C: Into<ChannelId>>(
+        &mut self,
+        channel_id: C,
+        message: T,
+    ) {
+        if let Err(err) = self.send_message_on(channel_id, message) {
+            error!("try_send_message_on: {}", err);
         }
     }
 }

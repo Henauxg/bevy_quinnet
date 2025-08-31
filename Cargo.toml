@@ -28,18 +28,21 @@ bytes = "1.5.0"
 base64 = "0.13.1"
 thiserror = "1.0.37"
 
-bincode = { version = "2.0.1", features = ["serde"] }
-serde = { version = "1.0.145", features = ["derive"] }
+# Optional
+bincode = { version = "2.0.1", optional = true, features = ["serde"] }
+serde = { version = "1.0.145", optional = true, features = ["derive"] }
 
 
 [features]
-default = ["shared-client-id", "client", "server"]
+default = ["shared-client-id", "client", "server", "bincode-messages"]
 # Server sends the client id to the client, client wait for it before being “connected”
 shared-client-id = []
 # Enables client features
 client = []
 # Enables server features
 server = []
+# Adds some quick utility methods on server and client to send messages directly (serialized/deserialized with bincode)
+bincode-messages = ["bincode", "serde"]
 
 [dev-dependencies]
 bevy = { version = "0.16.0", default-features = false, features = [
@@ -50,28 +53,25 @@ bevy = { version = "0.16.0", default-features = false, features = [
 	"bevy_render",        # Provides rendering functionality
 	"bevy_sprite",        # Provides sprite functionality
 	"bevy_ui",            # A custom ECS-driven UI framework
+	"bevy_state",         # Provides state management functionality
 	"bevy_text",          # Provides text functionality
-	"bevy_core_pipeline", # Provides cameras and other basic render pipeline features
-	"x11",                # X11 display server support
-
-	# Can be removed later, temporary fixes for a bug in "0.14.0-rc.2"
-	"bevy_state",
+	"bevy_core_pipeline", # Provides cameras and other basic render pipeline feature
 	"serialize",
-	"bevy_scene",
-	"bevy_pbr",
-	"ktx2",
-	"zstd",
+	"x11",                # X11 display server support
 ] }
 rand = "0.8.5"
 
 [[example]]
 name = "breakout"
 path = "examples/breakout/breakout.rs"
+required-features = ["bincode-messages"]
 
 [[example]]
 name = "chat-server"
 path = "examples/chat/server.rs"
+required-features = ["bincode-messages"]
 
 [[example]]
 name = "chat-client"
 path = "examples/chat/client.rs"
+required-features = ["bincode-messages"]
