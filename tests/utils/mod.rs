@@ -52,10 +52,7 @@ pub struct ServerTestData {
 #[derive(Resource, Debug, Clone, Default)]
 pub struct Port(u16);
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub enum SharedMessage {
-    TestMessage(String),
-}
+pub const TEST_MESSAGE_PAYLOAD: &[u8] = &[0x1, 0x2, 0x3, 0x4];
 
 pub const SERVER_IP: Ipv6Addr = Ipv6Addr::LOCALHOST;
 pub const LOCAL_BIND_IP: Ipv6Addr = Ipv6Addr::UNSPECIFIED;
@@ -272,15 +269,12 @@ pub fn open_server_channel(channel_type: ChannelKind, app: &mut App) -> ChannelI
 pub fn wait_for_client_message(
     client_id: ClientId,
     server_app: &mut App,
-) -> (ChannelId, SharedMessage) {
+) -> (ChannelId, bytes::Bytes) {
     let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
 
     loop {
         sleep(Duration::from_secs_f32(0.05));
-        match server
-            .endpoint_mut()
-            .receive_message_from::<SharedMessage>(client_id)
-        {
+        match server.endpoint_mut().receive_payload_from(client_id) {
             Ok(Some(channel_msg)) => return channel_msg,
             Ok(None) => (),
             Err(_) => panic!("Deserialization should be correct"),
@@ -288,12 +282,12 @@ pub fn wait_for_client_message(
     }
 }
 
-pub fn wait_for_server_message(client_app: &mut App) -> (ChannelId, SharedMessage) {
+pub fn wait_for_server_message(client_app: &mut App) -> (ChannelId, bytes::Bytes) {
     let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
 
     loop {
         sleep(Duration::from_secs_f32(0.05));
-        match client.connection_mut().receive_message::<SharedMessage>() {
+        match client.connection_mut().receive_payload() {
             Ok(Some(channel_msg)) => return channel_msg,
             Ok(None) => (),
             Err(_) => panic!("Deserialization should be correct"),
@@ -309,22 +303,16 @@ pub fn send_and_test_client_message(
     msg_counter: &mut u64,
 ) {
     *msg_counter += 1;
-    let client_message = SharedMessage::TestMessage(
-        format!(
-            "Test message from client {}. Counter: {}",
-            client_id, msg_counter
-        )
-        .to_string(),
-    );
+    let client_message_payload = bytes::Bytes::from(vec![client_id as u8, *msg_counter as u8]);
 
     let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
     client
         .connection_mut()
-        .send_message_on(channel, client_message.clone())
+        .send_payload_on(channel, client_message_payload.clone())
         .unwrap();
 
     let server_received = wait_for_client_message(client_id, server_app);
-    assert_eq!((channel, client_message), server_received);
+    assert_eq!((channel, client_message_payload), server_received);
 }
 
 pub fn send_and_test_server_message(
@@ -335,20 +323,14 @@ pub fn send_and_test_server_message(
     msg_counter: &mut u64,
 ) {
     *msg_counter += 1;
-    let server_message = SharedMessage::TestMessage(
-        format!(
-            "Test message from server to client {}. Counter: {}",
-            client_id, msg_counter
-        )
-        .to_string(),
-    );
+    let server_message_payload = bytes::Bytes::from(vec![client_id as u8, *msg_counter as u8]);
 
     let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
     server
         .endpoint_mut()
-        .send_message_on(client_id, channel, server_message.clone())
+        .send_payload_on(client_id, channel, server_message_payload.clone())
         .unwrap();
 
     let client_received = wait_for_server_message(client_app);
-    assert_eq!((channel, server_message), client_received);
+    assert_eq!((channel, server_message_payload), client_received);
 }

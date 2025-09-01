@@ -56,12 +56,11 @@ fn connection_with_two_apps() {
         1
     );
 
-    let sent_client_message = SharedMessage::TestMessage("Test message content".to_string());
     client_app
         .world_mut()
         .resource_mut::<QuinnetClient>()
         .connection_mut()
-        .send_message(sent_client_message.clone())
+        .send_payload(TEST_MESSAGE_PAYLOAD)
         .unwrap();
 
     // Client->Server Message
@@ -72,18 +71,16 @@ fn connection_with_two_apps() {
         .world_mut()
         .resource_mut::<QuinnetServer>()
         .endpoint_mut()
-        .receive_message_from::<SharedMessage>(client_id)
+        .receive_payload_from(client_id)
         .expect("Failed to receive client message")
         .expect("There should be a client message");
-    assert_eq!(client_message, sent_client_message);
-
-    let sent_server_message = SharedMessage::TestMessage("Server response".to_string());
+    assert_eq!(client_message.iter().as_slice(), TEST_MESSAGE_PAYLOAD);
 
     server_app
         .world_mut()
         .resource_mut::<QuinnetServer>()
         .endpoint_mut()
-        .broadcast_message(sent_server_message.clone())
+        .broadcast_payload(TEST_MESSAGE_PAYLOAD)
         .unwrap();
 
     // Server->Client Message
@@ -94,10 +91,10 @@ fn connection_with_two_apps() {
         .world_mut()
         .resource_mut::<QuinnetClient>()
         .connection_mut()
-        .receive_message::<SharedMessage>()
+        .receive_payload()
         .expect("Failed to receive server message")
         .expect("There should be a server message");
-    assert_eq!(server_message, sent_server_message);
+    assert_eq!(server_message.iter().as_slice(), TEST_MESSAGE_PAYLOAD);
 }
 
 ///////////////////////////////////////////////////////////
