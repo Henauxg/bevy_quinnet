@@ -1,5 +1,13 @@
 # Changelog
 
+## Version 0.18.0 (TBD)
+
+`bincode-messages` feature:
+- Adds a new `bincode-messages` cargo feature, disabled by default
+- `bincode` and `serde` dependencies are now optional and enabled by this feature
+- Updates `bincode` from  1.0 to 2.0
+- Gates all `send_message_` methods behind this feature
+
 ## Version 0.17.0 (2025-04-27)
 
 - Updated `bevy` to 0.16

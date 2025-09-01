@@ -273,7 +273,7 @@ See more about certificates in the [certificates readme](docs/Certificates.md)
 
 This demo comes with an headless [server](examples/chat/server.rs), a [terminal client](examples/chat/client.rs) and a shared [protocol](examples/chat/protocol.rs).
 
-Start the server with `cargo run --example chat-server` and as many clients as needed with `cargo run --example chat-client`. Type `quit` to disconnect with a client.
+Start the server with `cargo run --example chat-server --features=bincode-messages` and as many clients as needed with `cargo run --example chat-client --features=bincode-messages`. Type `quit` to disconnect with a client.
 
 ![terminal_chat_demo](https://user-images.githubusercontent.com/19689618/197757086-0643e6e7-6c69-4760-9af6-cb323529dc52.gif)
 
@@ -288,7 +288,7 @@ It hosts a local server from inside a client, instead of a dedicated headless se
 
 It also makes uses of [`Channels`](#channels). The server broadcasts the paddle position every tick via the `PaddleMoved` message on an `Unreliable` channel, the `BrickDestroyed` and `BallCollided` events are emitted on an `UnorderedReliable` channel, while the game setup and start are using the default `OrderedReliable` channel.
 
-Start two clients with `cargo run --example breakout`, "Host" on one and "Join" on the other.
+Start two clients with `cargo run --example breakout --features=bincode-messages`, "Host" on one and "Join" on the other.
 
 [breakout_versus_demo_short.mp4](https://user-images.githubusercontent.com/19689618/213700921-85967bd7-9a47-44ac-9471-77a33938569f.mp4)
 </details>
@@ -320,6 +320,7 @@ Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/
 *Find the list and description in [cargo.toml](Cargo.toml)*
 
 - `shared-client-id` *[default]*: When a new client connects to the server, the server sends its `ClientId` to the client. The client will consider himself `Connected` once it receives this id. When not enabled, the client does not know its `ClientId` on the server.
+- `bincode-messages`: adds some simple utilities to directly send & recieve Rust types as messages using `bincode`
 
 ### Logs
 
