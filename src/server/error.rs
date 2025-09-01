@@ -28,20 +28,6 @@ pub enum ServerPayloadSendError {
     SendError(#[from] ServerSendError),
 }
 
-/// Error while sending a message to deserialize on the server
-#[derive(thiserror::Error, Debug)]
-pub enum ServerMessageSendError {
-    /// Failed serialization
-    #[error("Failed serialization")]
-    Serialization,
-    /// There is no default channel
-    #[error("There is no default channel")]
-    NoDefaultChannel,
-    /// Error when sending data
-    #[error("Error when sending data")]
-    SendError(#[from] ServerSendError),
-}
-
 /// Error while sending data on the server to a group of clients
 #[derive(thiserror::Error, Debug)]
 #[error("Error while sending to multiple recipients")]
@@ -56,31 +42,6 @@ pub enum ServerGroupPayloadSendError {
     /// Error while sending data to a group of clients
     #[error("Error while sending data to a group of clients")]
     GroupSendError(#[from] ServerGroupSendError),
-}
-
-/// Error while sending a message to deserialize on the server to a group of clients
-#[derive(thiserror::Error, Debug)]
-pub enum ServerGroupMessageSendError {
-    /// Failed serialization
-    #[error("Failed serialization")]
-    Serialization,
-    /// There is no default channel
-    #[error("There is no default channel")]
-    NoDefaultChannel,
-    /// Error while sending data to a group of clients
-    #[error("Error while sending data to a group of clients")]
-    GroupSendError(#[from] ServerGroupSendError),
-}
-
-/// Error while receiving a message to deserialize on the server
-#[derive(thiserror::Error, Debug)]
-pub enum ServerMessageReceiveError {
-    /// Failed deserialization
-    #[error("Failed deserialization")]
-    Deserialization,
-    /// Error while receiving data
-    #[error("Error while receiving data")]
-    ReceiveError(#[from] ServerReceiveError),
 }
 
 /// Error while receiving data on the server

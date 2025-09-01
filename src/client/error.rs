@@ -32,31 +32,6 @@ pub enum ClientPayloadSendError {
     SendError(#[from] ClientSendError),
 }
 
-/// Error when sending a message to be serialized from the client
-#[derive(thiserror::Error, Debug)]
-pub enum ClientMessageSendError {
-    /// Failed serialization
-    #[error("Failed serialization")]
-    Serialization,
-    /// There is no default channel
-    #[error("There is no default channel")]
-    NoDefaultChannel,
-    /// Error when sending data
-    #[error("Error when sending data")]
-    SendError(#[from] ClientSendError),
-}
-
-/// Error while receiving a message on the client
-#[derive(thiserror::Error, Debug)]
-pub enum ClientMessageReceiveError {
-    /// Failed deserialization
-    #[error("Failed deserialization")]
-    Deserialization,
-    /// Error while receiving data
-    #[error("Error while receiving data")]
-    ConnectionClosed(#[from] ConnectionClosed),
-}
-
 /// The client connection is closed
 #[derive(thiserror::Error, Debug)]
 #[error("The client connection is closed")]
