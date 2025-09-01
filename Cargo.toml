@@ -32,9 +32,8 @@ thiserror = "1.0.37"
 bincode = { version = "2.0.1", optional = true, features = ["serde"] }
 serde = { version = "1.0.145", optional = true, features = ["derive"] }
 
-
 [features]
-default = ["shared-client-id", "client", "server", "bincode-messages"]
+default = ["shared-client-id", "client", "server"]
 # Server sends the client id to the client, client wait for it before being “connected”
 shared-client-id = []
 # Enables client features
