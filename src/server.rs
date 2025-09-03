@@ -405,44 +405,46 @@ pub fn update_sync_server(
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
     mut lost_clients: Local<HashSet<ClientId>>,
 ) {
-    if let Some(endpoint) = server.get_endpoint_mut() {
-        while let Ok(message) = endpoint.try_recv_from_async() {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+
+    while let Ok(endpoint_message) = endpoint.try_recv_from_async() {
+        match endpoint_message {
+            ServerAsyncMessage::ClientConnected(new_connection) => {
+                match endpoint.handle_new_connection(new_connection) {
+                    Ok(client_id) => {
+                        connection_events.write(ConnectionEvent { id: client_id });
+                    }
+                    Err(_) => {
+                        error!("Failed to handle connection of a client, already disconnected");
+                    }
+                };
+            }
+            ServerAsyncMessage::ClientConnectionClosed(client_id) => {
+                if endpoint.clients.contains_key(&client_id) {
+                    endpoint.try_disconnect_closed_client(client_id);
+                    connection_lost_events.write(ConnectionLostEvent { id: client_id });
+                }
+            }
+        }
+    }
+
+    for (client_id, connection) in endpoint.clients.iter_mut() {
+        while let Ok(message) = connection.try_recv_from_channels() {
             match message {
-                ServerAsyncMessage::ClientConnected(new_connection) => {
-                    match endpoint.handle_new_connection(new_connection) {
-                        Ok(client_id) => {
-                            connection_events.write(ConnectionEvent { id: client_id });
-                        }
-                        Err(_) => {
-                            error!("Failed to handle connection of a client, already disconnected");
-                        }
-                    };
-                }
-                ServerAsyncMessage::ClientConnectionClosed(client_id) => {
-                    if endpoint.clients.contains_key(&client_id) {
-                        endpoint.try_disconnect_closed_client(client_id);
-                        connection_lost_events.write(ConnectionLostEvent { id: client_id });
+                ChannelAsyncMessage::LostConnection => {
+                    if !lost_clients.contains(client_id) {
+                        lost_clients.insert(*client_id);
+                        connection_lost_events.write(ConnectionLostEvent { id: *client_id });
                     }
                 }
             }
         }
+    }
 
-        for (client_id, connection) in endpoint.clients.iter_mut() {
-            while let Ok(message) = connection.from_channels_recv.try_recv() {
-                match message {
-                    ChannelAsyncMessage::LostConnection => {
-                        if !lost_clients.contains(client_id) {
-                            lost_clients.insert(*client_id);
-                            connection_lost_events.write(ConnectionLostEvent { id: *client_id });
-                        }
-                    }
-                }
-            }
-        }
-
-        for client_id in lost_clients.drain() {
-            endpoint.try_disconnect_client(client_id);
-        }
+    for client_id in lost_clients.drain() {
+        endpoint.try_disconnect_client(client_id);
     }
 }
 

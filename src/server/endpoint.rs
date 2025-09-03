@@ -482,8 +482,7 @@ impl Endpoint {
         let client_id = self.client_id_gen;
 
         match connection
-            .to_connection_send
-            .try_send(ServerSyncMessage::ClientConnectedAck(client_id))
+            .try_send_to_async_connection(ServerSyncMessage::ClientConnectedAck(client_id))
         {
             Ok(_) => {
                 self.clients.insert(client_id, connection);

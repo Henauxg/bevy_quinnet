@@ -2,7 +2,10 @@ use bevy::log::error;
 use bytes::Bytes;
 use tokio::sync::{
     broadcast,
-    mpsc::{self, error::TrySendError},
+    mpsc::{
+        self,
+        error::{TryRecvError, TrySendError},
+    },
 };
 
 use crate::{
@@ -25,9 +28,9 @@ pub struct ServerSideConnection {
     bytes_from_client_recv: mpsc::Receiver<(ChannelId, Bytes)>,
     close_sender: broadcast::Sender<CloseReason>,
 
-    pub(crate) to_connection_send: mpsc::Sender<ServerSyncMessage>,
-    pub(crate) to_channels_send: mpsc::Sender<ChannelSyncMessage>,
-    pub(crate) from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
+    to_connection_send: mpsc::Sender<ServerSyncMessage>,
+    to_channels_send: mpsc::Sender<ChannelSyncMessage>,
+    from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
 
     pub(crate) received_bytes_count: usize,
     pub(crate) sent_bytes_count: usize,
@@ -193,5 +196,18 @@ impl ServerSideConnection {
             Some(None) => Err(ServerSendError::ChannelClosed),
             None => Err(ServerSendError::InvalidChannelId(channel_id)),
         }
+    }
+
+    #[inline(always)]
+    pub(crate) fn try_send_to_async_connection(
+        &self,
+        msg: ServerSyncMessage,
+    ) -> Result<(), TrySendError<ServerSyncMessage>> {
+        self.to_connection_send.try_send(msg)
+    }
+
+    #[inline(always)]
+    pub(crate) fn try_recv_from_channels(&mut self) -> Result<ChannelAsyncMessage, TryRecvError> {
+        self.from_channels_recv.try_recv()
     }
 }
