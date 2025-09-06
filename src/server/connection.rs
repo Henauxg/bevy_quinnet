@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bevy::log::error;
 use bytes::Bytes;
 use tokio::sync::{
@@ -9,7 +11,9 @@ use tokio::sync::{
 };
 
 use crate::{
-    server::{EndpointConnectionAlreadyClosed, ServerSendError, ServerSyncMessage},
+    server::{
+        EndpointConnectionAlreadyClosed, ServerReceiveError, ServerSendError, ServerSyncMessage,
+    },
     shared::{
         channels::{
             Channel, ChannelAsyncMessage, ChannelId, ChannelKind, ChannelSyncMessage, CloseReason,
@@ -19,12 +23,38 @@ use crate::{
     },
 };
 
+#[derive(Debug)]
+struct BidirChannel {
+    send_channel: Channel,
+    // TODO Might want to limit this buffer size
+    // TODO Might move into the Channel struct
+    received_payloads: VecDeque<Bytes>,
+}
+impl BidirChannel {
+    fn close(mut self) -> Result<(), ChannelCloseError> {
+        self.received_payloads.clear();
+        self.send_channel.close()
+    }
+
+    fn new(channel: Channel) -> Self {
+        Self {
+            send_channel: channel,
+            received_payloads: VecDeque::new(),
+        }
+    }
+}
+
 /// Represents a connection from a quinnet client to a server's [`Endpoint`], viewed from the server.
 #[derive(Debug)]
 pub struct ServerSideConnection {
     connection_handle: InternalConnectionRef,
 
-    channels: Vec<Option<Channel>>,
+    open_channels: Vec<Option<BidirChannel>>,
+    /// Contains payloads directed to an unknown or closed channel.
+    ///
+    /// Cleared at the end of every frame by [`super::post_update_sync_server`].
+    pub invalid_payloads: Vec<Bytes>,
+
     bytes_from_client_recv: mpsc::Receiver<(ChannelId, Bytes)>,
     close_sender: broadcast::Sender<CloseReason>,
 
@@ -52,7 +82,8 @@ impl ServerSideConnection {
             to_connection_send,
             to_channels_send,
             from_channels_recv,
-            channels: Vec::new(),
+            open_channels: Vec::new(),
+            invalid_payloads: Vec::new(),
             received_bytes_count: 0,
             sent_bytes_count: 0,
         }
@@ -62,9 +93,9 @@ impl ServerSideConnection {
     /// Before trully closing, the channel will wait for all buffered messages to be properly sent according to the channel type.
     /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
     pub(crate) fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), ChannelCloseError> {
-        if (channel_id as usize) < self.channels.len() {
-            match self.channels[channel_id as usize].take() {
-                Some(channel) => channel.close(),
+        if (channel_id as usize) < self.open_channels.len() {
+            match self.open_channels[channel_id as usize].take() {
+                Some(channel_to_close) => channel_to_close.close(),
                 None => Err(ChannelCloseError::ChannelAlreadyClosed),
             }
         } else {
@@ -110,12 +141,13 @@ impl ServerSideConnection {
 
     pub(crate) fn register_connection_channel(&mut self, channel: Channel) {
         let channel_index = channel.id() as usize;
-        if channel_index < self.channels.len() {
-            self.channels[channel_index] = Some(channel);
+        let opened_channel = Some(BidirChannel::new(channel));
+        if channel_index < self.open_channels.len() {
+            self.open_channels[channel_index] = opened_channel;
         } else {
-            self.channels
-                .extend((self.channels.len()..channel_index).map(|_| None));
-            self.channels.push(Some(channel));
+            self.open_channels
+                .extend((self.open_channels.len()..channel_index).map(|_| None));
+            self.open_channels.push(opened_channel);
         }
     }
 
@@ -178,20 +210,15 @@ impl ServerSideConnection {
         self.sent_bytes_count
     }
 
-    #[inline(always)]
-    pub(crate) fn try_recv_bytes(&mut self) -> Result<(u8, Bytes), mpsc::error::TryRecvError> {
-        self.bytes_from_client_recv.try_recv()
-    }
-
     pub(crate) fn send_payload(
         &mut self,
         channel_id: ChannelId,
         payload: Bytes,
     ) -> Result<(), ServerSendError> {
-        match self.channels.get(channel_id as usize) {
+        match self.open_channels.get(channel_id as usize) {
             Some(Some(channel)) => {
                 self.sent_bytes_count += payload.len();
-                Ok(channel.send_payload(payload)?)
+                Ok(channel.send_channel.send_payload(payload)?)
             }
             Some(None) => Err(ServerSendError::ChannelClosed),
             None => Err(ServerSendError::InvalidChannelId(channel_id)),
@@ -209,5 +236,33 @@ impl ServerSideConnection {
     #[inline(always)]
     pub(crate) fn try_recv_from_channels(&mut self) -> Result<ChannelAsyncMessage, TryRecvError> {
         self.from_channels_recv.try_recv()
+    }
+
+    pub(crate) fn receive_payload_from(
+        &mut self,
+        channel_id: ChannelId,
+    ) -> (Result<Option<Bytes>, ServerReceiveError>, u64) {
+        match self.open_channels.get_mut(channel_id as usize) {
+            // TODO Drain variant ?
+            Some(Some(channel)) => (Ok(channel.received_payloads.pop_front()), 1),
+            Some(None) | None => (Err(ServerReceiveError::InvalidChannel(channel_id)), 0),
+        }
+    }
+
+    pub(crate) fn dispatch_payloads_to_channels(&mut self) {
+        // Note on handling of: TryRecvError::Disconnected
+        // This error means that the receiving end of the channel is closed, which only happens when the client connection is closed/closing.
+        // In this case we decide to consider that there is no more messages to receive.
+        while let Ok((channel_id, payload)) = self.bytes_from_client_recv.try_recv() {
+            self.received_bytes_count += payload.len();
+            match self.open_channels.get_mut(channel_id as usize) {
+                Some(Some(channel)) => channel.received_payloads.push_back(payload),
+                Some(None) | None => self.invalid_payloads.push(payload),
+            }
+        }
+    }
+
+    pub(crate) fn clear_invalid_payloads(&mut self) {
+        self.invalid_payloads.clear();
     }
 }

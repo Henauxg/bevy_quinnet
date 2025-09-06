@@ -47,6 +47,10 @@ pub(crate) type InternalConnectionRef = quinn::Connection;
 ///
 /// This system set runs in PreUpdate.
 #[derive(Debug, SystemSet, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct QuinnetSyncUpdate;
+pub struct QuinnetSyncPreUpdate;
 
-// May add a `QuinnetFlush` SystemSet to buffer and flush messages.
+/// System set used to perform end-of-frame clean-up tasks.
+///
+/// May also be used to send buffered payloads at the end of a frame in the future.
+#[derive(Debug, SystemSet, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct QuinnetSyncPostUpdate;

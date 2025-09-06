@@ -64,31 +64,31 @@ impl Endpoint {
     /// - Returns an [`Ok`] result containg [`Some`] if there is a message from the client in the message buffer
     /// - Returns an [`Ok`] result containg [`None`] if there is no message from the client in the message buffer
     /// - Can return an [`Err`] if:
-    ///   - the connection is closed
-    ///   - the client id is not valid
-    pub fn receive_payload_from(
+    ///  - the client id is not valid
+    ///  - the channel id is not valid
+    pub fn receive_payload_from<C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
-    ) -> Result<Option<(ChannelId, Bytes)>, ServerReceiveError> {
+        channel_id: C,
+    ) -> Result<Option<Bytes>, ServerReceiveError> {
         match self.clients.get_mut(&client_id) {
-            Some(connection) => match connection.try_recv_bytes() {
-                Ok(channel_msg) => {
-                    self.stats.received_messages_count += 1;
-                    connection.received_bytes_count += channel_msg.1.len();
-                    Ok(Some(channel_msg))
-                }
-                Err(err) => match err {
-                    TryRecvError::Empty => Ok(None),
-                    TryRecvError::Disconnected => Err(ServerReceiveError::ConnectionClosed),
-                },
-            },
+            Some(connection) => {
+                let (payload, received_msg_count) =
+                    connection.receive_payload_from(channel_id.into());
+                self.stats.received_messages_count += received_msg_count;
+                payload
+            }
             None => Err(ServerReceiveError::UnknownClient(client_id)),
         }
     }
 
     /// [`Endpoint::receive_payload_from`] that logs the error instead of returning a result.
-    pub fn try_receive_payload_from(&mut self, client_id: ClientId) -> Option<(ChannelId, Bytes)> {
-        match self.receive_payload_from(client_id) {
+    pub fn try_receive_payload_from<C: Into<ChannelId>>(
+        &mut self,
+        client_id: ClientId,
+        channel_id: C,
+    ) -> Option<Bytes> {
+        match self.receive_payload_from(client_id, channel_id.into()) {
             Ok(payload) => payload,
             Err(err) => {
                 error!("try_receive_payload: {}", err);
@@ -122,7 +122,9 @@ impl Endpoint {
 
     /// Sends the payload to the specified clients on the specified channel.
     ///
-    /// Tries to send to each client before returning. Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupMessageSendError`].
+    /// Tries to send to each client before returning.
+    ///
+    /// Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupPayloadSendError`].
     pub fn send_group_payload_on<
         'a,
         I: Iterator<Item = &'a ClientId>,
@@ -180,7 +182,9 @@ impl Endpoint {
 
     /// Sends the payload to all connected clients on the specified channel.
     ///
-    /// Tries to send to each client before returning. Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupSendError`].
+    /// Tries to send to each client before returning.
+    ///
+    /// Returns an [`Err`] if sending failed for at least 1 client. Information about the failed sendings will be available in the [`ServerGroupSendError`].
     pub fn broadcast_payload_on<T: Into<Bytes>, C: Into<ChannelId>>(
         &mut self,
         channel_id: C,
@@ -498,6 +502,12 @@ impl Endpoint {
 
     pub(crate) fn try_recv_from_async(&mut self) -> Result<ServerAsyncMessage, TryRecvError> {
         self.from_async_endpoint_recv.try_recv()
+    }
+
+    pub(crate) fn dispatch_client_payloads(&mut self) {
+        for connection in self.clients.values_mut() {
+            connection.dispatch_payloads_to_channels();
+        }
     }
 }
 

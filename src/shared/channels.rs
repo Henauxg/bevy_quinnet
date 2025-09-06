@@ -68,11 +68,13 @@ impl Default for ChannelKind {
 }
 
 #[derive(Debug)]
+/// From async to sync
 pub(crate) enum ChannelAsyncMessage {
     LostConnection,
 }
 
 #[derive(Debug)]
+/// From sync to async
 pub(crate) enum ChannelSyncMessage {
     CreateChannel {
         id: ChannelId,

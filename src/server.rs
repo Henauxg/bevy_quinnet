@@ -26,8 +26,9 @@ use crate::{
             spawn_recv_channels_tasks, spawn_send_channels_tasks_spawner, ChannelAsyncMessage,
             ChannelId, ChannelSyncMessage, ChannelsConfiguration,
         },
-        AsyncRuntime, ClientId, QuinnetSyncUpdate, DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE,
-        DEFAULT_KEEP_ALIVE_INTERVAL_S, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+        AsyncRuntime, ClientId, QuinnetSyncPostUpdate, QuinnetSyncPreUpdate,
+        DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE, DEFAULT_KEEP_ALIVE_INTERVAL_S,
+        DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
         DEFAULT_QCHANNEL_MESSAGES_CHANNEL_SIZE,
     },
 };
@@ -396,10 +397,12 @@ async fn client_connection_task(
     }
 }
 
-/// Receive messages from the async server tasks and update the sync server.
+/// - Receives events from the async server tasks
+/// - Dispatches received payloads to the appropriate channels
+/// - Updates the sync server state
 ///
 /// This system generates the server's bevy events
-pub fn update_sync_server(
+pub fn pre_update_sync_server(
     mut server: ResMut<QuinnetServer>,
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
@@ -443,8 +446,21 @@ pub fn update_sync_server(
         }
     }
 
+    endpoint.dispatch_client_payloads();
+
     for client_id in lost_clients.drain() {
         endpoint.try_disconnect_client(client_id);
+    }
+}
+
+/// Clears invalid payloads from all connections
+pub fn post_update_sync_server(mut server: ResMut<QuinnetServer>) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+
+    for connection in endpoint.clients.values_mut() {
+        connection.clear_invalid_payloads();
     }
 }
 
@@ -477,8 +493,14 @@ impl Plugin for QuinnetServerPlugin {
 
         app.add_systems(
             PreUpdate,
-            update_sync_server
-                .in_set(QuinnetSyncUpdate)
+            pre_update_sync_server
+                .in_set(QuinnetSyncPreUpdate)
+                .run_if(resource_exists::<QuinnetServer>),
+        );
+        app.add_systems(
+            Last,
+            post_update_sync_server
+                .in_set(QuinnetSyncPostUpdate)
                 .run_if(resource_exists::<QuinnetServer>),
         );
     }

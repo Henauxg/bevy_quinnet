@@ -16,7 +16,7 @@ use tokio::{
 use crate::shared::{
     channels::{ChannelAsyncMessage, ChannelsConfiguration},
     error::AsyncChannelError,
-    AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncUpdate,
+    AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncPreUpdate,
 };
 
 use self::{
@@ -406,7 +406,7 @@ impl Plugin for QuinnetClientPlugin {
         app.add_systems(
             PreUpdate,
             update_sync_client
-                .in_set(QuinnetSyncUpdate)
+                .in_set(QuinnetSyncPreUpdate)
                 .run_if(resource_exists::<QuinnetClient>),
         );
     }
