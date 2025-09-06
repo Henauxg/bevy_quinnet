@@ -268,36 +268,47 @@ pub fn open_server_channel(channel_type: ChannelKind, app: &mut App) -> ChannelI
 
 pub fn wait_for_client_message(
     client_id: ClientId,
+    channel_id: ChannelId,
     server_app: &mut App,
-) -> (ChannelId, bytes::Bytes) {
-    let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
-
-    loop {
-        sleep(Duration::from_secs_f32(0.05));
-        match server.endpoint_mut().receive_payload_from(client_id) {
-            Ok(Some(channel_msg)) => return channel_msg,
+) -> bytes::Bytes {
+    for _ in 0..20 {
+        server_app.update();
+        match server_app
+            .world_mut()
+            .resource_mut::<QuinnetServer>()
+            .endpoint_mut()
+            .receive_payload_from(client_id, channel_id)
+        {
+            Ok(Some(payload)) => return payload,
             Ok(None) => (),
             Err(_) => panic!("Deserialization should be correct"),
         }
+        sleep(Duration::from_secs_f32(0.05));
     }
+    panic!("Did not receive a message from the client in time");
 }
 
 pub fn wait_for_server_message(client_app: &mut App) -> (ChannelId, bytes::Bytes) {
-    let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-
-    loop {
-        sleep(Duration::from_secs_f32(0.05));
-        match client.connection_mut().receive_payload() {
+    for _ in 0..20 {
+        client_app.update();
+        match client_app
+            .world_mut()
+            .resource_mut::<QuinnetClient>()
+            .connection_mut()
+            .receive_payload()
+        {
             Ok(Some(channel_msg)) => return channel_msg,
             Ok(None) => (),
             Err(_) => panic!("Deserialization should be correct"),
         }
+        sleep(Duration::from_secs_f32(0.05));
     }
+    panic!("Did not receive a message from the server in time");
 }
 
 pub fn send_and_test_client_message(
     client_id: ClientId,
-    channel: ChannelId,
+    channel_id: ChannelId,
     client_app: &mut App,
     server_app: &mut App,
     msg_counter: &mut u64,
@@ -308,11 +319,11 @@ pub fn send_and_test_client_message(
     let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
     client
         .connection_mut()
-        .send_payload_on(channel, client_message_payload.clone())
+        .send_payload_on(channel_id, client_message_payload.clone())
         .unwrap();
 
-    let server_received = wait_for_client_message(client_id, server_app);
-    assert_eq!((channel, client_message_payload), server_received);
+    let server_received = wait_for_client_message(client_id, channel_id, server_app);
+    assert_eq!(client_message_payload, server_received);
 }
 
 pub fn send_and_test_server_message(

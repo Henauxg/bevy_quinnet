@@ -67,14 +67,14 @@ fn connection_with_two_apps() {
     sleep(Duration::from_secs_f32(0.1));
     server_app.update();
 
-    let (_channel_id, client_message) = server_app
+    let client_payload = server_app
         .world_mut()
         .resource_mut::<QuinnetServer>()
         .endpoint_mut()
-        .receive_payload_from(client_id)
+        .receive_payload_from(client_id, 0)
         .expect("Failed to receive client message")
         .expect("There should be a client message");
-    assert_eq!(client_message.iter().as_slice(), TEST_MESSAGE_PAYLOAD);
+    assert_eq!(client_payload.iter().as_slice(), TEST_MESSAGE_PAYLOAD);
 
     server_app
         .world_mut()
