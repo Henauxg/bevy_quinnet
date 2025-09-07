@@ -50,9 +50,6 @@ pub enum ServerReceiveError {
     /// A client id is unknown
     #[error("Client with id `{0}` is unknown")]
     UnknownClient(ClientId),
-    /// A channel id is invalid
-    #[error("Channel with id `{0}` is invalid")]
-    InvalidChannel(ChannelId),
 }
 
 /// Error while disconnecting a client on the server

@@ -49,7 +49,7 @@ pub(crate) type InternalConnectionRef = quinn::Connection;
 #[derive(Debug, SystemSet, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QuinnetSyncPreUpdate;
 
-/// System set used to perform end-of-frame clean-up tasks.
+/// System set used to perform end-of-frame clean-up tasks. Runs in the [bevy::prelude::Last] schedule.
 ///
 /// May also be used to send buffered payloads at the end of a frame in the future.
 #[derive(Debug, SystemSet, Clone, Copy, PartialEq, Eq, Hash)]

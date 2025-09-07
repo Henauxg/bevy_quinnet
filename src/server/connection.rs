@@ -11,59 +11,65 @@ use tokio::sync::{
 };
 
 use crate::{
-    server::{
-        EndpointConnectionAlreadyClosed, ServerReceiveError, ServerSendError, ServerSyncMessage,
-    },
+    server::{EndpointConnectionAlreadyClosed, ServerSendError, ServerSyncMessage},
     shared::{
         channels::{
             Channel, ChannelAsyncMessage, ChannelId, ChannelKind, ChannelSyncMessage, CloseReason,
+            MAX_CHANNEL_COUNT,
         },
         error::{AsyncChannelError, ChannelCloseError},
         InternalConnectionRef, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
     },
 };
 
-#[derive(Debug)]
-struct BidirChannel {
-    send_channel: Channel,
-    // TODO Might want to limit this buffer size
-    // TODO Might move into the Channel struct
-    received_payloads: VecDeque<Bytes>,
-}
-impl BidirChannel {
-    fn close(mut self) -> Result<(), ChannelCloseError> {
-        self.received_payloads.clear();
-        self.send_channel.close()
-    }
+/// Default value for the `max_buffered_payloads_count_per_channel` field of the [`ServerSideConnectionConfig`]
+pub const DEFAULT_MAX_BUFFERED_PAYLOADS_COUNT_PER_CHANNEL: usize = 512;
+/// Default value for the `max_receive_channels_count` field of the [`ServerSideConnectionConfig`]
+pub const DEFAULT_MAX_RECEIVE_CHANNEL_COUNT: usize = MAX_CHANNEL_COUNT;
 
-    fn new(channel: Channel) -> Self {
+/// Configuration for a [ServerSideConnection]
+#[derive(Debug, Clone)]
+pub struct ServerSideConnectionConfig {
+    /// Maximum number of payloads that can be buffered per receive channel.
+    pub max_buffered_payloads_count_per_channel: usize,
+    /// Maximum number of receive channels that can be opened on this connection.
+    pub max_receive_channels_count: usize,
+}
+impl Default for ServerSideConnectionConfig {
+    fn default() -> Self {
         Self {
-            send_channel: channel,
-            received_payloads: VecDeque::new(),
+            max_buffered_payloads_count_per_channel:
+                DEFAULT_MAX_BUFFERED_PAYLOADS_COUNT_PER_CHANNEL,
+            max_receive_channels_count: DEFAULT_MAX_RECEIVE_CHANNEL_COUNT,
         }
     }
 }
 
-/// Represents a connection from a quinnet client to a server's [`Endpoint`], viewed from the server.
+/// Represents a connection from a quinnet client to a server's [`crate::server::Endpoint`], viewed from the server.
 #[derive(Debug)]
 pub struct ServerSideConnection {
     connection_handle: InternalConnectionRef,
 
-    open_channels: Vec<Option<BidirChannel>>,
-    /// Contains payloads directed to an unknown or closed channel.
-    ///
-    /// Cleared at the end of every frame by [`super::post_update_sync_server`].
-    pub invalid_payloads: Vec<Bytes>,
+    /// Send channels opened on this connection
+    send_channels: Vec<Option<Channel>>,
+    /// Buffers of received payloads per receive channel
+    receive_channels: Vec<VecDeque<Bytes>>,
 
+    /// Internal queue of received bytes from the client
     bytes_from_client_recv: mpsc::Receiver<(ChannelId, Bytes)>,
     close_sender: broadcast::Sender<CloseReason>,
 
+    /// Sender for internal quinnet messages going to the async connection task
     to_connection_send: mpsc::Sender<ServerSyncMessage>,
+    /// Sender for internal quinnet messages going to the async channels task
     to_channels_send: mpsc::Sender<ChannelSyncMessage>,
+    /// Receiver for internal quinnet messages coming from the async channels task
     from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
 
     pub(crate) received_bytes_count: usize,
     pub(crate) sent_bytes_count: usize,
+
+    config: ServerSideConnectionConfig,
 }
 
 impl ServerSideConnection {
@@ -74,6 +80,7 @@ impl ServerSideConnection {
         to_connection_send: mpsc::Sender<ServerSyncMessage>,
         from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
         to_channels_send: mpsc::Sender<ChannelSyncMessage>,
+        config: ServerSideConnectionConfig,
     ) -> Self {
         Self {
             connection_handle,
@@ -82,10 +89,11 @@ impl ServerSideConnection {
             to_connection_send,
             to_channels_send,
             from_channels_recv,
-            open_channels: Vec::new(),
-            invalid_payloads: Vec::new(),
+            send_channels: Vec::new(),
+            receive_channels: Vec::new(),
             received_bytes_count: 0,
             sent_bytes_count: 0,
+            config,
         }
     }
 
@@ -93,8 +101,8 @@ impl ServerSideConnection {
     /// Before trully closing, the channel will wait for all buffered messages to be properly sent according to the channel type.
     /// Can fail if the [ChannelId] is unknown, or if the channel is already closed.
     pub(crate) fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), ChannelCloseError> {
-        if (channel_id as usize) < self.open_channels.len() {
-            match self.open_channels[channel_id as usize].take() {
+        if (channel_id as usize) < self.send_channels.len() {
+            match self.send_channels[channel_id as usize].take() {
                 Some(channel_to_close) => channel_to_close.close(),
                 None => Err(ChannelCloseError::ChannelAlreadyClosed),
             }
@@ -141,13 +149,12 @@ impl ServerSideConnection {
 
     pub(crate) fn register_connection_channel(&mut self, channel: Channel) {
         let channel_index = channel.id() as usize;
-        let opened_channel = Some(BidirChannel::new(channel));
-        if channel_index < self.open_channels.len() {
-            self.open_channels[channel_index] = opened_channel;
+        if channel_index < self.send_channels.len() {
+            self.send_channels[channel_index] = Some(channel);
         } else {
-            self.open_channels
-                .extend((self.open_channels.len()..channel_index).map(|_| None));
-            self.open_channels.push(opened_channel);
+            self.send_channels
+                .extend((self.send_channels.len()..channel_index).map(|_| None));
+            self.send_channels.push(Some(channel));
         }
     }
 
@@ -215,10 +222,10 @@ impl ServerSideConnection {
         channel_id: ChannelId,
         payload: Bytes,
     ) -> Result<(), ServerSendError> {
-        match self.open_channels.get(channel_id as usize) {
+        match self.send_channels.get(channel_id as usize) {
             Some(Some(channel)) => {
                 self.sent_bytes_count += payload.len();
-                Ok(channel.send_channel.send_payload(payload)?)
+                Ok(channel.send_payload(payload)?)
             }
             Some(None) => Err(ServerSendError::ChannelClosed),
             None => Err(ServerSendError::InvalidChannelId(channel_id)),
@@ -238,31 +245,47 @@ impl ServerSideConnection {
         self.from_channels_recv.try_recv()
     }
 
-    pub(crate) fn receive_payload_from(
-        &mut self,
-        channel_id: ChannelId,
-    ) -> (Result<Option<Bytes>, ServerReceiveError>, u64) {
-        match self.open_channels.get_mut(channel_id as usize) {
+    pub(crate) fn receive_payload_from(&mut self, channel_id: ChannelId) -> Option<Bytes> {
+        match self.receive_channels.get_mut(channel_id as usize) {
             // TODO Drain variant ?
-            Some(Some(channel)) => (Ok(channel.received_payloads.pop_front()), 1),
-            Some(None) | None => (Err(ServerReceiveError::InvalidChannel(channel_id)), 0),
+            Some(payloads) => payloads.pop_front(),
+            None => None,
         }
     }
 
-    pub(crate) fn dispatch_payloads_to_channels(&mut self) {
+    pub(crate) fn dispatch_payloads_to_channel_buffers(&mut self) {
         // Note on handling of: TryRecvError::Disconnected
         // This error means that the receiving end of the channel is closed, which only happens when the client connection is closed/closing.
         // In this case we decide to consider that there is no more messages to receive.
         while let Ok((channel_id, payload)) = self.bytes_from_client_recv.try_recv() {
             self.received_bytes_count += payload.len();
-            match self.open_channels.get_mut(channel_id as usize) {
-                Some(Some(channel)) => channel.received_payloads.push_back(payload),
-                Some(None) | None => self.invalid_payloads.push(payload),
+
+            match self.receive_channels.get_mut(channel_id as usize) {
+                Some(payloads) => {
+                    if payloads.len() < self.config.max_buffered_payloads_count_per_channel {
+                        payloads.push_back(payload);
+                    } else {
+                        error!("Dropping payload from client on channel {} because the receive queue is full", channel_id);
+                    }
+                }
+                None => {
+                    if self.receive_channels.len() < self.config.max_receive_channels_count {
+                        self.receive_channels.extend(
+                            (self.receive_channels.len()..channel_id as usize)
+                                .map(|_| VecDeque::new()),
+                        );
+                        self.receive_channels.push(VecDeque::from([payload]));
+                    } else {
+                        error!("Dropping payload from client on channel {} because the maximum number of opened receive channels has been reached", channel_id);
+                    }
+                }
             }
         }
     }
 
-    pub(crate) fn clear_invalid_payloads(&mut self) {
-        self.invalid_payloads.clear();
+    pub(crate) fn clear_stale_received_payloads(&mut self) {
+        for payloads in self.receive_channels.iter_mut() {
+            payloads.clear();
+        }
     }
 }

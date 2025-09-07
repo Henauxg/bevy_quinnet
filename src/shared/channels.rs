@@ -29,7 +29,7 @@ pub type ChannelId = u8;
 /// Maximum number of channels that can be opened simultaneously
 pub const MAX_CHANNEL_COUNT: usize = u8::MAX as usize + 1;
 
-pub(crate) const CHANNEL_ID_LEN: usize = 1;
+pub(crate) const CHANNEL_ID_LEN: usize = size_of::<ChannelId>();
 pub(crate) const PROTOCOL_HEADER_LEN: usize = CHANNEL_ID_LEN;
 pub(crate) type CloseSend = broadcast::Sender<CloseReason>;
 pub(crate) type CloseRecv = broadcast::Receiver<CloseReason>;

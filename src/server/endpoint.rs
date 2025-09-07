@@ -24,33 +24,38 @@ use crate::{
 /// Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelKind::OrderedReliable] channel.
 pub struct Endpoint {
     pub(crate) clients: HashMap<ClientId, ServerSideConnection>,
+    /// Incremental client id generator
     client_id_gen: ClientId,
-
+    /// Opened send channels types on this endpoint
     opened_channels: HashMap<ChannelId, ChannelKind>,
+    /// Internal ordered pool of available channel ids
     available_channel_ids: BTreeSet<ChannelId>,
+    /// Default send channel id
     default_channel: Option<ChannelId>,
-
     close_sender: broadcast::Sender<()>,
-
+    /// Receiver for internal quinnet messages coming from the async endpoint
     from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
-
     stats: EndpointStats,
+    /// If `true`, payloads on receive channels that were not read during this update will be cleared at the end of the update of the sync server, in the [crate::shared::QuinnetSyncPostUpdate] schedule.
+    pub clear_stale_received_payloads: bool,
 }
 
 impl Endpoint {
     pub(crate) fn new(
         endpoint_close_send: broadcast::Sender<()>,
         from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
+        clear_stale_received_payloads: bool,
     ) -> Self {
         Self {
             clients: HashMap::new(),
             client_id_gen: 0,
             opened_channels: HashMap::new(),
             default_channel: None,
-            available_channel_ids: (0..255).collect(),
+            available_channel_ids: (0..=ChannelId::MAX).collect(),
             close_sender: endpoint_close_send,
             from_async_endpoint_recv,
             stats: EndpointStats::default(),
+            clear_stale_received_payloads,
         }
     }
 
@@ -73,10 +78,11 @@ impl Endpoint {
     ) -> Result<Option<Bytes>, ServerReceiveError> {
         match self.clients.get_mut(&client_id) {
             Some(connection) => {
-                let (payload, received_msg_count) =
-                    connection.receive_payload_from(channel_id.into());
-                self.stats.received_messages_count += received_msg_count;
-                payload
+                let payload = connection.receive_payload_from(channel_id.into());
+                if payload.is_some() {
+                    self.stats.received_messages_count += 1;
+                }
+                Ok(payload)
             }
             None => Err(ServerReceiveError::UnknownClient(client_id)),
         }
@@ -506,7 +512,13 @@ impl Endpoint {
 
     pub(crate) fn dispatch_client_payloads(&mut self) {
         for connection in self.clients.values_mut() {
-            connection.dispatch_payloads_to_channels();
+            connection.dispatch_payloads_to_channel_buffers();
+        }
+    }
+
+    pub(crate) fn clear_stale_payloads_from_clients(&mut self) {
+        for connection in self.clients.values_mut() {
+            connection.clear_stale_received_payloads();
         }
     }
 }

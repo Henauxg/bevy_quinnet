@@ -18,7 +18,7 @@ use tokio::{
 use crate::{
     server::{
         certificate::{retrieve_certificate, CertificateRetrievalMode, ServerCertificate},
-        connection::ServerSideConnection,
+        connection::{ServerSideConnection, ServerSideConnectionConfig},
         endpoint::Endpoint,
     },
     shared::{
@@ -39,14 +39,20 @@ mod client_id;
 #[cfg(feature = "bincode-messages")]
 mod messages;
 
-mod connection;
-mod endpoint;
-mod error;
+/// Module for the server's endpoint connections
+pub mod connection;
+/// Module for the server's endpoint features
+pub mod endpoint;
+/// Module for the server's error types
+pub mod error;
 
 pub use error::*;
 
 /// Module for the server's certificate features
 pub mod certificate;
+
+/// Default value for the `clear_stale_payloads` field of the [`ServerEndpointConfiguration`]
+pub const DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS: bool = true;
 
 /// Connection event raised when a client just connected to the server. Raised in the CoreStage::PreUpdate stage.
 #[derive(Event, Debug, Copy, Clone)]
@@ -65,7 +71,12 @@ pub struct ConnectionLostEvent {
 /// Configuration of the server, used when the server starts an Endpoint
 #[derive(Debug, Clone)]
 pub struct ServerEndpointConfiguration {
-    local_bind_addr: SocketAddr,
+    /// Local address and port to bind to.
+    pub local_bind_addr: SocketAddr,
+    /// See [Endpoint::clear_stale_received_payloads]. Defaults to [DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS].
+    pub clear_stale_received_payloads: bool,
+    /// Configuration applied to each new connection accepted by this endpoint.
+    pub connections_config: ServerSideConnectionConfig,
 }
 
 impl ServerEndpointConfiguration {
@@ -89,7 +100,7 @@ impl ServerEndpointConfiguration {
     /// ```
     pub fn from_string(local_bind_addr_str: &str) -> Result<Self, AddrParseError> {
         let local_bind_addr = local_bind_addr_str.parse()?;
-        Ok(Self { local_bind_addr })
+        Ok(Self::from_addr(local_bind_addr))
     }
 
     /// Creates a new ServerEndpointConfiguration
@@ -108,9 +119,7 @@ impl ServerEndpointConfiguration {
     /// let config = ServerEndpointConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000);
     /// ```
     pub fn from_ip(local_bind_ip: impl Into<IpAddr>, local_bind_port: u16) -> Self {
-        Self {
-            local_bind_addr: SocketAddr::new(local_bind_ip.into(), local_bind_port),
-        }
+        Self::from_addr(SocketAddr::new(local_bind_ip.into(), local_bind_port))
     }
 
     /// Creates a new ServerEndpointConfiguration
@@ -131,7 +140,11 @@ impl ServerEndpointConfiguration {
     ///       );
     /// ```
     pub fn from_addr(local_bind_addr: SocketAddr) -> Self {
-        Self { local_bind_addr }
+        Self {
+            local_bind_addr,
+            clear_stale_received_payloads: DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS,
+            connections_config: ServerSideConnectionConfig::default(),
+        }
     }
 }
 
@@ -211,13 +224,12 @@ impl QuinnetServer {
         cert_mode: CertificateRetrievalMode,
         channels_config: ChannelsConfiguration,
     ) -> Result<ServerCertificate, EndpointStartError> {
-        // Endpoint configuration
         let server_cert = retrieve_certificate(cert_mode)?;
-        let mut endpoint_config = ServerConfig::with_single_cert(
+        let mut quinn_endpoint_config = ServerConfig::with_single_cert(
             server_cert.cert_chain.clone(),
             server_cert.priv_key.clone_key(),
         )?;
-        Arc::get_mut(&mut endpoint_config.transport)
+        Arc::get_mut(&mut quinn_endpoint_config.transport)
             .ok_or(EndpointStartError::LockAcquisitionFailure)?
             .keep_alive_interval(Some(DEFAULT_KEEP_ALIVE_INTERVAL_S));
 
@@ -232,14 +244,19 @@ impl QuinnetServer {
         self.runtime.spawn(async move {
             endpoint_task(
                 socket,
-                endpoint_config,
+                quinn_endpoint_config,
                 to_sync_endpoint_send.clone(),
                 endpoint_close_recv,
+                config.connections_config,
             )
             .await;
         });
 
-        let mut endpoint = Endpoint::new(endpoint_close_send, from_async_endpoint_recv);
+        let mut endpoint = Endpoint::new(
+            endpoint_close_send,
+            from_async_endpoint_recv,
+            config.clear_stale_received_payloads,
+        );
         for channel_type in channels_config.configs() {
             endpoint.unchecked_open_channel(*channel_type)?;
         }
@@ -279,6 +296,7 @@ async fn endpoint_task(
     endpoint_config: ServerConfig,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
     mut endpoint_close_recv: broadcast::Receiver<()>,
+    connections_config: ServerSideConnectionConfig,
 ) {
     let endpoint = QuinnEndpoint::new(
         EndpointConfig::default(),
@@ -299,10 +317,12 @@ async fn endpoint_task(
                     Err(err) => error!("An incoming connection failed: {}", err),
                     Ok(connection) => {
                         let to_sync_endpoint_send = to_sync_endpoint_send.clone();
+                        let config = connections_config.clone();
                         tokio::spawn(async move {
                             client_connection_task(
                                 connection,
-                                to_sync_endpoint_send
+                                to_sync_endpoint_send,
+                                config
                             )
                             .await
                         });
@@ -316,6 +336,7 @@ async fn endpoint_task(
 async fn client_connection_task(
     connection_handle: quinn::Connection,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
+    connections_config: ServerSideConnectionConfig,
 ) {
     let (client_close_send, client_close_recv) =
         broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
@@ -338,6 +359,7 @@ async fn client_connection_task(
                 to_connection_send,
                 from_channels_recv,
                 to_channels_send,
+                connections_config,
             ),
         ))
         .await
@@ -453,14 +475,14 @@ pub fn pre_update_sync_server(
     }
 }
 
-/// Clears invalid payloads from all connections
+/// Clears stale payloads on all receive channels
 pub fn post_update_sync_server(mut server: ResMut<QuinnetServer>) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
 
-    for connection in endpoint.clients.values_mut() {
-        connection.clear_invalid_payloads();
+    if endpoint.clear_stale_received_payloads {
+        endpoint.clear_stale_payloads_from_clients();
     }
 }
 
