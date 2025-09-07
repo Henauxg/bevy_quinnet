@@ -14,8 +14,8 @@ use crate::{
     server::{EndpointConnectionAlreadyClosed, ServerSendError, ServerSyncMessage},
     shared::{
         channels::{
-            Channel, ChannelAsyncMessage, ChannelId, ChannelKind, ChannelSyncMessage, CloseReason,
-            MAX_CHANNEL_COUNT,
+            Channel, ChannelAsyncMessage, ChannelConfig, ChannelId, ChannelSyncMessage,
+            CloseReason, MAX_CHANNEL_COUNT,
         },
         error::{AsyncChannelError, ChannelCloseError},
         InternalConnectionRef, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
@@ -114,7 +114,7 @@ impl ServerSideConnection {
     pub(crate) fn create_connection_channel(
         &mut self,
         id: ChannelId,
-        kind: ChannelKind,
+        kind: ChannelConfig,
     ) -> Result<(), AsyncChannelError> {
         let channel = self.create_unregistered_connection_channel(id, kind)?;
         self.register_connection_channel(channel);
@@ -124,7 +124,7 @@ impl ServerSideConnection {
     pub(crate) fn create_unregistered_connection_channel(
         &mut self,
         id: ChannelId,
-        kind: ChannelKind,
+        kind: ChannelConfig,
     ) -> Result<Channel, AsyncChannelError> {
         let (bytes_to_channel_send, bytes_to_channel_recv) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);

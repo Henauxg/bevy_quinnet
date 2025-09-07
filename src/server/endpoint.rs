@@ -14,20 +14,20 @@ use crate::{
         ServerReceiveError, ServerSendError, ServerSyncMessage,
     },
     shared::{
-        channels::{Channel, ChannelId, ChannelKind, CloseReason},
+        channels::{Channel, ChannelConfig, ChannelId, CloseReason},
         error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
         ClientId,
     },
 };
 
-/// By default, when starting an [Endpoint], Quinnet creates 1 channel instance of each [ChannelKind], each with their own [ChannelId].
-/// Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelKind::OrderedReliable] channel.
+/// By default, when starting an [Endpoint], Quinnet creates 1 channel instance of each [ChannelConfig], each with their own [ChannelId].
+/// Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelConfig::OrderedReliable] channel.
 pub struct Endpoint {
     pub(crate) clients: HashMap<ClientId, ServerSideConnection>,
     /// Incremental client id generator
     client_id_gen: ClientId,
     /// Opened send channels types on this endpoint
-    opened_channels: HashMap<ChannelId, ChannelKind>,
+    opened_channels: HashMap<ChannelId, ChannelConfig>,
     /// Internal ordered pool of available channel ids
     available_channel_ids: BTreeSet<ChannelId>,
     /// Default send channel id
@@ -362,14 +362,14 @@ impl Endpoint {
         &self.stats
     }
 
-    /// Opens a channel of the requested [ChannelKind] and returns its [ChannelId].
+    /// Opens a channel of the requested [ChannelConfig] and returns its [ChannelId].
     ///
     /// If no channels were previously opened, the opened channel will be the new default channel.
     ///
     /// Can fail if the Endpoint is closed or if too many channels are already opened.
     pub fn open_channel(
         &mut self,
-        channel_type: ChannelKind,
+        channel_type: ChannelConfig,
     ) -> Result<ChannelId, ChannelCreationError> {
         let channel_id = match self.available_channel_ids.pop_first() {
             Some(channel_id) => channel_id,
@@ -387,7 +387,7 @@ impl Endpoint {
     /// Assumes presence of available ids in `available_channel_ids`
     pub(crate) fn unchecked_open_channel(
         &mut self,
-        channel_type: ChannelKind,
+        channel_type: ChannelConfig,
     ) -> Result<ChannelId, AsyncChannelError> {
         let channel_id = self.available_channel_ids.pop_first().unwrap();
         match self.create_endpoint_channel(channel_id, channel_type) {
@@ -403,7 +403,7 @@ impl Endpoint {
     fn create_endpoint_channel(
         &mut self,
         channel_id: ChannelId,
-        channel_type: ChannelKind,
+        channel_type: ChannelConfig,
     ) -> Result<ChannelId, AsyncChannelError> {
         let unregistered_channels =
             self.create_unregistered_endpoint_channels(channel_id, channel_type)?;
@@ -424,7 +424,7 @@ impl Endpoint {
     fn create_unregistered_endpoint_channels(
         &mut self,
         channel_id: ChannelId,
-        channel_type: ChannelKind,
+        channel_type: ChannelConfig,
     ) -> Result<HashMap<ClientId, Channel>, AsyncChannelError> {
         let mut unregistered_channels = HashMap::new();
         for (&client_id, client_connection) in self.clients.iter_mut() {
@@ -438,7 +438,7 @@ impl Endpoint {
 
     /// Closes the channel with the corresponding [ChannelId].
     ///
-    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelKind], before fully closing.
+    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelConfig], before fully closing.
     ///
     /// If the closed channel is the current default channel, the default channel gets set to `None`.
     ///
@@ -460,11 +460,13 @@ impl Endpoint {
     }
 
     /// Set the default channel via its [ChannelId]
+    #[inline(always)]
     pub fn set_default_channel(&mut self, channel_id: ChannelId) {
         self.default_channel = Some(channel_id);
     }
 
     /// Get the default [ChannelId]
+    #[inline(always)]
     pub fn get_default_channel(&self) -> Option<ChannelId> {
         self.default_channel
     }

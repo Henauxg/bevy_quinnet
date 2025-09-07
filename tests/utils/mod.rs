@@ -24,7 +24,7 @@ use bevy_quinnet::{
         QuinnetServer, QuinnetServerPlugin, ServerEndpointConfiguration,
     },
     shared::{
-        channels::{ChannelId, ChannelKind, ChannelsConfiguration},
+        channels::{ChannelConfig, ChannelId, ChannelsConfiguration},
         ClientId,
     },
 };
@@ -259,7 +259,7 @@ pub fn close_server_channel(channel_id: ChannelId, app: &mut App) {
         .expect("Failed to close channel")
 }
 
-pub fn open_client_channel(channel_type: ChannelKind, app: &mut App) -> ChannelId {
+pub fn open_client_channel(channel_type: ChannelConfig, app: &mut App) -> ChannelId {
     let mut client = app.world_mut().resource_mut::<QuinnetClient>();
     client
         .connection_mut()
@@ -267,7 +267,7 @@ pub fn open_client_channel(channel_type: ChannelKind, app: &mut App) -> ChannelI
         .expect("Failed to open channel")
 }
 
-pub fn open_server_channel(channel_type: ChannelKind, app: &mut App) -> ChannelId {
+pub fn open_server_channel(channel_type: ChannelConfig, app: &mut App) -> ChannelId {
     let mut server = app.world_mut().resource_mut::<QuinnetServer>();
     server
         .endpoint_mut()

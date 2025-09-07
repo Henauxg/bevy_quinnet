@@ -33,8 +33,8 @@ mod messages;
 use crate::shared::{
     channels::{
         spawn_recv_channels_tasks, spawn_send_channels_tasks_spawner, Channel, ChannelAsyncMessage,
-        ChannelId, ChannelKind, ChannelSyncMessage, ChannelsConfiguration, CloseReason, CloseRecv,
-        CloseSend,
+        ChannelConfig, ChannelId, ChannelSyncMessage, ChannelsConfiguration, CloseReason,
+        CloseRecv, CloseSend,
     },
     error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
     ClientId, InternalConnectionRef, DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE,
@@ -637,14 +637,14 @@ impl ClientSideConnection {
         &self.cert_mode
     }
 
-    /// Opens a channel of the requested [ChannelKind] and returns its [ChannelId].
+    /// Opens a channel of the requested [ChannelConfig] and returns its [ChannelId].
     ///
     /// If no channels were previously opened, the opened channel will be the new default channel.
     ///
     /// Can fail if the Connection is closed.
     pub fn open_channel(
         &mut self,
-        channel_type: ChannelKind,
+        channel_type: ChannelConfig,
     ) -> Result<ChannelId, ChannelCreationError> {
         let channel_id = match self.available_channel_ids.pop_first() {
             Some(channel_id) => channel_id,
@@ -655,7 +655,7 @@ impl ClientSideConnection {
 
     fn unchecked_open_channel(
         &mut self,
-        channel_type: ChannelKind,
+        channel_type: ChannelConfig,
     ) -> Result<ChannelId, AsyncChannelError> {
         let channel_id = self.available_channel_ids.pop_first().unwrap();
         Ok(self.internal_open_channel(channel_id, channel_type)?)
@@ -664,7 +664,7 @@ impl ClientSideConnection {
     fn internal_open_channel(
         &mut self,
         channel_id: ChannelId,
-        channel_type: ChannelKind,
+        channel_type: ChannelConfig,
     ) -> Result<ChannelId, AsyncChannelError> {
         match self.create_channel(channel_id, channel_type) {
             Ok(channel_id) => {
@@ -683,7 +683,7 @@ impl ClientSideConnection {
 
     /// Closes the channel with the corresponding [ChannelId].
     ///
-    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelKind], before fully closing.
+    /// No new messages will be able to be sent on this channel, however, the channel will properly try to send all the messages that were previously pushed to it, according to its [ChannelConfig], before fully closing.
     ///
     /// If the closed channel is the current default channel, the default channel gets set to `None`.
     ///
@@ -718,7 +718,7 @@ impl ClientSideConnection {
     fn create_channel(
         &mut self,
         channel_id: ChannelId,
-        channel_type: ChannelKind,
+        channel_type: ChannelConfig,
     ) -> Result<ChannelId, AsyncChannelError> {
         let (bytes_to_channel_send, bytes_to_channel_recv) =
             mpsc::channel::<Bytes>(DEFAULT_MESSAGE_QUEUE_SIZE);

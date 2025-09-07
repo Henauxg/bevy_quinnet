@@ -51,14 +51,15 @@ impl Endpoint {
     /// Will return [`Err`] if:
     /// - the bytes accumulated from the client aren't deserializable to T.
     /// - or if this client is disconnected.
-    pub fn receive_message_from<T: serde::de::DeserializeOwned>(
+    pub fn receive_message_from<T: serde::de::DeserializeOwned, C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
-    ) -> Result<Option<(ChannelId, T)>, ServerMessageReceiveError> {
-        match self.receive_payload_from(client_id)? {
-            Some((channel_id, payload)) => {
+        channel_id: C,
+    ) -> Result<Option<T>, ServerMessageReceiveError> {
+        match self.receive_payload_from(client_id, channel_id)? {
+            Some(payload) => {
                 match bincode::serde::decode_from_slice(&payload, bincode::config::standard()) {
-                    Ok((msg, _size)) => Ok(Some((channel_id, msg))),
+                    Ok((msg, _size)) => Ok(Some(msg)),
                     Err(_) => Err(ServerMessageReceiveError::Deserialization),
                 }
             }
@@ -67,11 +68,12 @@ impl Endpoint {
     }
 
     /// [`Endpoint::receive_message_from`] that logs the error instead of returning a result.
-    pub fn try_receive_message_from<T: serde::de::DeserializeOwned>(
+    pub fn try_receive_message_from<T: serde::de::DeserializeOwned, C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
-    ) -> Option<(ChannelId, T)> {
-        match self.receive_message_from(client_id) {
+        channel_id: C,
+    ) -> Option<T> {
+        match self.receive_message_from(client_id, channel_id) {
             Ok(message) => message,
             Err(err) => {
                 error!("try_receive_message: {}", err);
@@ -86,7 +88,7 @@ impl Endpoint {
         client_id: ClientId,
         message: T,
     ) -> Result<(), ServerMessageSendError> {
-        match self.default_channel {
+        match self.get_default_channel() {
             Some(channel) => self.send_message_on(client_id, channel, message),
             None => Err(ServerMessageSendError::NoDefaultChannel),
         }
@@ -138,7 +140,7 @@ impl Endpoint {
         client_ids: I,
         message: T,
     ) -> Result<(), ServerGroupMessageSendError> {
-        match self.default_channel {
+        match self.get_default_channel() {
             Some(channel) => self.send_group_message_on(client_ids, channel, message),
             None => Err(ServerGroupMessageSendError::NoDefaultChannel),
         }
@@ -209,7 +211,7 @@ impl Endpoint {
         &mut self,
         message: T,
     ) -> Result<(), ServerGroupMessageSendError> {
-        match self.default_channel {
+        match self.get_default_channel() {
             Some(channel) => self.broadcast_message_on(channel, message),
             None => Err(ServerGroupMessageSendError::NoDefaultChannel),
         }

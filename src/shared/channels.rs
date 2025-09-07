@@ -42,7 +42,7 @@ pub(crate) enum CloseReason {
 
 /// Type of a channel, offering different delivery guarantees.
 #[derive(Debug, Copy, Clone)]
-pub enum ChannelKind {
+pub enum ChannelConfig {
     /// An OrderedReliable channel ensures that messages sent are delivered, and are processed by the receiving end in the same order as they were sent.
     OrderedReliable {
         /// Maximum size of payloads sent on this channel, in bytes
@@ -59,9 +59,25 @@ pub enum ChannelKind {
     Unreliable,
 }
 
-impl Default for ChannelKind {
+impl Default for ChannelConfig {
     fn default() -> Self {
-        ChannelKind::OrderedReliable {
+        ChannelConfig::default_ordered_reliable()
+    }
+}
+impl ChannelConfig {
+    /// Default channel configuration for an Unreliable channel.
+    pub const fn default_unreliable() -> Self {
+        ChannelConfig::Unreliable
+    }
+    /// Default channel configuration for an UnorderedReliable channel.
+    pub const fn default_unordered_reliable() -> Self {
+        ChannelConfig::UnorderedReliable {
+            max_frame_size: DEFAULT_MAX_RELIABLE_FRAME_LEN,
+        }
+    }
+    /// Default channel configuration for an OrderedReliable channel.
+    pub const fn default_ordered_reliable() -> Self {
+        ChannelConfig::OrderedReliable {
             max_frame_size: DEFAULT_MAX_RELIABLE_FRAME_LEN,
         }
     }
@@ -78,7 +94,7 @@ pub(crate) enum ChannelAsyncMessage {
 pub(crate) enum ChannelSyncMessage {
     CreateChannel {
         id: ChannelId,
-        kind: ChannelKind,
+        kind: ChannelConfig,
         bytes_to_channel_recv: mpsc::Receiver<Bytes>,
         channel_close_recv: mpsc::Receiver<()>,
     },
@@ -137,29 +153,29 @@ impl Channel {
 ///
 /// Declare 3 configured channels with their respective ids `0`, `1` and `2`:
 /// ```
-/// use bevy_quinnet::shared::channels::{ChannelKind, ChannelsConfiguration};
+/// use bevy_quinnet::shared::channels::{ChannelConfig, ChannelsConfiguration};
 ///
-/// let configs = ChannelsConfiguration::from_types(vec![
-///     ChannelKind::OrderedReliable {
+/// let configs = ChannelsConfiguration::from_configs(vec![
+///     ChannelConfig::OrderedReliable {
 ///         max_frame_size: 8 * 1_024 * 1_024,
 ///     },
-///     ChannelKind::UnorderedReliable {
+///     ChannelConfig::UnorderedReliable {
 ///         max_frame_size: 10 * 1_024,
 ///     },
-///     ChannelKind::OrderedReliable {
+///     ChannelConfig::OrderedReliable {
 ///         max_frame_size: 10 * 1_024,
 ///     },
 /// ]).unwrap();
 /// ```
 #[derive(Debug, Clone)]
 pub struct ChannelsConfiguration {
-    channels: Vec<ChannelKind>,
+    channels: Vec<ChannelConfig>,
 }
 
 impl Default for ChannelsConfiguration {
     fn default() -> Self {
         Self {
-            channels: vec![ChannelKind::OrderedReliable {
+            channels: vec![ChannelConfig::OrderedReliable {
                 max_frame_size: DEFAULT_MAX_RELIABLE_FRAME_LEN,
             }],
         }
@@ -174,11 +190,11 @@ impl ChannelsConfiguration {
         }
     }
 
-    /// New configuration from a simple list of [`ChannelKind`].
+    /// New configuration from a simple list of [`ChannelConfig`].
     ///
     /// Opened channels (and their [`ChannelId`]) will have the same order as in this collection
-    pub fn from_types(
-        channel_types: Vec<ChannelKind>,
+    pub fn from_configs(
+        channel_types: Vec<ChannelConfig>,
     ) -> Result<ChannelsConfiguration, ChannelConfigError> {
         if channel_types.len() > MAX_CHANNEL_COUNT {
             Err(ChannelConfigError::MaxChannelsCountReached)
@@ -189,10 +205,10 @@ impl ChannelsConfiguration {
         }
     }
 
-    /// Adds one element to the configuration from a [`ChannelKind`].
+    /// Adds one element to the configuration from a [`ChannelConfig`].
     ///
     /// Opened channels (and their [`ChannelId`]) will have the same order as their insertion order.
-    pub fn add(&mut self, channel_type: ChannelKind) -> Option<ChannelId> {
+    pub fn add(&mut self, channel_type: ChannelConfig) -> Option<ChannelId> {
         if self.channels.len() < MAX_CHANNEL_COUNT {
             self.channels.push(channel_type);
             Some((self.channels.len() - 1) as u8)
@@ -201,7 +217,7 @@ impl ChannelsConfiguration {
         }
     }
 
-    pub(crate) fn configs(&self) -> &Vec<ChannelKind> {
+    pub(crate) fn configs(&self) -> &Vec<ChannelConfig> {
         &self.channels
     }
 }
@@ -267,15 +283,15 @@ pub(crate) async fn send_channels_tasks_spawner(
                 };
 
                 match kind {
-                    ChannelKind::OrderedReliable { max_frame_size } => {
+                    ChannelConfig::OrderedReliable { max_frame_size } => {
                         tokio::spawn(async move { ordered_reliable_channel_task(channel_task_data, max_frame_size).await });
                     }
-                    ChannelKind::UnorderedReliable { max_frame_size } => {
+                    ChannelConfig::UnorderedReliable { max_frame_size } => {
                         tokio::spawn(
                             async move { unordered_reliable_channel_task(channel_task_data, max_frame_size).await },
                         );
                     }
-                    ChannelKind::Unreliable => {
+                    ChannelConfig::Unreliable => {
                         tokio::spawn(async move { unreliable_channel_task(channel_task_data).await });
                     }
                 }
