@@ -1,4 +1,8 @@
-use std::{net::Ipv6Addr, thread::sleep, time::Duration};
+use std::{
+    net::{Ipv6Addr, SocketAddr},
+    thread::sleep,
+    time::Duration,
+};
 
 use bevy::{
     app::ScheduleRunnerPlugin,
@@ -16,8 +20,8 @@ use bevy_quinnet::{
         QuinnetClient, QuinnetClientPlugin,
     },
     server::{
-        self, certificate::CertificateRetrievalMode, QuinnetServer, QuinnetServerPlugin,
-        ServerEndpointConfiguration,
+        self, certificate::CertificateRetrievalMode, connection::ServerSideConnectionConfig,
+        QuinnetServer, QuinnetServerPlugin, ServerEndpointConfiguration,
     },
     shared::{
         channels::{ChannelId, ChannelKind, ChannelsConfiguration},
@@ -100,7 +104,12 @@ pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port
 pub fn start_listening(mut server: ResMut<QuinnetServer>, port: Res<Port>) {
     server
         .start_endpoint(
-            ServerEndpointConfiguration::from_ip(LOCAL_BIND_IP, port.0),
+            ServerEndpointConfiguration {
+                local_bind_addr: SocketAddr::new(LOCAL_BIND_IP.into(), port.0),
+                // During tests, we disable the clearing of stale payloads on the server since we check received messages after the whole Update shchedule.
+                clear_stale_received_payloads: false,
+                connections_config: ServerSideConnectionConfig::default(),
+            },
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_IP.to_string(),
             },
@@ -281,11 +290,11 @@ pub fn wait_for_client_message(
         {
             Ok(Some(payload)) => return payload,
             Ok(None) => (),
-            Err(_) => panic!("Deserialization should be correct"),
+            Err(err) => panic!("Error when receiving payload from client: {:?}", err),
         }
         sleep(Duration::from_secs_f32(0.05));
     }
-    panic!("Did not receive a message from the client in time");
+    panic!("Did not receive a message from client in time");
 }
 
 pub fn wait_for_server_message(client_app: &mut App) -> (ChannelId, bytes::Bytes) {
@@ -299,11 +308,11 @@ pub fn wait_for_server_message(client_app: &mut App) -> (ChannelId, bytes::Bytes
         {
             Ok(Some(channel_msg)) => return channel_msg,
             Ok(None) => (),
-            Err(_) => panic!("Deserialization should be correct"),
+            Err(err) => panic!("Error when receiving payload from server: {:?}", err),
         }
         sleep(Duration::from_secs_f32(0.05));
     }
-    panic!("Did not receive a message from the server in time");
+    panic!("Did not receive a message from server in time");
 }
 
 pub fn send_and_test_client_message(
