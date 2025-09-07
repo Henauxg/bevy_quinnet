@@ -16,7 +16,7 @@ use bevy_quinnet::{
 };
 
 use crate::{
-    protocol::{ClientMessage, PaddleInput, ServerChannel, ServerMessage},
+    protocol::{ClientChannel, ClientMessage, PaddleInput, ServerChannel, ServerMessage},
     BrickId, Velocity, WallLocation, BALL_DIAMETER, BALL_SIZE, BALL_SPEED, BOTTOM_WALL, BRICK_SIZE,
     GAP_BETWEEN_BRICKS, GAP_BETWEEN_BRICKS_AND_SIDES, GAP_BETWEEN_PADDLE_AND_BRICKS,
     GAP_BETWEEN_PADDLE_AND_FLOOR, LEFT_WALL, LOCAL_BIND_IP, PADDLE_PADDING, PADDLE_SIZE,
@@ -95,7 +95,8 @@ pub(crate) fn handle_client_messages(
 ) {
     let endpoint = server.endpoint_mut();
     for client_id in endpoint.clients() {
-        while let Some((_, message)) = endpoint.try_receive_message_from::<ClientMessage>(client_id)
+        while let Some(message) = endpoint
+            .try_receive_message_from::<ClientMessage, _>(client_id, ClientChannel::PaddleCommands)
         {
             match message {
                 ClientMessage::PaddleInput { input } => {

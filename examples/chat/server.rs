@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use bevy_quinnet::{
     server::{
-        certificate::CertificateRetrievalMode, ConnectionLostEvent, Endpoint, QuinnetServer,
-        QuinnetServerPlugin, ServerEndpointConfiguration,
+        certificate::CertificateRetrievalMode, endpoint::Endpoint, ConnectionLostEvent,
+        QuinnetServer, QuinnetServerPlugin, ServerEndpointConfiguration,
     },
-    shared::{channels::ChannelsConfiguration, ClientId},
+    shared::ClientId,
 };
 
-use protocol::{ClientMessage, ServerMessage};
+use protocol::{ClientMessage, NetworkChannels, ServerMessage};
 
 mod protocol;
 
@@ -21,7 +21,8 @@ struct Users {
 fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut users: ResMut<Users>) {
     let endpoint = server.endpoint_mut();
     for client_id in endpoint.clients() {
-        while let Some((_, message)) = endpoint.try_receive_message_from::<ClientMessage>(client_id)
+        while let Some(message) =
+            endpoint.try_receive_message_from::<ClientMessage, _>(client_id, NetworkChannels::Chat)
         {
             match message {
                 ClientMessage::Join { name } => {
@@ -56,7 +57,7 @@ fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut users: ResMut<U
                     }
                 }
                 ClientMessage::Disconnect {} => {
-                    // We tell the server to disconnect this user
+                    // Tell the server endpoint to disconnect this user
                     endpoint.disconnect_client(client_id).unwrap();
                     handle_disconnect(endpoint, &mut users, client_id);
                 }
@@ -120,7 +121,7 @@ fn start_listening(mut server: ResMut<QuinnetServer>) {
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: "::1".to_string(),
             },
-            ChannelsConfiguration::default(),
+            NetworkChannels::channels_configuration(),
         )
         .unwrap();
 }

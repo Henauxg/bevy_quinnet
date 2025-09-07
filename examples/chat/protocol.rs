@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use bevy_quinnet::shared::ClientId;
+use bevy_quinnet::shared::{
+    channels::{ChannelConfig, ChannelId, ChannelsConfiguration},
+    ClientId,
+};
 use serde::{Deserialize, Serialize};
 
 // Messages from clients
@@ -29,4 +32,25 @@ pub enum ServerMessage {
         client_id: ClientId,
         usernames: HashMap<ClientId, String>,
     },
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+#[repr(u8)]
+pub enum NetworkChannels {
+    Chat,
+}
+
+impl Into<ChannelId> for NetworkChannels {
+    fn into(self) -> ChannelId {
+        self as ChannelId
+    }
+}
+
+impl NetworkChannels {
+    #[allow(dead_code)]
+    pub fn channels_configuration() -> ChannelsConfiguration {
+        ChannelsConfiguration::from_configs(vec![ChannelConfig::default_ordered_reliable()])
+            .unwrap()
+    }
 }

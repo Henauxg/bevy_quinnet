@@ -59,6 +59,7 @@ bevy = { version = "0.16.0", default-features = false, features = [
 	"x11",                # X11 display server support
 ] }
 rand = "0.8.5"
+strum = { version = "0.27.2", features = ["derive"] }
 
 [[example]]
 name = "breakout"

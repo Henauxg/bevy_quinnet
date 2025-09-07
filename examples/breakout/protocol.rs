@@ -1,9 +1,10 @@
 use bevy::prelude::{Entity, Vec2, Vec3};
 use bevy_quinnet::shared::{
-    channels::{ChannelId, ChannelKind, ChannelsConfiguration, DEFAULT_MAX_RELIABLE_FRAME_LEN},
+    channels::{ChannelConfig, ChannelId, ChannelsConfiguration},
     ClientId,
 };
 use serde::{Deserialize, Serialize};
+use strum::{EnumIter, IntoEnumIterator};
 
 use crate::BrickId;
 
@@ -60,6 +61,7 @@ pub(crate) enum ServerMessage {
     },
 }
 
+#[derive(Debug, Clone, Copy, EnumIter)]
 #[repr(u8)]
 pub enum ClientChannel {
     PaddleCommands,
@@ -70,33 +72,50 @@ impl Into<ChannelId> for ClientChannel {
     }
 }
 impl ClientChannel {
+    pub fn to_channel_config(self) -> ChannelConfig {
+        match self {
+            ClientChannel::PaddleCommands => ChannelConfig::default_ordered_reliable(),
+        }
+    }
     pub fn channels_configuration() -> ChannelsConfiguration {
-        ChannelsConfiguration::from_types(vec![ChannelKind::default()]).unwrap()
+        ChannelsConfiguration::from_configs(
+            ClientChannel::iter()
+                .map(ClientChannel::to_channel_config)
+                .collect(),
+        )
+        .unwrap()
     }
 }
 
+#[derive(Debug, Clone, Copy, EnumIter)]
 #[repr(u8)]
 pub enum ServerChannel {
     GameSetup,
     GameEvents,
     PaddleUpdates,
 }
+
 impl Into<ChannelId> for ServerChannel {
     fn into(self) -> ChannelId {
         self as ChannelId
     }
 }
+
 impl ServerChannel {
+    pub fn to_channel_config(self) -> ChannelConfig {
+        match self {
+            ServerChannel::GameSetup => ChannelConfig::default_ordered_reliable(),
+            ServerChannel::GameEvents => ChannelConfig::default_unordered_reliable(),
+            ServerChannel::PaddleUpdates => ChannelConfig::default_unreliable(),
+        }
+    }
+
     pub fn channels_configuration() -> ChannelsConfiguration {
-        ChannelsConfiguration::from_types(vec![
-            ChannelKind::OrderedReliable {
-                max_frame_size: DEFAULT_MAX_RELIABLE_FRAME_LEN,
-            },
-            ChannelKind::UnorderedReliable {
-                max_frame_size: DEFAULT_MAX_RELIABLE_FRAME_LEN,
-            },
-            ChannelKind::Unreliable,
-        ])
+        ChannelsConfiguration::from_configs(
+            ServerChannel::iter()
+                .map(ServerChannel::to_channel_config)
+                .collect(),
+        )
         .unwrap()
     }
 }
