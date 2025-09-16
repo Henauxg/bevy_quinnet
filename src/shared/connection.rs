@@ -26,6 +26,8 @@ use crate::shared::{
 pub const DEFAULT_MAX_BUFFERED_PAYLOADS_COUNT_PER_CHANNEL: usize = 512;
 /// Default value for the `max_receive_channels_count` field of a [`ConnectionConfig`]
 pub const DEFAULT_MAX_RECEIVE_CHANNEL_COUNT: usize = MAX_CHANNEL_COUNT;
+/// Default value for the `clear_stale_payloads` fields
+pub const DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS: bool = true;
 
 pub(crate) type PayloadSend = mpsc::Sender<(ChannelId, Bytes)>;
 pub(crate) type PayloadRecv = mpsc::Receiver<(ChannelId, Bytes)>;
@@ -202,7 +204,7 @@ impl<S> PeerConnection<S> {
         }
     }
 
-    pub(crate) fn clear_stale_received_payloads(&mut self) {
+    pub(crate) fn internal_clear_stale_received_payloads(&mut self) {
         for payloads in self.receive_channels.iter_mut() {
             payloads.clear();
         }

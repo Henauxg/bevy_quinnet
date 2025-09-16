@@ -35,6 +35,7 @@ use crate::shared::{
     connection::{
         ChannelAsyncMsgRecv, ChannelAsyncMsgSend, ChannelSyncMsgRecv, ChannelSyncMsgSend,
         ChannelsIdsPool, PayloadRecv, PayloadSend, PeerConnection,
+        DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS,
     },
     error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
     ClientId, InternalConnectionRef, DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE,
@@ -90,6 +91,10 @@ pub struct ClientConfiguration {
     pub server_hostname: String,
     /// Local address and port to bind to.
     pub local_bind_addr: SocketAddr,
+    /// If `true`, payloads on receive channels that were not read during this update will be cleared at the end of the update of the sync client, in the [crate::shared::QuinnetSyncPostUpdate] schedule.
+    ///
+    /// Defaults to [DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS].
+    pub clear_stale_received_payloads: bool,
 }
 
 impl ClientConfiguration {
@@ -221,6 +226,7 @@ impl ClientConfiguration {
             server_addr,
             server_hostname,
             local_bind_addr,
+            clear_stale_received_payloads: DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS,
         }
     }
 }
@@ -523,6 +529,12 @@ impl ClientSideConnection {
         Ok(())
     }
 
+    pub(crate) fn clear_stale_received_payloads(&mut self) {
+        if self.specific.client_config.clear_stale_received_payloads {
+            self.internal_clear_stale_received_payloads();
+        }
+    }
+
     /// Immediately prevents new messages from being sent on the connection and signal the connection to closes all its background tasks.
     ///
     /// Before trully closing, the connection will wait for all buffered messages in all its opened channels to be properly sent according to their respective channel type.
@@ -606,16 +618,26 @@ impl ClientSideConnection {
         self.specific.send_channel_ids.default_channel()
     }
 
-    /// Returns the configuration used by this connection
-    #[inline(always)]
-    pub fn endpoint_configuration(&self) -> &ClientConfiguration {
-        &self.specific.client_config
-    }
-
     /// Returns the certificate verification configuration used by this connection
     #[inline(always)]
     pub fn certificate_verification_mode(&self) -> &CertificateVerificationMode {
         &self.specific.cert_mode
+    }
+
+    /// Enables or disables [`ClientConfiguration::clear_stale_received_payloads`] on this connection.
+    #[inline(always)]
+    pub fn set_clear_stale_client_payloads(&mut self, enable: bool) {
+        self.specific.client_config.clear_stale_received_payloads = enable;
+    }
+
+    /// Returns the channels configuration used by this connection
+    pub fn channels_config(&self) -> &ChannelsConfiguration {
+        &self.specific.channels_config
+    }
+
+    /// Returns the client configuration used by this connection
+    pub fn client_config(&self) -> &ClientConfiguration {
+        &self.specific.client_config
     }
 }
 

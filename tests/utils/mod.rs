@@ -108,7 +108,7 @@ pub fn start_listening(mut server: ResMut<QuinnetServer>, port: Res<Port>) {
         .start_endpoint(
             ServerEndpointConfiguration {
                 local_bind_addr: SocketAddr::new(LOCAL_BIND_IP.into(), port.0),
-                // During tests, we disable the clearing of stale payloads on the server since we check received messages after the whole Update shchedule.
+                // During tests, we disable the clearing of stale payloads on the server since we check received messages after the whole Update schedule.
                 clear_stale_received_payloads: false,
                 connections_config: ConnectionConfig::default(),
             },

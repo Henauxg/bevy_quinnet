@@ -26,7 +26,7 @@ use crate::{
             tasks::{spawn_recv_channels_tasks, spawn_send_channels_tasks_spawner},
             ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelsConfiguration,
         },
-        connection::{ConnectionConfig, PeerConnection},
+        connection::{ConnectionConfig, PeerConnection, DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS},
         AsyncRuntime, ClientId, QuinnetSyncPostUpdate, QuinnetSyncPreUpdate,
         DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE, DEFAULT_KEEP_ALIVE_INTERVAL_S,
         DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
@@ -51,9 +51,6 @@ pub use error::*;
 
 /// Module for the server's certificate features
 pub mod certificate;
-
-/// Default value for the `clear_stale_payloads` field of the [`ServerEndpointConfiguration`]
-pub const DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS: bool = true;
 
 /// Connection event raised when a client just connected to the server. Raised in the CoreStage::PreUpdate stage.
 #[derive(Event, Debug, Copy, Clone)]

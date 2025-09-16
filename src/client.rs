@@ -19,7 +19,7 @@ use crate::{
         channels::{ChannelAsyncMessage, ChannelsConfiguration},
         connection::ConnectionConfig,
         error::AsyncChannelError,
-        AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncPreUpdate,
+        AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncPostUpdate, QuinnetSyncPreUpdate,
     },
 };
 
@@ -390,7 +390,14 @@ pub fn handle_client_events_and_dispatch_payloads(
     }
 }
 
-/// Quinnet Server's plugin
+/// Clears stale payloads on all receive channels
+pub fn clear_stale_client_payloads(mut client: ResMut<QuinnetClient>) {
+    for connection in client.connections.values_mut() {
+        connection.clear_stale_received_payloads();
+    }
+}
+
+/// Quinnet Client's plugin
 ///
 /// It is possbile to add both this plugin and the [`crate::server::QuinnetServerPlugin`]
 pub struct QuinnetClientPlugin {
@@ -425,6 +432,12 @@ impl Plugin for QuinnetClientPlugin {
             PreUpdate,
             handle_client_events_and_dispatch_payloads
                 .in_set(QuinnetSyncPreUpdate)
+                .run_if(resource_exists::<QuinnetClient>),
+        );
+        app.add_systems(
+            Last,
+            clear_stale_client_payloads
+                .in_set(QuinnetSyncPostUpdate)
                 .run_if(resource_exists::<QuinnetClient>),
         );
     }

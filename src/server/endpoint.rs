@@ -504,7 +504,7 @@ impl Endpoint {
 
     pub(crate) fn clear_stale_payloads_from_clients(&mut self) {
         for connection in self.clients.values_mut() {
-            connection.clear_stale_received_payloads();
+            connection.internal_clear_stale_received_payloads();
         }
     }
 }
