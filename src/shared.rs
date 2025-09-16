@@ -7,10 +7,12 @@ use bevy::{
 use channels::MAX_CHANNEL_COUNT;
 use tokio::runtime::Runtime;
 
-/// Certificate features shared by client & server
+/// Certificate functionalities shared by client & server
 pub mod certificate;
-/// Channel features shared by client & server
+/// Channel functionalities shared by client & server
 pub mod channels;
+/// Connection functionalities shared by client & server
+pub mod connection;
 /// Shared error types
 pub mod error;
 

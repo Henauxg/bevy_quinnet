@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use bevy::{log::error, platform::collections::HashMap};
 use bytes::Bytes;
 use tokio::sync::{
@@ -9,12 +7,13 @@ use tokio::sync::{
 
 use crate::{
     server::{
-        connection::ServerSideConnection, ServerAsyncMessage, ServerDisconnectError,
+        connection::ServerConnection, ServerAsyncMessage, ServerDisconnectError,
         ServerGroupPayloadSendError, ServerGroupSendError, ServerPayloadSendError,
         ServerReceiveError, ServerSendError, ServerSyncMessage,
     },
     shared::{
         channels::{Channel, ChannelConfig, ChannelId, CloseReason},
+        connection::{ChannelsIdsPool, PeerConnection},
         error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
         ClientId,
     },
@@ -23,15 +22,13 @@ use crate::{
 /// By default, when starting an [Endpoint], Quinnet creates 1 channel instance of each [ChannelConfig], each with their own [ChannelId].
 /// Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, this default channel is a [ChannelConfig::OrderedReliable] channel.
 pub struct Endpoint {
-    pub(crate) clients: HashMap<ClientId, ServerSideConnection>,
+    pub(crate) clients: HashMap<ClientId, PeerConnection<ServerConnection>>,
     /// Incremental client id generator
     client_id_gen: ClientId,
     /// Opened send channels types on this endpoint
     opened_channels: HashMap<ChannelId, ChannelConfig>,
     /// Internal ordered pool of available channel ids
-    available_channel_ids: BTreeSet<ChannelId>,
-    /// Default send channel id
-    default_channel: Option<ChannelId>,
+    send_channel_ids: ChannelsIdsPool,
     close_sender: broadcast::Sender<()>,
     /// Receiver for internal quinnet messages coming from the async endpoint
     from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
@@ -50,8 +47,9 @@ impl Endpoint {
             clients: HashMap::new(),
             client_id_gen: 0,
             opened_channels: HashMap::new(),
-            default_channel: None,
-            available_channel_ids: (0..=ChannelId::MAX).collect(),
+            // default_channel: None,
+            // available_channel_ids: (0..=ChannelId::MAX).collect(),
+            send_channel_ids: ChannelsIdsPool::new(),
             close_sender: endpoint_close_send,
             from_async_endpoint_recv,
             stats: EndpointStats::default(),
@@ -78,7 +76,7 @@ impl Endpoint {
     ) -> Result<Option<Bytes>, ServerReceiveError> {
         match self.clients.get_mut(&client_id) {
             Some(connection) => {
-                let payload = connection.receive_payload_from(channel_id.into());
+                let payload = connection.internal_receive_payload(channel_id.into());
                 if payload.is_some() {
                     self.stats.received_messages_count += 1;
                 }
@@ -109,7 +107,7 @@ impl Endpoint {
         client_ids: I,
         payload: T,
     ) -> Result<(), ServerGroupPayloadSendError> {
-        match self.default_channel {
+        match self.send_channel_ids.get_default_channel() {
             Some(channel) => self.send_group_payload_on(client_ids, channel, payload),
             None => Err(ServerGroupPayloadSendError::NoDefaultChannel),
         }
@@ -180,7 +178,7 @@ impl Endpoint {
         &mut self,
         payload: T,
     ) -> Result<(), ServerGroupPayloadSendError> {
-        match self.default_channel {
+        match self.send_channel_ids.get_default_channel() {
             Some(channel) => Ok(self.broadcast_payload_on(channel, payload)?),
             None => Err(ServerGroupPayloadSendError::NoDefaultChannel),
         }
@@ -201,7 +199,7 @@ impl Endpoint {
 
         let mut errs = vec![];
         for (&client_id, connection) in self.clients.iter_mut() {
-            if let Err(e) = connection.send_payload(channel_id.into(), payload.clone()) {
+            if let Err(e) = connection.internal_send_payload(channel_id.into(), payload.clone()) {
                 errs.push((client_id, e.into()));
             }
         }
@@ -235,7 +233,7 @@ impl Endpoint {
         client_id: ClientId,
         payload: T,
     ) -> Result<(), ServerPayloadSendError> {
-        match self.default_channel {
+        match self.send_channel_ids.get_default_channel() {
             Some(channel) => Ok(self.send_payload_on(client_id, channel, payload)?),
             None => Err(ServerPayloadSendError::NoDefaultChannel.into()),
         }
@@ -254,7 +252,7 @@ impl Endpoint {
         payload: T,
     ) -> Result<(), ServerSendError> {
         if let Some(client_connection) = self.clients.get_mut(&client_id) {
-            client_connection.send_payload(channel_id.into(), payload.into())
+            Ok(client_connection.internal_send_payload(channel_id.into(), payload.into())?)
         } else {
             Err(ServerSendError::UnknownClient(client_id))
         }
@@ -342,7 +340,10 @@ impl Endpoint {
     }
 
     /// Returns a mutable reference to a client connection if it exists
-    pub fn get_connection_mut(&mut self, client_id: ClientId) -> Option<&mut ServerSideConnection> {
+    pub fn connection_mut(
+        &mut self,
+        client_id: ClientId,
+    ) -> Option<&mut PeerConnection<ServerConnection>> {
         match self.clients.get_mut(&client_id) {
             Some(client_connection) => Some(client_connection),
             None => None,
@@ -350,7 +351,7 @@ impl Endpoint {
     }
 
     /// Returns a reference to a client connection if it exists
-    pub fn get_connection(&self, client_id: ClientId) -> Option<&ServerSideConnection> {
+    pub fn connection(&self, client_id: ClientId) -> Option<&PeerConnection<ServerConnection>> {
         match self.clients.get(&client_id) {
             Some(client_connection) => Some(client_connection),
             None => None,
@@ -371,32 +372,17 @@ impl Endpoint {
         &mut self,
         channel_type: ChannelConfig,
     ) -> Result<ChannelId, ChannelCreationError> {
-        let channel_id = match self.available_channel_ids.pop_first() {
-            Some(channel_id) => channel_id,
-            None => return Err(ChannelCreationError::MaxChannelsCountReached),
-        };
-        match self.create_endpoint_channel(channel_id, channel_type) {
-            Ok(channel_id) => Ok(channel_id),
-            Err(err) => {
-                self.available_channel_ids.insert(channel_id);
-                Err(err.into())
-            }
-        }
+        let channel_id = self.send_channel_ids.take_id()?;
+        Ok(self.create_endpoint_channel(channel_id, channel_type)?)
     }
 
-    /// Assumes presence of available ids in `available_channel_ids`
+    /// Assumes presence of available channel ids
     pub(crate) fn unchecked_open_channel(
         &mut self,
         channel_type: ChannelConfig,
     ) -> Result<ChannelId, AsyncChannelError> {
-        let channel_id = self.available_channel_ids.pop_first().unwrap();
-        match self.create_endpoint_channel(channel_id, channel_type) {
-            Ok(channel_id) => Ok(channel_id),
-            Err(err) => {
-                self.available_channel_ids.insert(channel_id);
-                Err(err)
-            }
-        }
+        let channel_id = self.send_channel_ids.take_id().unwrap();
+        self.create_endpoint_channel(channel_id, channel_type)
     }
 
     /// `channel_id` must be an available [ChannelId]
@@ -406,7 +392,13 @@ impl Endpoint {
         channel_type: ChannelConfig,
     ) -> Result<ChannelId, AsyncChannelError> {
         let unregistered_channels =
-            self.create_unregistered_endpoint_channels(channel_id, channel_type)?;
+            match self.create_unregistered_endpoint_channels(channel_id, channel_type) {
+                Ok(channels) => channels,
+                Err(err) => {
+                    self.send_channel_ids.release_id(channel_id);
+                    return Err(err);
+                }
+            };
         // Only commit the changes once all channels have been confirmed to be created.
         for (client_id, channel) in unregistered_channels {
             self.clients
@@ -415,9 +407,6 @@ impl Endpoint {
                 .register_connection_channel(channel);
         }
         self.opened_channels.insert(channel_id, channel_type);
-        if self.default_channel.is_none() {
-            self.default_channel = Some(channel_id);
-        }
         Ok(channel_id)
     }
 
@@ -446,13 +435,10 @@ impl Endpoint {
     pub fn close_channel(&mut self, channel_id: ChannelId) -> Result<(), ChannelCloseError> {
         match self.opened_channels.remove(&channel_id) {
             Some(_) => {
-                if Some(channel_id) == self.default_channel {
-                    self.default_channel = None;
-                }
                 for (_, connection) in self.clients.iter_mut() {
-                    connection.close_channel(channel_id)?;
+                    connection.internal_close_channel(channel_id)?;
                 }
-                self.available_channel_ids.insert(channel_id);
+                self.send_channel_ids.release_id(channel_id);
                 Ok(())
             }
             None => Err(ChannelCloseError::InvalidChannelId(channel_id)),
@@ -462,13 +448,13 @@ impl Endpoint {
     /// Set the default channel via its [ChannelId]
     #[inline(always)]
     pub fn set_default_channel(&mut self, channel_id: ChannelId) {
-        self.default_channel = Some(channel_id);
+        self.send_channel_ids.set_default_channel(channel_id);
     }
 
     /// Get the default [ChannelId]
     #[inline(always)]
     pub fn get_default_channel(&self) -> Option<ChannelId> {
-        self.default_channel
+        self.send_channel_ids.get_default_channel()
     }
 
     pub(crate) fn close_incoming_connections_handler(&mut self) -> Result<(), AsyncChannelError> {
@@ -481,7 +467,7 @@ impl Endpoint {
 
     pub(crate) fn handle_new_connection(
         &mut self,
-        mut connection: ServerSideConnection,
+        mut connection: PeerConnection<ServerConnection>,
     ) -> Result<ClientId, AsyncChannelError> {
         for (channel_id, channel_type) in self.opened_channels.iter() {
             if let Err(err) = connection.create_connection_channel(*channel_id, *channel_type) {
@@ -512,9 +498,9 @@ impl Endpoint {
         self.from_async_endpoint_recv.try_recv()
     }
 
-    pub(crate) fn dispatch_client_payloads(&mut self) {
+    pub(crate) fn dispatch_received_payloads(&mut self) {
         for connection in self.clients.values_mut() {
-            connection.dispatch_payloads_to_channel_buffers();
+            connection.dispatch_received_payloads_to_channel_buffers();
         }
     }
 

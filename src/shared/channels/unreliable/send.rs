@@ -3,10 +3,10 @@ use bytes::{BufMut, Bytes, BytesMut};
 use quinn::SendDatagramError;
 
 use crate::shared::channels::{
-    ChannelAsyncMessage, ChannelId, CloseReason, SendChannelTask, PROTOCOL_HEADER_LEN,
+    tasks::SendChannelTaskData, ChannelAsyncMessage, ChannelId, CloseReason, PROTOCOL_HEADER_LEN,
 };
 
-pub(crate) async fn unreliable_channel_task(mut task: SendChannelTask) {
+pub(crate) async fn unreliable_channel_task(mut task: SendChannelTaskData) {
     let close_reason = tokio::select! {
         close_reason = task.close_recv.recv() => {
             trace!("Unreliable Channel task received a close signal");

@@ -13,10 +13,14 @@ use tokio::{
     sync::oneshot,
 };
 
-use crate::shared::{
-    channels::{ChannelAsyncMessage, ChannelsConfiguration},
-    error::AsyncChannelError,
-    AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncPreUpdate,
+use crate::{
+    client::connection::{create_client_connection_async_channels, ClientConnection},
+    shared::{
+        channels::{ChannelAsyncMessage, ChannelsConfiguration},
+        connection::ConnectionConfig,
+        error::AsyncChannelError,
+        AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncPreUpdate,
+    },
 };
 
 use self::{
@@ -25,9 +29,9 @@ use self::{
         CertVerificationStatus, CertVerifierAction, CertificateVerificationMode,
     },
     connection::{
-        async_connection_task, create_async_channels, ClientEndpointConfiguration,
-        ClientSideConnection, ConnectionEvent, ConnectionFailedEvent, ConnectionLocalId,
-        ConnectionLostEvent, ConnectionState, InternalConnectionState,
+        async_connection_task, ClientConfiguration, ClientSideConnection, ConnectionEvent,
+        ConnectionFailedEvent, ConnectionLocalId, ConnectionLostEvent, ConnectionState,
+        InternalConnectionState,
     },
 };
 
@@ -186,12 +190,13 @@ impl QuinnetClient {
         self.connections.iter_mut()
     }
 
-    /// Open a connection to a server with the given [ClientEndpointConfiguration], [CertificateVerificationMode] and [ChannelsConfiguration]. The connection will raise an event when fully connected, see [ConnectionEvent]
+    /// Open a connection to a server with the given [ConnectionConfig], [CertificateVerificationMode] and [ChannelsConfiguration]. The connection will raise an event when fully connected, see [ConnectionEvent]
     ///
     /// Returns the [ConnectionLocalId]
     pub fn open_connection(
         &mut self,
-        endpoint_config: ClientEndpointConfiguration,
+        client_config: ClientConfiguration,
+        connection_config: ConnectionConfig,
         cert_mode: CertificateVerificationMode,
         channels_config: ChannelsConfiguration,
     ) -> Result<ConnectionLocalId, AsyncChannelError> {
@@ -210,20 +215,24 @@ impl QuinnetClient {
             to_channels_recv,
             close_send,
             close_recv,
-        ) = create_async_channels();
+        ) = create_client_connection_async_channels();
 
         let mut connection = ClientSideConnection::new(
-            local_id,
-            self.runtime.clone(),
-            endpoint_config.clone(),
-            cert_mode.clone(),
-            channels_config.clone(),
+            ClientConnection::new(
+                local_id,
+                self.runtime.clone(),
+                client_config.clone(),
+                cert_mode.clone(),
+                channels_config.clone(),
+                to_sync_client_recv,
+            ),
             bytes_from_server_recv,
             close_send,
-            to_sync_client_recv,
-            to_channels_send,
             from_channels_recv,
+            to_channels_send,
+            connection_config,
         );
+
         connection.open_configured_channels(channels_config)?;
 
         self.connections.insert(local_id, connection);
@@ -235,7 +244,7 @@ impl QuinnetClient {
         self.runtime.spawn(async move {
             async_connection_task(
                 local_id,
-                endpoint_config,
+                client_config,
                 cert_mode,
                 to_sync_client_send,
                 bytes_from_server_send,
@@ -297,7 +306,7 @@ impl QuinnetClient {
 /// Receive messages from the async client tasks and update the sync client.
 ///
 /// This system generates the client's bevy events
-pub fn update_sync_client(
+pub fn handle_client_events_and_dispatch_payloads(
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_failed_events: EventWriter<ConnectionFailedEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
@@ -307,24 +316,26 @@ pub fn update_sync_client(
     mut client: ResMut<QuinnetClient>,
 ) {
     for (connection_id, connection) in &mut client.connections {
-        while let Ok(message) = connection.from_async_client_recv.try_recv() {
+        while let Ok(message) = connection.try_recv_from_async() {
             match message {
                 ClientAsyncMessage::Connected(internal_connection, client_id) => {
-                    connection.state =
-                        InternalConnectionState::Connected(internal_connection, client_id);
+                    connection.set_state(InternalConnectionState::Connected(
+                        internal_connection,
+                        client_id,
+                    ));
                     connection_events.write(ConnectionEvent {
                         id: *connection_id,
                         client_id,
                     });
                 }
                 ClientAsyncMessage::ConnectionFailed(err) => {
-                    connection.state = InternalConnectionState::Disconnected;
+                    connection.set_state(InternalConnectionState::Disconnected);
                     connection_failed_events.write(ConnectionFailedEvent {
                         id: *connection_id,
                         err,
                     });
                 }
-                ClientAsyncMessage::ConnectionClosed => match connection.state {
+                ClientAsyncMessage::ConnectionClosed => match connection.internal_state() {
                     InternalConnectionState::Disconnected => (),
                     _ => {
                         connection.try_disconnect_closed_connection();
@@ -358,15 +369,22 @@ pub fn update_sync_client(
                 }
             }
         }
-        while let Ok(message) = connection.from_channels_recv.try_recv() {
+        while let Ok(message) = connection.try_recv_from_channels() {
             match message {
-                ChannelAsyncMessage::LostConnection => match connection.state {
+                ChannelAsyncMessage::LostConnection => match connection.internal_state() {
                     InternalConnectionState::Disconnected => (),
                     _ => {
                         connection.try_disconnect_closed_connection();
                         connection_lost_events.write(ConnectionLostEvent { id: *connection_id });
                     }
                 },
+            }
+        }
+
+        match connection.internal_state() {
+            InternalConnectionState::Disconnected => (),
+            _ => {
+                connection.dispatch_received_payloads_to_channel_buffers();
             }
         }
     }
@@ -405,7 +423,7 @@ impl Plugin for QuinnetClientPlugin {
 
         app.add_systems(
             PreUpdate,
-            update_sync_client
+            handle_client_events_and_dispatch_payloads
                 .in_set(QuinnetSyncPreUpdate)
                 .run_if(resource_exists::<QuinnetClient>),
         );

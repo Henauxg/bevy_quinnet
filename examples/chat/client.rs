@@ -17,10 +17,10 @@ use bevy_quinnet::{
     client::{
         certificate::CertificateVerificationMode,
         client_connected,
-        connection::{ClientEndpointConfiguration, ConnectionEvent, ConnectionFailedEvent},
+        connection::{ClientConfiguration, ConnectionEvent, ConnectionFailedEvent},
         QuinnetClient, QuinnetClientPlugin,
     },
-    shared::{channels::ChannelsConfiguration, ClientId},
+    shared::{channels::ChannelsConfiguration, connection::ConnectionConfig, ClientId},
 };
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::sync::mpsc;
@@ -122,7 +122,8 @@ fn start_terminal_listener(mut commands: Commands) {
 fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(
-            ClientEndpointConfiguration::from_strings("[::1]:6000", "[::]:0").unwrap(),
+            ClientConfiguration::from_strings("[::1]:6000", "[::]:0").unwrap(),
+            ConnectionConfig::default(),
             CertificateVerificationMode::SkipVerification,
             ChannelsConfiguration::default(),
         )

@@ -1,6 +1,6 @@
 use std::sync::PoisonError;
 
-use crate::shared::{channels::ChannelId, error::AsyncChannelError};
+use crate::shared::error::{AsyncChannelError, ConnectionAlreadyClosed, ConnectionSendError};
 
 use super::connection::ConnectionLocalId;
 
@@ -10,15 +10,9 @@ pub enum ClientSendError {
     /// A connection is closed
     #[error("Connection is 'disconnected'")]
     ConnectionClosed,
-    /// A channel id is invalid
-    #[error("Channel with id `{0}` is invalid")]
-    InvalidChannelId(ChannelId),
-    /// A channel is closed
-    #[error("Channel is closed")]
-    ChannelClosed,
-    /// Quinnet async channel error
-    #[error("Quinnet async channel error")]
-    ChannelSendError(#[from] AsyncChannelError),
+    /// Error when sending data on the connection
+    #[error("Error when sending data on the connection")]
+    ConnectionSendError(#[from] ConnectionSendError),
 }
 
 /// Error when sending a payload from the client
@@ -27,6 +21,10 @@ pub enum ClientPayloadSendError {
     /// There is no default channel
     #[error("There is no default channel")]
     NoDefaultChannel,
+
+    // /// Error when sending data on the connection
+    // #[error("Error when sending data on the connection")]
+    // ConnectionSendError(#[from] ConnectionSendError),
     /// Error when sending
     #[error("Error when sending")]
     SendError(#[from] ClientSendError),
@@ -42,7 +40,7 @@ pub struct ConnectionClosed;
 pub enum ClientConnectionCloseError {
     /// A connection is already closed
     #[error("Connection is already closed")]
-    ConnectionAlreadyClosed,
+    ConnectionAlreadyClosed(#[from] ConnectionAlreadyClosed),
     /// A connection id is invalid
     #[error("Connection id `{0}` is invalid")]
     InvalidConnectionId(ConnectionLocalId),

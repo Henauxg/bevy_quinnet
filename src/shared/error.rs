@@ -42,3 +42,22 @@ pub enum ChannelConfigError {
     #[error("The maximum number of configured channels has been reached")]
     MaxChannelsCountReached,
 }
+
+/// Error when sending data from the server
+#[derive(thiserror::Error, Debug)]
+pub enum ConnectionSendError {
+    /// A channel id is invalid
+    #[error("Channel with id `{0}` is invalid")]
+    InvalidChannelId(ChannelId),
+    /// A channel is closed
+    #[error("Channel is closed")]
+    ChannelClosed,
+    /// Quinnet async channel error
+    #[error("Quinnet async channel error")]
+    ChannelSendError(#[from] AsyncChannelError),
+}
+
+/// Connection is already closed
+#[derive(thiserror::Error, Debug)]
+#[error("Connection is already closed")]
+pub struct ConnectionAlreadyClosed;

@@ -18,14 +18,15 @@ use tokio::{
 use crate::{
     server::{
         certificate::{retrieve_certificate, CertificateRetrievalMode, ServerCertificate},
-        connection::{ServerSideConnection, ServerSideConnectionConfig},
+        connection::ServerConnection,
         endpoint::Endpoint,
     },
     shared::{
         channels::{
-            spawn_recv_channels_tasks, spawn_send_channels_tasks_spawner, ChannelAsyncMessage,
-            ChannelId, ChannelSyncMessage, ChannelsConfiguration,
+            tasks::{spawn_recv_channels_tasks, spawn_send_channels_tasks_spawner},
+            ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelsConfiguration,
         },
+        connection::{ConnectionConfig, PeerConnection},
         AsyncRuntime, ClientId, QuinnetSyncPostUpdate, QuinnetSyncPreUpdate,
         DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE, DEFAULT_KEEP_ALIVE_INTERVAL_S,
         DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
@@ -76,7 +77,7 @@ pub struct ServerEndpointConfiguration {
     /// See [Endpoint::clear_stale_received_payloads]. Defaults to [DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS].
     pub clear_stale_received_payloads: bool,
     /// Configuration applied to each new connection accepted by this endpoint.
-    pub connections_config: ServerSideConnectionConfig,
+    pub connections_config: ConnectionConfig,
 }
 
 impl ServerEndpointConfiguration {
@@ -143,14 +144,13 @@ impl ServerEndpointConfiguration {
         Self {
             local_bind_addr,
             clear_stale_received_payloads: DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS,
-            connections_config: ServerSideConnectionConfig::default(),
+            connections_config: ConnectionConfig::default(),
         }
     }
 }
 
-#[derive(Debug)]
 pub(crate) enum ServerAsyncMessage {
-    ClientConnected(ServerSideConnection),
+    ClientConnected(PeerConnection<ServerConnection>),
     ClientConnectionClosed(ClientId), // TODO Might add a ConnectionError
 }
 
@@ -296,7 +296,7 @@ async fn endpoint_task(
     endpoint_config: ServerConfig,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
     mut endpoint_close_recv: broadcast::Receiver<()>,
-    connections_config: ServerSideConnectionConfig,
+    connections_config: ConnectionConfig,
 ) {
     let endpoint = QuinnEndpoint::new(
         EndpointConfig::default(),
@@ -317,12 +317,12 @@ async fn endpoint_task(
                     Err(err) => error!("An incoming connection failed: {}", err),
                     Ok(connection) => {
                         let to_sync_endpoint_send = to_sync_endpoint_send.clone();
-                        let config = connections_config.clone();
+                        let connection_config = connections_config.clone();
                         tokio::spawn(async move {
                             client_connection_task(
                                 connection,
                                 to_sync_endpoint_send,
-                                config
+                                connection_config
                             )
                             .await
                         });
@@ -336,7 +336,7 @@ async fn endpoint_task(
 async fn client_connection_task(
     connection_handle: quinn::Connection,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
-    connections_config: ServerSideConnectionConfig,
+    connections_config: ConnectionConfig,
 ) {
     let (client_close_send, client_close_recv) =
         broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
@@ -351,17 +351,14 @@ async fn client_connection_task(
 
     // Signal the sync server of this new connection
     to_sync_endpoint_send
-        .send(ServerAsyncMessage::ClientConnected(
-            ServerSideConnection::new(
-                connection_handle.clone(),
-                bytes_from_client_recv,
-                client_close_send.clone(),
-                to_connection_send,
-                from_channels_recv,
-                to_channels_send,
-                connections_config,
-            ),
-        ))
+        .send(ServerAsyncMessage::ClientConnected(PeerConnection::new(
+            ServerConnection::new(connection_handle.clone(), to_connection_send),
+            bytes_from_client_recv,
+            client_close_send.clone(),
+            from_channels_recv,
+            to_channels_send,
+            connections_config,
+        )))
         .await
         .expect("Failed to signal connection to sync client");
 
@@ -424,7 +421,7 @@ async fn client_connection_task(
 /// - Updates the sync server state
 ///
 /// This system generates the server's bevy events
-pub fn pre_update_sync_server(
+pub fn handle_server_events_and_dispatch_payloads(
     mut server: ResMut<QuinnetServer>,
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
@@ -468,15 +465,15 @@ pub fn pre_update_sync_server(
         }
     }
 
-    endpoint.dispatch_client_payloads();
-
     for client_id in lost_clients.drain() {
         endpoint.try_disconnect_client(client_id);
     }
+
+    endpoint.dispatch_received_payloads();
 }
 
 /// Clears stale payloads on all receive channels
-pub fn post_update_sync_server(mut server: ResMut<QuinnetServer>) {
+pub fn clear_stale_client_payloads(mut server: ResMut<QuinnetServer>) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
@@ -515,13 +512,13 @@ impl Plugin for QuinnetServerPlugin {
 
         app.add_systems(
             PreUpdate,
-            pre_update_sync_server
+            handle_server_events_and_dispatch_payloads
                 .in_set(QuinnetSyncPreUpdate)
                 .run_if(resource_exists::<QuinnetServer>),
         );
         app.add_systems(
             Last,
-            post_update_sync_server
+            clear_stale_client_payloads
                 .in_set(QuinnetSyncPostUpdate)
                 .run_if(resource_exists::<QuinnetServer>),
         );

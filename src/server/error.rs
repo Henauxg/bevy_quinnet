@@ -1,4 +1,7 @@
-use crate::shared::{channels::ChannelId, error::AsyncChannelError, ClientId};
+use crate::shared::{
+    error::{AsyncChannelError, ConnectionSendError},
+    ClientId,
+};
 
 /// Error when sending data from the server
 #[derive(thiserror::Error, Debug)]
@@ -6,15 +9,9 @@ pub enum ServerSendError {
     /// A client id is unknown
     #[error("Client with id `{0}` is unknown")]
     UnknownClient(ClientId),
-    /// A channel id is invalid
-    #[error("Channel with id `{0}` is invalid")]
-    InvalidChannelId(ChannelId),
-    /// A channel is closed
-    #[error("Channel is closed")]
-    ChannelClosed,
-    /// Quinnet async channel error
-    #[error("Quinnet async channel error")]
-    ChannelSendError(#[from] AsyncChannelError),
+    /// Error when sending data on the connection
+    #[error("Error when sending data on the connection")]
+    ConnectionSendError(#[from] ConnectionSendError),
 }
 
 /// Error while sending a payload on the server
@@ -98,8 +95,3 @@ pub enum EndpointCertificateError {
     #[error("I/O error")]
     IoError(#[from] std::io::Error),
 }
-
-/// Endpoint connection is already closed
-#[derive(thiserror::Error, Debug)]
-#[error("Endpoint connection is already closed")]
-pub(crate) struct EndpointConnectionAlreadyClosed;

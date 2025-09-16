@@ -3,7 +3,9 @@ use futures::sink::SinkExt;
 use quinn::SendStream;
 use tokio_util::codec::FramedWrite;
 
-use crate::shared::channels::{ChannelAsyncMessage, ChannelId, CloseReason, SendChannelTask};
+use crate::shared::channels::{
+    tasks::SendChannelTaskData, ChannelAsyncMessage, ChannelId, CloseReason,
+};
 
 use super::codec::QuinnetProtocolCodecEncoder;
 
@@ -23,7 +25,7 @@ async fn new_uni_frame_sender(
 }
 
 pub(crate) async fn ordered_reliable_channel_task(
-    mut channel_task: SendChannelTask,
+    mut channel_task: SendChannelTaskData,
     max_frame_len: usize,
 ) {
     let mut frame_sender =
@@ -83,7 +85,7 @@ pub(crate) async fn ordered_reliable_channel_task(
 }
 
 pub(crate) async fn unordered_reliable_channel_task(
-    mut channel_task: SendChannelTask,
+    mut channel_task: SendChannelTaskData,
     max_frame_len: usize,
 ) {
     let close_reason = tokio::select! {
