@@ -489,7 +489,7 @@ impl ClientSideConnection {
                 self.set_state(InternalConnectionState::Connecting);
                 self.specific.send_channel_ids = ChannelsIdsPool::new();
                 self.specific.from_async_client_recv = to_sync_client_recv;
-                self.reset(
+                self.internal_reset(
                     close_send,
                     to_channels_send,
                     from_channels_recv,
@@ -497,7 +497,7 @@ impl ClientSideConnection {
                     self.specific.channels_config.configs().len(),
                 );
 
-                // Open default channels
+                // Re-open channels
                 self.open_configured_channels(self.specific.channels_config.clone())?;
 
                 // Async connection

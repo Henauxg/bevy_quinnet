@@ -305,7 +305,7 @@ impl<S> PeerConnection<S> {
         }
     }
 
-    pub(crate) fn reset(
+    pub(crate) fn internal_reset(
         &mut self,
         close_send: CloseSend,
         to_channels_send: ChannelSyncMsgSend,
