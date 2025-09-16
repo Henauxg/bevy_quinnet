@@ -123,12 +123,7 @@ pub struct PeerConnection<S> {
     close_send: broadcast::Sender<CloseReason>,
     /// Configuration for the connection
     config: ConnectionConfig,
-    /// How many bytes were received on this connection since the last time it was cleared
-    received_bytes_count: usize,
-    /// How many bytes were sent on this connection since the last time it was cleared
-    sent_bytes_count: usize,
-    /// How many messages were received on this connection since the last time it was cleared
-    received_messages_count: u64,
+    stats: ConnectionStats,
 }
 
 impl<S> PeerConnection<S> {
@@ -149,9 +144,7 @@ impl<S> PeerConnection<S> {
             to_channels_send,
             from_channels_recv,
             config,
-            received_bytes_count: 0,
-            sent_bytes_count: 0,
-            received_messages_count: 0,
+            stats: ConnectionStats::default(),
         }
     }
 
@@ -162,7 +155,7 @@ impl<S> PeerConnection<S> {
     ) -> Result<(), ConnectionSendError> {
         match self.send_channels.get(channel_id as usize) {
             Some(Some(channel)) => {
-                self.sent_bytes_count += payload.len();
+                self.stats.sent(payload.len());
                 Ok(channel.send_payload(payload)?)
             }
             Some(None) => Err(ConnectionSendError::ChannelClosed),
@@ -184,8 +177,7 @@ impl<S> PeerConnection<S> {
         // This error means that the receiving end of the channel is closed, which only happens when the client connection is closed/closing.
         // In this case we decide to consider that there is no more messages to receive.
         while let Ok((channel_id, payload)) = self.bytes_from_peer_recv.try_recv() {
-            self.received_bytes_count += payload.len();
-            self.received_messages_count += 1;
+            self.stats.received(payload.len());
 
             match self.receive_channels.get_mut(channel_id as usize) {
                 Some(payloads) => {
@@ -296,50 +288,14 @@ impl<S> PeerConnection<S> {
         self.from_channels_recv.try_recv()
     }
 
-    /// Returns how many bytes were received on this connection since the last time it was cleared and reset this value to 0
-    pub fn clear_received_bytes_count(&mut self) -> usize {
-        let bytes_count = self.received_bytes_count;
-        self.received_bytes_count = 0;
-        bytes_count
+    /// Returns a mutable reference to the connection statistics
+    pub fn stats_mut(&mut self) -> &mut ConnectionStats {
+        &mut self.stats
     }
 
-    /// Returns how many bytes were received on this connection since the last time it was cleared
-    #[inline(always)]
-    pub fn received_bytes_count(&self) -> usize {
-        self.received_bytes_count
-    }
-
-    /// Returns how many bytes were received on this connection since the last time it was cleared and reset this value to 0
-    pub fn clear_sent_bytes_count(&mut self) -> usize {
-        let bytes_count = self.sent_bytes_count;
-        self.sent_bytes_count = 0;
-        bytes_count
-    }
-
-    /// Returns how many bytes were received on this connection since the last time it was cleared
-    #[inline(always)]
-    pub fn sent_bytes_count(&self) -> usize {
-        self.sent_bytes_count
-    }
-
-    /// Returns how many messages were received on this connection since the last time it was cleared and reset this value to 0
-    pub fn clear_received_messages_count(&mut self) -> u64 {
-        let messages_count = self.received_messages_count;
-        self.received_messages_count = 0;
-        messages_count
-    }
-
-    /// Returns how many bytes were received on this connection since the last time it was cleared
-    #[inline(always)]
-    pub fn received_messages_count(&self) -> u64 {
-        self.received_messages_count
-    }
-
-    /// Resets all statistics (received/sent bytes and received messages count) to 0
-    pub fn reset_stats(&mut self) {
-        self.received_bytes_count = 0;
-        self.sent_bytes_count = 0;
-        self.received_messages_count = 0;
+    /// Returns a reference to the connection statistics
+    pub fn stats(&self) -> &ConnectionStats {
+        &self.stats
     }
 
     pub(crate) fn try_close(&mut self, reason: CloseReason) {
@@ -362,8 +318,68 @@ impl<S> PeerConnection<S> {
         self.from_channels_recv = from_channels_recv;
         self.bytes_from_peer_recv = bytes_from_peer_recv;
         self.send_channels = Vec::with_capacity(send_channels_capacity);
-        self.reset_stats();
+        self.receive_channels.clear();
+        self.stats_mut().reset();
+    }
+}
 
-        // TODO Reset receive_channels
+/// Basic quinnet stats about a connection
+#[derive(Default)]
+pub struct ConnectionStats {
+    received_bytes_count: u64,
+    sent_bytes_count: u64,
+    received_messages_count: u64,
+}
+impl ConnectionStats {
+    /// Returns how many bytes were received on this connection since the last time it was cleared
+    pub fn received_bytes_count(&self) -> u64 {
+        self.received_bytes_count
+    }
+
+    /// Returns how many bytes were sent on this connection since the last time it was cleared
+    pub fn sent_bytes_count(&self) -> u64 {
+        self.sent_bytes_count
+    }
+
+    /// Returns how many messages were received on this connection since the last time it was cleared
+    pub fn received_messages_count(&self) -> u64 {
+        self.received_messages_count
+    }
+
+    /// Resets all statistics (received/sent bytes and received messages count) to 0
+    pub fn reset(&mut self) {
+        self.received_bytes_count = 0;
+        self.sent_bytes_count = 0;
+        self.received_messages_count = 0;
+    }
+
+    /// Returns how many bytes were received on this connection since the last time it was cleared and reset this value to 0
+    pub fn clear_received_bytes_count(&mut self) -> u64 {
+        let bytes_count = self.received_bytes_count;
+        self.received_bytes_count = 0;
+        bytes_count
+    }
+
+    /// Returns how many bytes were received on this connection since the last time it was cleared and reset this value to 0
+    pub fn clear_sent_bytes_count(&mut self) -> u64 {
+        let bytes_count = self.sent_bytes_count;
+        self.sent_bytes_count = 0;
+        bytes_count
+    }
+
+    /// Returns how many messages were received on this connection since the last time it was cleared and reset this value to 0
+    pub fn clear_received_messages_count(&mut self) -> u64 {
+        let messages_count = self.received_messages_count;
+        self.received_messages_count = 0;
+        messages_count
+    }
+
+    fn received(&mut self, bytes_count: usize) {
+        self.received_bytes_count += bytes_count as u64;
+        self.received_messages_count += 1;
+    }
+
+    fn sent(&mut self, bytes_count: usize) {
+        self.sent_bytes_count += bytes_count as u64;
     }
 }
