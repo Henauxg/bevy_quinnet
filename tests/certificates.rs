@@ -14,7 +14,7 @@ use bevy_quinnet::{
         certificate::CertificateRetrievalMode, QuinnetServer, QuinnetServerPlugin,
         ServerEndpointConfiguration,
     },
-    shared::channels::ChannelsConfiguration,
+    shared::{channels::ChannelsConfiguration, connection::ConnectionConfig},
 };
 
 // https://github.com/rust-lang/rust/issues/46379
@@ -102,6 +102,7 @@ fn trust_on_first_use() {
         client
             .open_connection(
                 default_client_configuration(port),
+                ConnectionConfig::default(),
                 CertificateVerificationMode::TrustOnFirstUse(
                     client::certificate::TrustOnFirstUseConfig {
                         ..Default::default()
@@ -154,6 +155,7 @@ fn trust_on_first_use() {
         client
             .open_connection(
                 default_client_configuration(port),
+                ConnectionConfig::default(),
                 CertificateVerificationMode::TrustOnFirstUse(
                     client::certificate::TrustOnFirstUseConfig {
                         ..Default::default()
@@ -214,6 +216,7 @@ fn trust_on_first_use() {
         client
             .open_connection(
                 default_client_configuration(port),
+                ConnectionConfig::default(),
                 CertificateVerificationMode::TrustOnFirstUse(
                     client::certificate::TrustOnFirstUseConfig {
                         ..Default::default()

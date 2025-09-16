@@ -36,7 +36,7 @@ fn default_channel() {
     {
         let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
         assert_eq!(
-            server.endpoint().get_default_channel(),
+            server.endpoint().default_channel(),
             None,
             "Default server channel should be None"
         );
@@ -54,7 +54,7 @@ fn default_channel() {
     {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         assert_eq!(
-            client.connection().get_default_channel(),
+            client.connection().default_channel(),
             None,
             "Default client channel should be None"
         );

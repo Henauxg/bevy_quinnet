@@ -16,15 +16,16 @@ use bevy_quinnet::{
             CertVerificationInfo, CertVerificationStatus, CertVerifierAction,
             CertificateVerificationMode,
         },
-        connection::ClientEndpointConfiguration,
+        connection::ClientConfiguration,
         QuinnetClient, QuinnetClientPlugin,
     },
     server::{
-        self, certificate::CertificateRetrievalMode, connection::ServerSideConnectionConfig,
-        QuinnetServer, QuinnetServerPlugin, ServerEndpointConfiguration,
+        self, certificate::CertificateRetrievalMode, QuinnetServer, QuinnetServerPlugin,
+        ServerEndpointConfiguration,
     },
     shared::{
         channels::{ChannelConfig, ChannelId, ChannelsConfiguration},
+        connection::ConnectionConfig,
         ClientId,
     },
 };
@@ -87,14 +88,15 @@ pub fn build_server_app() -> App {
     server_app
 }
 
-pub fn default_client_configuration(port: u16) -> ClientEndpointConfiguration {
-    ClientEndpointConfiguration::from_ips(SERVER_IP, port, LOCAL_BIND_IP, 0)
+pub fn default_client_configuration(port: u16) -> ClientConfiguration {
+    ClientConfiguration::from_ips(SERVER_IP, port, LOCAL_BIND_IP, 0)
 }
 
 pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port>) {
     client
         .open_connection(
             default_client_configuration(port.0),
+            ConnectionConfig::default(),
             CertificateVerificationMode::SkipVerification,
             ChannelsConfiguration::default(),
         )
@@ -108,7 +110,7 @@ pub fn start_listening(mut server: ResMut<QuinnetServer>, port: Res<Port>) {
                 local_bind_addr: SocketAddr::new(LOCAL_BIND_IP.into(), port.0),
                 // During tests, we disable the clearing of stale payloads on the server since we check received messages after the whole Update shchedule.
                 clear_stale_received_payloads: false,
-                connections_config: ServerSideConnectionConfig::default(),
+                connections_config: ConnectionConfig::default(),
             },
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_IP.to_string(),
@@ -231,7 +233,7 @@ pub fn get_default_client_channel(app: &App) -> ChannelId {
     let client = app.world().resource::<QuinnetClient>();
     client
         .connection()
-        .get_default_channel()
+        .default_channel()
         .expect("Expected some default channel")
 }
 
@@ -239,7 +241,7 @@ pub fn get_default_server_channel(app: &App) -> ChannelId {
     let server = app.world().resource::<QuinnetServer>();
     server
         .endpoint()
-        .get_default_channel()
+        .default_channel()
         .expect("Expected some default channel")
 }
 
@@ -297,16 +299,16 @@ pub fn wait_for_client_message(
     panic!("Did not receive a message from client in time");
 }
 
-pub fn wait_for_server_message(client_app: &mut App) -> (ChannelId, bytes::Bytes) {
+pub fn wait_for_server_message(client_app: &mut App, channel_id: ChannelId) -> bytes::Bytes {
     for _ in 0..20 {
         client_app.update();
         match client_app
             .world_mut()
             .resource_mut::<QuinnetClient>()
             .connection_mut()
-            .receive_payload()
+            .receive_payload(channel_id)
         {
-            Ok(Some(channel_msg)) => return channel_msg,
+            Ok(Some(payload)) => return payload,
             Ok(None) => (),
             Err(err) => panic!("Error when receiving payload from server: {:?}", err),
         }
@@ -351,6 +353,6 @@ pub fn send_and_test_server_message(
         .send_payload_on(client_id, channel, server_message_payload.clone())
         .unwrap();
 
-    let client_received = wait_for_server_message(client_app);
-    assert_eq!((channel, server_message_payload), client_received);
+    let client_received = wait_for_server_message(client_app, channel);
+    assert_eq!(server_message_payload, client_received);
 }
