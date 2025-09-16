@@ -71,7 +71,9 @@ pub struct ConnectionLostEvent {
 pub struct ServerEndpointConfiguration {
     /// Local address and port to bind to.
     pub local_bind_addr: SocketAddr,
-    /// See [Endpoint::clear_stale_received_payloads]. Defaults to [DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS].
+    /// If `true`, payloads on receive channels that were not read during this update will be cleared at the end of the update of the sync server, in the [crate::shared::QuinnetSyncPostUpdate] schedule.
+    ///
+    /// Defaults to [DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS].
     pub clear_stale_received_payloads: bool,
     /// Configuration applied to each new connection accepted by this endpoint.
     pub connections_config: ConnectionConfig,
@@ -238,22 +240,19 @@ impl QuinnetServer {
         let socket = std::net::UdpSocket::bind(config.local_bind_addr)?;
 
         info!("Starting endpoint on: {} ...", config.local_bind_addr);
+        let connections_config = config.connections_config.clone();
         self.runtime.spawn(async move {
             endpoint_task(
                 socket,
                 quinn_endpoint_config,
                 to_sync_endpoint_send.clone(),
                 endpoint_close_recv,
-                config.connections_config,
+                connections_config,
             )
             .await;
         });
 
-        let mut endpoint = Endpoint::new(
-            endpoint_close_send,
-            from_async_endpoint_recv,
-            config.clear_stale_received_payloads,
-        );
+        let mut endpoint = Endpoint::new(endpoint_close_send, from_async_endpoint_recv, config);
         for channel_type in channels_config.configs() {
             endpoint.unchecked_open_channel(*channel_type)?;
         }
@@ -475,7 +474,7 @@ pub fn clear_stale_client_payloads(mut server: ResMut<QuinnetServer>) {
         return;
     };
 
-    if endpoint.clear_stale_received_payloads {
+    if endpoint.config().clear_stale_received_payloads {
         endpoint.clear_stale_payloads_from_clients();
     }
 }

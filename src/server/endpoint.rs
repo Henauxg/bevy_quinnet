@@ -8,8 +8,8 @@ use tokio::sync::{
 use crate::{
     server::{
         connection::ServerConnection, ServerAsyncMessage, ServerDisconnectError,
-        ServerGroupPayloadSendError, ServerGroupSendError, ServerPayloadSendError,
-        ServerReceiveError, ServerSendError, ServerSyncMessage,
+        ServerEndpointConfiguration, ServerGroupPayloadSendError, ServerGroupSendError,
+        ServerPayloadSendError, ServerReceiveError, ServerSendError, ServerSyncMessage,
     },
     shared::{
         channels::{Channel, ChannelConfig, ChannelId, CloseReason},
@@ -32,16 +32,15 @@ pub struct Endpoint {
     close_sender: broadcast::Sender<()>,
     /// Receiver for internal quinnet messages coming from the async endpoint
     from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
+    config: ServerEndpointConfiguration,
     stats: EndpointStats,
-    /// If `true`, payloads on receive channels that were not read during this update will be cleared at the end of the update of the sync server, in the [crate::shared::QuinnetSyncPostUpdate] schedule.
-    pub clear_stale_received_payloads: bool,
 }
 
 impl Endpoint {
     pub(crate) fn new(
         endpoint_close_send: broadcast::Sender<()>,
         from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
-        clear_stale_received_payloads: bool,
+        config: ServerEndpointConfiguration,
     ) -> Self {
         Self {
             clients: HashMap::new(),
@@ -51,7 +50,7 @@ impl Endpoint {
             close_sender: endpoint_close_send,
             from_async_endpoint_recv,
             stats: EndpointStats::default(),
-            clear_stale_received_payloads,
+            config,
         }
     }
 
@@ -506,6 +505,17 @@ impl Endpoint {
         for connection in self.clients.values_mut() {
             connection.internal_clear_stale_received_payloads();
         }
+    }
+
+    /// Enables or disables [`ServerEndpointConfiguration::clear_stale_received_payloads`] on this server endpoint.
+    #[inline(always)]
+    pub fn set_clear_stale_client_payloads(&mut self, enable: bool) {
+        self.config.clear_stale_received_payloads = enable;
+    }
+
+    /// Returns the current configuration of this server endpoint
+    pub fn config(&self) -> &ServerEndpointConfiguration {
+        &self.config
     }
 }
 
