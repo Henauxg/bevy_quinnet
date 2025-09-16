@@ -374,7 +374,7 @@ impl ClientSideConnection {
         &mut self,
         payload: T,
     ) -> Result<(), ClientPayloadSendError> {
-        match self.specific.send_channel_ids.get_default_channel() {
+        match self.specific.send_channel_ids.default_channel() {
             Some(channel) => Ok(self.send_payload_on(channel, payload.into())?),
             None => Err(ClientPayloadSendError::NoDefaultChannel),
         }
@@ -602,8 +602,8 @@ impl ClientSideConnection {
 
     /// Get the default Channel Id
     #[inline(always)]
-    pub fn get_default_channel(&self) -> Option<ChannelId> {
-        self.specific.send_channel_ids.get_default_channel()
+    pub fn default_channel(&self) -> Option<ChannelId> {
+        self.specific.send_channel_ids.default_channel()
     }
 
     /// Returns the configuration used by this connection

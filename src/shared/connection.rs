@@ -102,7 +102,7 @@ impl ChannelsIdsPool {
 
     /// Gets the default send channel id
     #[inline(always)]
-    pub(crate) fn get_default_channel(&self) -> Option<ChannelId> {
+    pub(crate) fn default_channel(&self) -> Option<ChannelId> {
         self.default_channel
     }
 }

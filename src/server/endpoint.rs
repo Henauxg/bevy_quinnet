@@ -47,8 +47,6 @@ impl Endpoint {
             clients: HashMap::new(),
             client_id_gen: 0,
             opened_channels: HashMap::new(),
-            // default_channel: None,
-            // available_channel_ids: (0..=ChannelId::MAX).collect(),
             send_channel_ids: ChannelsIdsPool::new(),
             close_sender: endpoint_close_send,
             from_async_endpoint_recv,
@@ -107,7 +105,7 @@ impl Endpoint {
         client_ids: I,
         payload: T,
     ) -> Result<(), ServerGroupPayloadSendError> {
-        match self.send_channel_ids.get_default_channel() {
+        match self.send_channel_ids.default_channel() {
             Some(channel) => self.send_group_payload_on(client_ids, channel, payload),
             None => Err(ServerGroupPayloadSendError::NoDefaultChannel),
         }
@@ -178,7 +176,7 @@ impl Endpoint {
         &mut self,
         payload: T,
     ) -> Result<(), ServerGroupPayloadSendError> {
-        match self.send_channel_ids.get_default_channel() {
+        match self.send_channel_ids.default_channel() {
             Some(channel) => Ok(self.broadcast_payload_on(channel, payload)?),
             None => Err(ServerGroupPayloadSendError::NoDefaultChannel),
         }
@@ -233,7 +231,7 @@ impl Endpoint {
         client_id: ClientId,
         payload: T,
     ) -> Result<(), ServerPayloadSendError> {
-        match self.send_channel_ids.get_default_channel() {
+        match self.send_channel_ids.default_channel() {
             Some(channel) => Ok(self.send_payload_on(client_id, channel, payload)?),
             None => Err(ServerPayloadSendError::NoDefaultChannel.into()),
         }
@@ -453,8 +451,8 @@ impl Endpoint {
 
     /// Get the default [ChannelId]
     #[inline(always)]
-    pub fn get_default_channel(&self) -> Option<ChannelId> {
-        self.send_channel_ids.get_default_channel()
+    pub fn default_channel(&self) -> Option<ChannelId> {
+        self.send_channel_ids.default_channel()
     }
 
     pub(crate) fn close_incoming_connections_handler(&mut self) -> Result<(), AsyncChannelError> {
