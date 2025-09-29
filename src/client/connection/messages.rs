@@ -37,13 +37,14 @@ impl ClientSideConnection {
     /// - the bytes accumulated from the server aren't deserializable to T
     /// - or if the client is disconnected
     /// - (or if the message queue is full)
-    pub fn receive_message<T: serde::de::DeserializeOwned>(
+    pub fn receive_message<T: serde::de::DeserializeOwned, C: Into<ChannelId>>(
         &mut self,
-    ) -> Result<Option<(ChannelId, T)>, ClientMessageReceiveError> {
-        match self.receive_payload()? {
-            Some((channel_id, payload)) => {
+        channel_id: C,
+    ) -> Result<Option<T>, ClientMessageReceiveError> {
+        match self.receive_payload(channel_id)? {
+            Some(payload) => {
                 match bincode::serde::decode_from_slice(&payload, bincode::config::standard()) {
-                    Ok((msg, _size)) => Ok(Some((channel_id, msg))),
+                    Ok((msg, _size)) => Ok(Some(msg)),
                     Err(_) => Err(ClientMessageReceiveError::Deserialization),
                 }
             }
@@ -52,10 +53,11 @@ impl ClientSideConnection {
     }
 
     /// Same as [Self::receive_message] but will log the error instead of returning it
-    pub fn try_receive_message<T: serde::de::DeserializeOwned>(
+    pub fn try_receive_message<T: serde::de::DeserializeOwned, C: Into<ChannelId>>(
         &mut self,
-    ) -> Option<(ChannelId, T)> {
-        match self.receive_message() {
+        channel_id: C,
+    ) -> Option<T> {
+        match self.receive_message(channel_id) {
             Ok(message) => message,
             Err(err) => {
                 error!("try_receive_message: {}", err);
@@ -87,7 +89,7 @@ impl ClientSideConnection {
         &mut self,
         message: T,
     ) -> Result<(), ClientMessageSendError> {
-        match self.default_channel {
+        match self.default_channel() {
             Some(channel) => self.send_message_on(channel, message),
             None => Err(ClientMessageSendError::NoDefaultChannel),
         }

@@ -88,7 +88,7 @@ impl Endpoint {
         client_id: ClientId,
         message: T,
     ) -> Result<(), ServerMessageSendError> {
-        match self.get_default_channel() {
+        match self.default_channel() {
             Some(channel) => self.send_message_on(client_id, channel, message),
             None => Err(ServerMessageSendError::NoDefaultChannel),
         }
@@ -140,7 +140,7 @@ impl Endpoint {
         client_ids: I,
         message: T,
     ) -> Result<(), ServerGroupMessageSendError> {
-        match self.get_default_channel() {
+        match self.default_channel() {
             Some(channel) => self.send_group_message_on(client_ids, channel, message),
             None => Err(ServerGroupMessageSendError::NoDefaultChannel),
         }
@@ -211,7 +211,7 @@ impl Endpoint {
         &mut self,
         message: T,
     ) -> Result<(), ServerGroupMessageSendError> {
-        match self.get_default_channel() {
+        match self.default_channel() {
             Some(channel) => self.broadcast_message_on(channel, message),
             None => Err(ServerGroupMessageSendError::NoDefaultChannel),
         }
