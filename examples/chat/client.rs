@@ -17,15 +17,17 @@ use bevy_quinnet::{
     client::{
         certificate::CertificateVerificationMode,
         client_connected,
-        connection::{ClientConfiguration, ConnectionEvent, ConnectionFailedEvent},
+        connection::{ClientAddrConfiguration, ConnectionEvent, ConnectionFailedEvent},
         QuinnetClient, QuinnetClientPlugin,
     },
-    shared::{channels::ChannelsConfiguration, connection::ConnectionConfig, ClientId},
+    shared::{channels::ChannelsConfiguration, connection::ConnectionParameters, ClientId},
 };
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::sync::mpsc;
 
 use protocol::{ClientMessage, ServerMessage};
+
+use crate::protocol::NetworkChannels;
 
 mod protocol;
 
@@ -50,9 +52,9 @@ pub fn on_app_exit(app_exit_events: EventReader<AppExit>, mut client: ResMut<Qui
 }
 
 fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<QuinnetClient>) {
-    while let Some((_, message)) = client
+    while let Some(message) = client
         .connection_mut()
-        .try_receive_message::<ServerMessage>()
+        .try_receive_message(NetworkChannels::Chat)
     {
         match message {
             ServerMessage::ClientConnected {
@@ -122,10 +124,10 @@ fn start_terminal_listener(mut commands: Commands) {
 fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(
-            ClientConfiguration::from_strings("[::1]:6000", "[::]:0").unwrap(),
-            ConnectionConfig::default(),
+            ClientAddrConfiguration::from_strings("[::1]:6000", "[::]:0").unwrap(),
             CertificateVerificationMode::SkipVerification,
             ChannelsConfiguration::default(),
+            ConnectionParameters::default(),
         )
         .unwrap();
 

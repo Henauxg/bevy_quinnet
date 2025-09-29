@@ -40,13 +40,11 @@ pub enum ServerMessage {
 pub enum NetworkChannels {
     Chat,
 }
-
 impl Into<ChannelId> for NetworkChannels {
     fn into(self) -> ChannelId {
         self as ChannelId
     }
 }
-
 impl NetworkChannels {
     #[allow(dead_code)]
     pub fn channels_configuration() -> ChannelsConfiguration {
