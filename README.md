@@ -68,7 +68,7 @@ The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channel
 fn start_connection(client: ResMut<QuinnetClient>) {
     client
         .open_connection(
-            ClientEndpointConfiguration::from_ips(
+            ClientAddrConfiguration::from_ips(
                 Ipv6Addr::LOCALHOST,
                 6000,
                 Ipv6Addr::UNSPECIFIED,
@@ -76,6 +76,7 @@ fn start_connection(client: ResMut<QuinnetClient>) {
             ),
             CertificateVerificationMode::SkipVerification,
             ChannelsConfiguration::default(),
+            ConnectionParameters::default(),
         );
     
     // When trully connected, you will receive a ConnectionEvent
@@ -117,11 +118,12 @@ fn handle_server_messages(
 fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
         .start_endpoint(
-            ServerEndpointConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000),
+            EndpointAddrConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000),
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: Ipv6Addr::LOCALHOST.to_string(),
             },
             ChannelsConfiguration::default(),
+            ConnectionParameters::default(),
         )
         .unwrap();
 }
@@ -181,10 +183,10 @@ When you open a connection/endpoint, some channels are created directly accordin
 let channels_config = ChannelsConfiguration::default();
 // Creates 2 OrderedReliable channels, and 1 unreliable channel,
 // with channel ids being respectively 0, 1 and 2.
-let channels_config = ChannelsConfiguration::from_types(vec![
-    ChannelKind::default(),
-    ChannelKind::default(),
-    ChannelKind::Unreliable]);
+let channels_config = ChannelsConfiguration::from_configs(vec![
+    ChannelConfig::default_ordered_reliable(),
+    ChannelConfig::default_ordered_reliable(),
+    ChannelConfig::default_reliable()]);
 ```
 
 Each channel is identified by its own `ChannelId`. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, the first opened channel becomes the default channel.
@@ -203,13 +205,13 @@ In some cases, you may want to create more than one channel instance of the same
 
 ```rust
 // If you want to create more channels
-let chat_channel = client.connection().open_channel(ChannelKind::default()).unwrap();
+let chat_channel = client.connection().open_channel(ChannelConfig::default()).unwrap();
 client.connection().send_message_on(chat_channel, chat_message);
 ```
 
 On the server, channels are created and closed at the endpoint level and exist for all current & future clients.
 ```rust
-let chat_channel = server.endpoint().open_channel(ChannelKind::default()).unwrap();
+let chat_channel = server.endpoint().open_channel(ChannelConfig::default()).unwrap();
 server.endpoint().send_message_on(client_id, chat_channel, chat_message);
 ```
 
