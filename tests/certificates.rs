@@ -11,10 +11,10 @@ use bevy_quinnet::{
         QuinnetClient, QuinnetClientPlugin, DEFAULT_KNOWN_HOSTS_FILE,
     },
     server::{
-        certificate::CertificateRetrievalMode, QuinnetServer, QuinnetServerPlugin,
-        ServerEndpointConfiguration,
+        certificate::CertificateRetrievalMode, EndpointAddrConfiguration, QuinnetServer,
+        QuinnetServerPlugin,
     },
-    shared::{channels::ChannelsConfiguration, connection::ConnectionConfig},
+    shared::{channels::ChannelsConfiguration, connection::ConnectionParameters},
 };
 
 // https://github.com/rust-lang/rust/issues/46379
@@ -81,12 +81,13 @@ fn trust_on_first_use() {
         let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
         let server_cert = server
             .start_endpoint(
-                ServerEndpointConfiguration::from_ip(LOCAL_BIND_IP, port),
+                EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port),
                 CertificateRetrievalMode::LoadFromFile {
                     cert_file: TEST_CERT_FILE.to_string(),
                     key_file: TEST_KEY_FILE.to_string(),
                 },
                 ChannelsConfiguration::default(),
+                ConnectionParameters::default(),
             )
             .unwrap();
         assert_eq!(
@@ -101,14 +102,14 @@ fn trust_on_first_use() {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         client
             .open_connection(
-                default_client_configuration(port),
-                ConnectionConfig::default(),
+                default_client_addr_configuration(port),
                 CertificateVerificationMode::TrustOnFirstUse(
                     client::certificate::TrustOnFirstUseConfig {
                         ..Default::default()
                     },
                 ),
                 ChannelsConfiguration::default(),
+                ConnectionParameters::default(),
             )
             .unwrap();
     }
@@ -154,14 +155,14 @@ fn trust_on_first_use() {
 
         client
             .open_connection(
-                default_client_configuration(port),
-                ConnectionConfig::default(),
+                default_client_addr_configuration(port),
                 CertificateVerificationMode::TrustOnFirstUse(
                     client::certificate::TrustOnFirstUseConfig {
                         ..Default::default()
                     },
                 ),
                 ChannelsConfiguration::default(),
+                ConnectionParameters::default(),
             )
             .unwrap();
     }
@@ -202,11 +203,12 @@ fn trust_on_first_use() {
         .world_mut()
         .resource_mut::<QuinnetServer>()
         .start_endpoint(
-            ServerEndpointConfiguration::from_ip(LOCAL_BIND_IP, port),
+            EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port),
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_IP.to_string(),
             },
             ChannelsConfiguration::default(),
+            ConnectionParameters::default(),
         )
         .unwrap();
 
@@ -215,14 +217,14 @@ fn trust_on_first_use() {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         client
             .open_connection(
-                default_client_configuration(port),
-                ConnectionConfig::default(),
+                default_client_addr_configuration(port),
                 CertificateVerificationMode::TrustOnFirstUse(
                     client::certificate::TrustOnFirstUseConfig {
                         ..Default::default()
                     },
                 ),
                 ChannelsConfiguration::default(),
+                ConnectionParameters::default(),
             )
             .unwrap();
     }

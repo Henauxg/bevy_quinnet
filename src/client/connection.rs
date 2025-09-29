@@ -35,7 +35,6 @@ use crate::shared::{
     connection::{
         ChannelAsyncMsgRecv, ChannelAsyncMsgSend, ChannelSyncMsgRecv, ChannelSyncMsgSend,
         ChannelsIdsPool, PayloadRecv, PayloadSend, PeerConnection,
-        DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS,
     },
     error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
     ClientId, InternalConnectionRef, DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE,
@@ -84,21 +83,17 @@ pub struct ConnectionLostEvent {
 
 /// Configuration of a client connection, used when connecting to a server
 #[derive(Debug, Clone)]
-pub struct ClientConfiguration {
+pub struct ClientAddrConfiguration {
     /// Address and port of the server to connect to.
     pub server_addr: SocketAddr,
     /// Server hostname for certificate verification, can be just the server IP.
     pub server_hostname: String,
     /// Local address and port to bind to.
     pub local_bind_addr: SocketAddr,
-    /// If `true`, payloads on receive channels that were not read during this update will be cleared at the end of the update of the sync client, in the [crate::shared::QuinnetSyncPostUpdate] schedule.
-    ///
-    /// Defaults to [DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS].
-    pub clear_stale_received_payloads: bool,
 }
 
-impl ClientConfiguration {
-    /// Creates a new ClientConfiguration
+impl ClientAddrConfiguration {
+    /// Creates a new ClientAddrConfiguration
     ///
     /// # Arguments
     ///
@@ -109,16 +104,16 @@ impl ClientConfiguration {
     ///
     /// Connect to an IPv4 server hosted on localhost (127.0.0.1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
     /// ```
-    /// use bevy_quinnet::client::connection::ClientConfiguration;
-    /// let config = ClientConfiguration::from_strings(
+    /// use bevy_quinnet::client::connection::ClientAddrConfiguration;
+    /// let config = ClientAddrConfiguration::from_strings(
     ///                 "127.0.0.1:6000",
     ///                 "0.0.0.0:0"
     ///             );
     /// ```
     /// Connect to an IPv6 server hosted on localhost (::1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
     /// ```
-    /// use bevy_quinnet::client::connection::ClientConfiguration;
-    /// let config = ClientConfiguration::from_strings(
+    /// use bevy_quinnet::client::connection::ClientAddrConfiguration;
+    /// let config = ClientAddrConfiguration::from_strings(
     ///                 "[::1]:6000",
     ///                 "[::]:0"
     ///             );
@@ -132,7 +127,7 @@ impl ClientConfiguration {
         Ok(Self::from_addrs(server_addr, local_bind_addr))
     }
 
-    /// Same as [`ClientConfiguration::from_strings`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
+    /// Same as [`ClientAddrConfiguration::from_strings`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
     pub fn from_strings_with_name(
         server_addr_str: &str,
         server_hostname: String,
@@ -145,7 +140,7 @@ impl ClientConfiguration {
         ))
     }
 
-    /// Creates a new ClientConfiguration
+    /// Creates a new ClientAddrConfiguration
     ///
     /// # Arguments
     ///
@@ -159,8 +154,8 @@ impl ClientConfiguration {
     /// Connect to an IPv4 server hosted on localhost (127.0.0.1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
     /// ```
     /// use std::net::Ipv6Addr;
-    /// use bevy_quinnet::client::connection::ClientConfiguration;
-    /// let config = ClientConfiguration::from_ips(
+    /// use bevy_quinnet::client::connection::ClientAddrConfiguration;
+    /// let config = ClientAddrConfiguration::from_ips(
     ///                 Ipv6Addr::LOCALHOST,
     ///                 6000,
     ///                 Ipv6Addr::UNSPECIFIED,
@@ -179,7 +174,7 @@ impl ClientConfiguration {
         )
     }
 
-    /// Same as [`ClientConfiguration::from_ips`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
+    /// Same as [`ClientAddrConfiguration::from_ips`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
     pub fn from_ips_with_name(
         server_ip: impl Into<IpAddr>,
         server_port: u16,
@@ -194,7 +189,7 @@ impl ClientConfiguration {
         )
     }
 
-    /// Creates a new ClientConfiguration
+    /// Creates a new ClientAddrConfiguration
     ///
     /// # Arguments
     ///
@@ -205,9 +200,9 @@ impl ClientConfiguration {
     ///
     /// Connect to an IPv4 server hosted on localhost (127.0.0.1), which is listening on port 6000. Use 0 as a local bind port to let the OS assign a port.
     /// ```
-    /// use bevy_quinnet::client::connection::ClientConfiguration;
+    /// use bevy_quinnet::client::connection::ClientAddrConfiguration;
     /// use std::{net::{IpAddr, Ipv4Addr, SocketAddr}};
-    /// let config = ClientConfiguration::from_addrs(
+    /// let config = ClientAddrConfiguration::from_addrs(
     ///        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 6000),
     ///        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0),
     ///    );
@@ -216,7 +211,7 @@ impl ClientConfiguration {
         Self::from_addrs_with_name(server_addr, server_addr.ip().to_string(), local_bind_addr)
     }
 
-    /// Same as [`ClientConfiguration::from_addrs`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
+    /// Same as [`ClientAddrConfiguration::from_addrs`], but with an additional `server_hostname` for certificate verification if it is not just the server IP.
     pub fn from_addrs_with_name(
         server_addr: SocketAddr,
         server_hostname: String,
@@ -226,7 +221,6 @@ impl ClientConfiguration {
             server_addr,
             server_hostname,
             local_bind_addr,
-            clear_stale_received_payloads: DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS,
         }
     }
 }
@@ -309,7 +303,7 @@ pub struct ClientConnection {
     /// Handle to the async runtime
     runtime: runtime::Handle,
     // Configuration
-    client_config: ClientConfiguration,
+    addr_config: ClientAddrConfiguration,
     cert_mode: CertificateVerificationMode,
     channels_config: ChannelsConfiguration,
 
@@ -321,7 +315,7 @@ impl ClientConnection {
     pub(crate) fn new(
         local_id: ConnectionLocalId,
         runtime: runtime::Handle,
-        client_config: ClientConfiguration,
+        client_config: ClientAddrConfiguration,
         cert_mode: CertificateVerificationMode,
         channels_config: ChannelsConfiguration,
         from_async_client_recv: mpsc::Receiver<ClientAsyncMessage>,
@@ -329,7 +323,7 @@ impl ClientConnection {
         Self {
             local_id,
             runtime,
-            client_config,
+            addr_config: client_config,
             cert_mode,
             channels_config,
             state: InternalConnectionState::Connecting,
@@ -508,7 +502,7 @@ impl ClientSideConnection {
 
                 // Async connection
                 let local_id = self.specific.local_id;
-                let endpoint_config = self.specific.client_config.clone();
+                let endpoint_config = self.specific.addr_config.clone();
                 let cert_mode = self.specific.cert_mode.clone();
                 self.specific.runtime.spawn(async move {
                     async_connection_task(
@@ -529,10 +523,9 @@ impl ClientSideConnection {
         Ok(())
     }
 
+    #[inline(always)]
     pub(crate) fn clear_stale_received_payloads(&mut self) {
-        if self.specific.client_config.clear_stale_received_payloads {
-            self.internal_clear_stale_received_payloads();
-        }
+        self.checked_clear_stale_received_payloads();
     }
 
     /// Immediately prevents new messages from being sent on the connection and signal the connection to closes all its background tasks.
@@ -624,26 +617,20 @@ impl ClientSideConnection {
         &self.specific.cert_mode
     }
 
-    /// Enables or disables [`ClientConfiguration::clear_stale_received_payloads`] on this connection.
-    #[inline(always)]
-    pub fn set_clear_stale_client_payloads(&mut self, enable: bool) {
-        self.specific.client_config.clear_stale_received_payloads = enable;
-    }
-
     /// Returns the channels configuration used by this connection
     pub fn channels_config(&self) -> &ChannelsConfiguration {
         &self.specific.channels_config
     }
 
     /// Returns the client configuration used by this connection
-    pub fn client_config(&self) -> &ClientConfiguration {
-        &self.specific.client_config
+    pub fn client_config(&self) -> &ClientAddrConfiguration {
+        &self.specific.addr_config
     }
 }
 
 pub(crate) async fn async_connection_task(
     local_id: ConnectionLocalId,
-    endpoint_config: ClientConfiguration,
+    endpoint_config: ClientAddrConfiguration,
     cert_mode: CertificateVerificationMode,
     to_sync_client_send: ClientAsyncMsgSend,
     bytes_from_server_send: PayloadSend,

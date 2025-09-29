@@ -134,7 +134,7 @@ impl Channel {
     }
 }
 
-/// Stores a configuration that represents multiple channels to be opened by a [`crate::client::connection::ClientSideConnection`] or [`crate::server::Endpoint`]
+/// Stores a configuration that represents multiple channels to be opened by a [`crate::client::connection::ClientSideConnection`] or [`crate::server::endpoint::Endpoint`].
 ///
 /// Each channel in a [ChannelsConfiguration] is assigned a [ChannelId], starting from 0 and incrementing sequentially by 1.
 ///

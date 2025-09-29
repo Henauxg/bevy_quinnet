@@ -22,9 +22,9 @@ use crate::shared::{
     DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
-/// Default value for the `max_buffered_payloads_count_per_channel` field of a [`ConnectionConfig`]
+/// Default value for the `max_buffered_payloads_count_per_channel` field of a [`ConnectionParameters`]
 pub const DEFAULT_MAX_BUFFERED_PAYLOADS_COUNT_PER_CHANNEL: usize = 512;
-/// Default value for the `max_receive_channels_count` field of a [`ConnectionConfig`]
+/// Default value for the `max_receive_channels_count` field of a [`ConnectionParameters`]
 pub const DEFAULT_MAX_RECEIVE_CHANNEL_COUNT: usize = MAX_CHANNEL_COUNT;
 /// Default value for the `clear_stale_payloads` fields
 pub const DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS: bool = true;
@@ -40,18 +40,23 @@ pub(crate) type ChannelSyncMsgRecv = mpsc::Receiver<ChannelSyncMessage>;
 ///
 /// See [crate::server::connection::ServerSideConnection] and [crate::client::connection::ClientSideConnection].
 #[derive(Debug, Clone)]
-pub struct ConnectionConfig {
+pub struct ConnectionParameters {
     /// Maximum number of payloads that can be buffered per receive channel.
     pub max_buffered_payloads_count_per_channel: usize,
     /// Maximum number of receive channels that can be opened on this connection.
     pub max_receive_channels_count: usize,
+    /// If `true`, payloads on receive channels that were not read during this update will be cleared at the end of an Update cycle, in the [crate::shared::QuinnetSyncPostUpdate] schedule.
+    ///
+    /// Defaults to [DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS].
+    pub clear_stale_received_payloads: bool,
 }
-impl Default for ConnectionConfig {
+impl Default for ConnectionParameters {
     fn default() -> Self {
         Self {
             max_buffered_payloads_count_per_channel:
                 DEFAULT_MAX_BUFFERED_PAYLOADS_COUNT_PER_CHANNEL,
             max_receive_channels_count: DEFAULT_MAX_RECEIVE_CHANNEL_COUNT,
+            clear_stale_received_payloads: DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS,
         }
     }
 }
@@ -123,9 +128,9 @@ pub struct PeerConnection<S> {
     /// Receiver for internal quinnet messages coming from the async channels task
     from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
     close_send: broadcast::Sender<CloseReason>,
-    /// Configuration for the connection
-    config: ConnectionConfig,
     stats: ConnectionStats,
+    /// Parameters for the connection
+    parameters: ConnectionParameters,
 }
 
 impl<S> PeerConnection<S> {
@@ -135,7 +140,7 @@ impl<S> PeerConnection<S> {
         close_send: broadcast::Sender<CloseReason>,
         from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
         to_channels_send: mpsc::Sender<ChannelSyncMessage>,
-        config: ConnectionConfig,
+        config: ConnectionParameters,
     ) -> Self {
         Self {
             specific,
@@ -145,7 +150,7 @@ impl<S> PeerConnection<S> {
             close_send,
             to_channels_send,
             from_channels_recv,
-            config,
+            parameters: config,
             stats: ConnectionStats::default(),
         }
     }
@@ -183,14 +188,14 @@ impl<S> PeerConnection<S> {
 
             match self.receive_channels.get_mut(channel_id as usize) {
                 Some(payloads) => {
-                    if payloads.len() < self.config.max_buffered_payloads_count_per_channel {
+                    if payloads.len() < self.parameters.max_buffered_payloads_count_per_channel {
                         payloads.push_back(payload);
                     } else {
                         error!("Dropping received payload on channel {} because the receive queue is full", channel_id);
                     }
                 }
                 None => {
-                    if self.receive_channels.len() < self.config.max_receive_channels_count {
+                    if self.receive_channels.len() < self.parameters.max_receive_channels_count {
                         self.receive_channels.extend(
                             (self.receive_channels.len()..channel_id as usize)
                                 .map(|_| VecDeque::new()),
@@ -204,7 +209,18 @@ impl<S> PeerConnection<S> {
         }
     }
 
-    pub(crate) fn internal_clear_stale_received_payloads(&mut self) {
+    pub(crate) fn checked_clear_stale_received_payloads(&mut self) {
+        if self.parameters.clear_stale_received_payloads {
+            self.internal_clear_stale_received_payloads();
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn unchecked_clear_stale_received_payloads(&mut self) {
+        self.internal_clear_stale_received_payloads();
+    }
+
+    fn internal_clear_stale_received_payloads(&mut self) {
         for payloads in self.receive_channels.iter_mut() {
             payloads.clear();
         }
@@ -322,6 +338,12 @@ impl<S> PeerConnection<S> {
         self.send_channels = Vec::with_capacity(send_channels_capacity);
         self.receive_channels.clear();
         self.stats_mut().reset();
+    }
+
+    /// Enables or disables [`ConnectionParameters::clear_stale_received_payloads`] on this connection.
+    #[inline(always)]
+    pub fn set_clear_stale_received_payloads(&mut self, enable: bool) {
+        self.parameters.clear_stale_received_payloads = enable;
     }
 }
 

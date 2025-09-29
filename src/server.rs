@@ -26,7 +26,7 @@ use crate::{
             tasks::{spawn_recv_channels_tasks, spawn_send_channels_tasks_spawner},
             ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelsConfiguration,
         },
-        connection::{ConnectionConfig, PeerConnection, DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS},
+        connection::{ConnectionParameters, PeerConnection},
         AsyncRuntime, ClientId, QuinnetSyncPostUpdate, QuinnetSyncPreUpdate,
         DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE, DEFAULT_KEEP_ALIVE_INTERVAL_S,
         DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
@@ -66,21 +66,15 @@ pub struct ConnectionLostEvent {
     pub id: ClientId,
 }
 
-/// Configuration of the server, used when the server starts an Endpoint
+/// Configuration of a server's [Endpoint]
 #[derive(Debug, Clone)]
-pub struct ServerEndpointConfiguration {
+pub struct EndpointAddrConfiguration {
     /// Local address and port to bind to.
     pub local_bind_addr: SocketAddr,
-    /// If `true`, payloads on receive channels that were not read during this update will be cleared at the end of the update of the sync server, in the [crate::shared::QuinnetSyncPostUpdate] schedule.
-    ///
-    /// Defaults to [DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS].
-    pub clear_stale_received_payloads: bool,
-    /// Configuration applied to each new connection accepted by this endpoint.
-    pub connections_config: ConnectionConfig,
 }
 
-impl ServerEndpointConfiguration {
-    /// Creates a new ServerEndpointConfiguration
+impl EndpointAddrConfiguration {
+    /// Creates a new EndpointAddrConfiguration
     ///
     /// # Arguments
     ///
@@ -90,20 +84,20 @@ impl ServerEndpointConfiguration {
     ///
     /// Listen on port 6000, on an IPv4 endpoint, for all incoming IPs.
     /// ```
-    /// use bevy_quinnet::server::ServerEndpointConfiguration;
-    /// let config = ServerEndpointConfiguration::from_string("0.0.0.0:6000");
+    /// use bevy_quinnet::server::EndpointAddrConfiguration;
+    /// let config = EndpointAddrConfiguration::from_string("0.0.0.0:6000");
     /// ```
     /// Listen on port 6000, on an IPv6 endpoint, for all incoming IPs.
     /// ```
-    /// use bevy_quinnet::server::ServerEndpointConfiguration;
-    /// let config = ServerEndpointConfiguration::from_string("[::]:6000");
+    /// use bevy_quinnet::server::EndpointAddrConfiguration;
+    /// let config = EndpointAddrConfiguration::from_string("[::]:6000");
     /// ```
     pub fn from_string(local_bind_addr_str: &str) -> Result<Self, AddrParseError> {
         let local_bind_addr = local_bind_addr_str.parse()?;
         Ok(Self::from_addr(local_bind_addr))
     }
 
-    /// Creates a new ServerEndpointConfiguration
+    /// Creates a new EndpointAddrConfiguration
     ///
     /// # Arguments
     ///
@@ -115,14 +109,14 @@ impl ServerEndpointConfiguration {
     /// Listen on port 6000, on an IPv6 endpoint, for all incoming IPs.
     /// ```
     /// use std::net::Ipv6Addr;
-    /// use bevy_quinnet::server::ServerEndpointConfiguration;
-    /// let config = ServerEndpointConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000);
+    /// use bevy_quinnet::server::EndpointAddrConfiguration;
+    /// let config = EndpointAddrConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000);
     /// ```
     pub fn from_ip(local_bind_ip: impl Into<IpAddr>, local_bind_port: u16) -> Self {
         Self::from_addr(SocketAddr::new(local_bind_ip.into(), local_bind_port))
     }
 
-    /// Creates a new ServerEndpointConfiguration
+    /// Creates a new EndpointAddrConfiguration
     ///
     /// # Arguments
     ///
@@ -133,18 +127,14 @@ impl ServerEndpointConfiguration {
     ///
     /// Listen on port 6000, on an IPv6 endpoint, for all incoming IPs.
     /// ```
-    /// use bevy_quinnet::server::ServerEndpointConfiguration;
+    /// use bevy_quinnet::server::EndpointAddrConfiguration;
     /// use std::{net::{IpAddr, Ipv4Addr, SocketAddr}};
-    /// let config = ServerEndpointConfiguration::from_addr(
+    /// let config = EndpointAddrConfiguration::from_addr(
     ///           SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 6000),
     ///       );
     /// ```
     pub fn from_addr(local_bind_addr: SocketAddr) -> Self {
-        Self {
-            local_bind_addr,
-            clear_stale_received_payloads: DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS,
-            connections_config: ConnectionConfig::default(),
-        }
+        Self { local_bind_addr }
     }
 }
 
@@ -158,7 +148,7 @@ pub(crate) enum ServerSyncMessage {
     ClientConnectedAck(ClientId),
 }
 
-/// Main quinnet server. Can listen to multiple [`ServerSideConnection`] from multiple quinnet clients
+/// Main quinnet server. Can open an [`crate::server::endpoint::Endpoint`] to handle multiple [`crate::server::connection::ServerSideConnection`] from multiple quinnet clients
 ///
 /// Created by the [`QuinnetServerPlugin`] or inserted manually via a call to [`bevy::prelude::World::insert_resource`]. When created, it will look for an existing [`AsyncRuntime`] resource and use it or create one itself.
 #[derive(Resource)]
@@ -214,14 +204,21 @@ impl QuinnetServer {
         self.endpoint.as_mut()
     }
 
-    /// Starts a new endpoint with the given [ServerEndpointConfiguration], [CertificateRetrievalMode] and [ChannelsConfiguration]
+    /// Starts a new endpoint, which will listen for incoming connections from clients.
+    ///
+    /// # Arguments
+    /// - config: Configuration of the endpoint, including the local address and port to bind to.
+    /// - cert_mode: How to retrieve the server certificate
+    /// - channels_config: Configuration of the channels opened by default for each new connection accepted by this endpoint.
+    /// - connections_params: Configuration applied to each new connection accepted by this endpoint.
     ///
     /// Returns the [ServerCertificate] generated or loaded
     pub fn start_endpoint(
         &mut self,
-        config: ServerEndpointConfiguration,
+        addr_config: EndpointAddrConfiguration,
         cert_mode: CertificateRetrievalMode,
         channels_config: ChannelsConfiguration,
+        connections_params: ConnectionParameters,
     ) -> Result<ServerCertificate, EndpointStartError> {
         let server_cert = retrieve_certificate(cert_mode)?;
         let mut quinn_endpoint_config = ServerConfig::with_single_cert(
@@ -237,10 +234,10 @@ impl QuinnetServer {
         let (endpoint_close_send, endpoint_close_recv) =
             broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
-        let socket = std::net::UdpSocket::bind(config.local_bind_addr)?;
+        let socket = std::net::UdpSocket::bind(addr_config.local_bind_addr)?;
 
-        info!("Starting endpoint on: {} ...", config.local_bind_addr);
-        let connections_config = config.connections_config.clone();
+        info!("Starting endpoint on: {} ...", addr_config.local_bind_addr);
+        let connections_config = connections_params.clone();
         self.runtime.spawn(async move {
             endpoint_task(
                 socket,
@@ -252,7 +249,12 @@ impl QuinnetServer {
             .await;
         });
 
-        let mut endpoint = Endpoint::new(endpoint_close_send, from_async_endpoint_recv, config);
+        let mut endpoint = Endpoint::new(
+            endpoint_close_send,
+            from_async_endpoint_recv,
+            addr_config,
+            connections_params,
+        );
         for channel_type in channels_config.configs() {
             endpoint.unchecked_open_channel(*channel_type)?;
         }
@@ -292,7 +294,7 @@ async fn endpoint_task(
     endpoint_config: ServerConfig,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
     mut endpoint_close_recv: broadcast::Receiver<()>,
-    connections_config: ConnectionConfig,
+    connections_config: ConnectionParameters,
 ) {
     let endpoint = QuinnEndpoint::new(
         EndpointConfig::default(),
@@ -332,7 +334,7 @@ async fn endpoint_task(
 async fn client_connection_task(
     connection_handle: quinn::Connection,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
-    connections_config: ConnectionConfig,
+    connections_config: ConnectionParameters,
 ) {
     let (client_close_send, client_close_recv) =
         broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
@@ -474,7 +476,7 @@ pub fn clear_stale_client_payloads(mut server: ResMut<QuinnetServer>) {
         return;
     };
 
-    if endpoint.config().clear_stale_received_payloads {
+    if endpoint.connections_params().clear_stale_received_payloads {
         endpoint.clear_stale_payloads_from_clients();
     }
 }

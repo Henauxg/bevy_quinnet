@@ -17,7 +17,7 @@ use crate::{
     client::connection::{create_client_connection_async_channels, ClientConnection},
     shared::{
         channels::{ChannelAsyncMessage, ChannelsConfiguration},
-        connection::ConnectionConfig,
+        connection::ConnectionParameters,
         error::AsyncChannelError,
         AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncPostUpdate, QuinnetSyncPreUpdate,
     },
@@ -29,7 +29,7 @@ use self::{
         CertVerificationStatus, CertVerifierAction, CertificateVerificationMode,
     },
     connection::{
-        async_connection_task, ClientConfiguration, ClientSideConnection, ConnectionEvent,
+        async_connection_task, ClientAddrConfiguration, ClientSideConnection, ConnectionEvent,
         ConnectionFailedEvent, ConnectionLocalId, ConnectionLostEvent, ConnectionState,
         InternalConnectionState,
     },
@@ -190,15 +190,17 @@ impl QuinnetClient {
         self.connections.iter_mut()
     }
 
-    /// Open a connection to a server with the given [ConnectionConfig], [CertificateVerificationMode] and [ChannelsConfiguration]. The connection will raise an event when fully connected, see [ConnectionEvent]
+    /// Opens a connection to a server.
+    ///
+    /// The connection will raise an event when fully connected, see [ConnectionEvent]
     ///
     /// Returns the [ConnectionLocalId]
     pub fn open_connection(
         &mut self,
-        client_config: ClientConfiguration,
-        connection_config: ConnectionConfig,
+        addr_config: ClientAddrConfiguration,
         cert_mode: CertificateVerificationMode,
         channels_config: ChannelsConfiguration,
+        connection_params: ConnectionParameters,
     ) -> Result<ConnectionLocalId, AsyncChannelError> {
         // Generate a local connection id
         let local_id = self.connection_local_id_gen;
@@ -221,7 +223,7 @@ impl QuinnetClient {
             ClientConnection::new(
                 local_id,
                 self.runtime.clone(),
-                client_config.clone(),
+                addr_config.clone(),
                 cert_mode.clone(),
                 channels_config.clone(),
                 to_sync_client_recv,
@@ -230,7 +232,7 @@ impl QuinnetClient {
             close_send,
             from_channels_recv,
             to_channels_send,
-            connection_config,
+            connection_params,
         );
 
         connection.open_configured_channels(channels_config)?;
@@ -244,7 +246,7 @@ impl QuinnetClient {
         self.runtime.spawn(async move {
             async_connection_task(
                 local_id,
-                client_config,
+                addr_config,
                 cert_mode,
                 to_sync_client_send,
                 bytes_from_server_send,

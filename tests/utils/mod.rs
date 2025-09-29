@@ -16,16 +16,16 @@ use bevy_quinnet::{
             CertVerificationInfo, CertVerificationStatus, CertVerifierAction,
             CertificateVerificationMode,
         },
-        connection::ClientConfiguration,
+        connection::ClientAddrConfiguration,
         QuinnetClient, QuinnetClientPlugin,
     },
     server::{
-        self, certificate::CertificateRetrievalMode, QuinnetServer, QuinnetServerPlugin,
-        ServerEndpointConfiguration,
+        self, certificate::CertificateRetrievalMode, EndpointAddrConfiguration, QuinnetServer,
+        QuinnetServerPlugin,
     },
     shared::{
         channels::{ChannelConfig, ChannelId, ChannelsConfiguration},
-        connection::ConnectionConfig,
+        connection::ConnectionParameters,
         ClientId,
     },
 };
@@ -88,17 +88,21 @@ pub fn build_server_app() -> App {
     server_app
 }
 
-pub fn default_client_configuration(port: u16) -> ClientConfiguration {
-    ClientConfiguration::from_ips(SERVER_IP, port, LOCAL_BIND_IP, 0)
+pub fn default_client_addr_configuration(port: u16) -> ClientAddrConfiguration {
+    ClientAddrConfiguration::from_ips(SERVER_IP, port, LOCAL_BIND_IP, 0)
 }
 
 pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port>) {
     client
         .open_connection(
-            default_client_configuration(port.0),
-            ConnectionConfig::default(),
+            default_client_addr_configuration(port.0),
             CertificateVerificationMode::SkipVerification,
             ChannelsConfiguration::default(),
+            ConnectionParameters {
+                // During tests, we disable the clearing of stale payloads on the server since we check received messages after the whole Update schedule.
+                clear_stale_received_payloads: false,
+                ..Default::default()
+            },
         )
         .unwrap();
 }
@@ -106,16 +110,18 @@ pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port
 pub fn start_listening(mut server: ResMut<QuinnetServer>, port: Res<Port>) {
     server
         .start_endpoint(
-            ServerEndpointConfiguration {
+            EndpointAddrConfiguration {
                 local_bind_addr: SocketAddr::new(LOCAL_BIND_IP.into(), port.0),
-                // During tests, we disable the clearing of stale payloads on the server since we check received messages after the whole Update schedule.
-                clear_stale_received_payloads: false,
-                connections_config: ConnectionConfig::default(),
             },
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_IP.to_string(),
             },
             ChannelsConfiguration::default(),
+            ConnectionParameters {
+                // During tests, we disable the clearing of stale payloads on the server since we check received messages after the whole Update schedule.
+                clear_stale_received_payloads: false,
+                ..Default::default()
+            },
         )
         .unwrap();
 }

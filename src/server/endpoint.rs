@@ -7,13 +7,13 @@ use tokio::sync::{
 
 use crate::{
     server::{
-        connection::ServerConnection, ServerAsyncMessage, ServerDisconnectError,
-        ServerEndpointConfiguration, ServerGroupPayloadSendError, ServerGroupSendError,
+        connection::ServerConnection, EndpointAddrConfiguration, ServerAsyncMessage,
+        ServerDisconnectError, ServerGroupPayloadSendError, ServerGroupSendError,
         ServerPayloadSendError, ServerReceiveError, ServerSendError, ServerSyncMessage,
     },
     shared::{
         channels::{Channel, ChannelConfig, ChannelId, CloseReason},
-        connection::{ChannelsIdsPool, PeerConnection},
+        connection::{ChannelsIdsPool, ConnectionParameters, PeerConnection},
         error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
         ClientId,
     },
@@ -25,14 +25,17 @@ pub struct Endpoint {
     pub(crate) clients: HashMap<ClientId, PeerConnection<ServerConnection>>,
     /// Incremental client id generator
     client_id_gen: ClientId,
-    /// Opened send channels types on this endpoint
+    /// Opened send channels configs on this endpoint
     opened_channels: HashMap<ChannelId, ChannelConfig>,
     /// Internal ordered pool of available channel ids
     send_channel_ids: ChannelsIdsPool,
     close_sender: broadcast::Sender<()>,
-    /// Receiver for internal quinnet messages coming from the async endpoint
+    /// Receiver for internal quinnet messages sent by the async endpoint
     from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
-    config: ServerEndpointConfiguration,
+    /// Address configuration for this endpoint
+    addr_config: EndpointAddrConfiguration,
+    /// Parameters for all connections on this endpoint
+    connections_params: ConnectionParameters,
     stats: EndpointStats,
 }
 
@@ -40,7 +43,8 @@ impl Endpoint {
     pub(crate) fn new(
         endpoint_close_send: broadcast::Sender<()>,
         from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
-        config: ServerEndpointConfiguration,
+        addr_config: EndpointAddrConfiguration,
+        connections_params: ConnectionParameters,
     ) -> Self {
         Self {
             clients: HashMap::new(),
@@ -50,7 +54,8 @@ impl Endpoint {
             close_sender: endpoint_close_send,
             from_async_endpoint_recv,
             stats: EndpointStats::default(),
-            config,
+            addr_config,
+            connections_params,
         }
     }
 
@@ -491,6 +496,7 @@ impl Endpoint {
         }
     }
 
+    #[inline(always)]
     pub(crate) fn try_recv_from_async(&mut self) -> Result<ServerAsyncMessage, TryRecvError> {
         self.from_async_endpoint_recv.try_recv()
     }
@@ -503,19 +509,26 @@ impl Endpoint {
 
     pub(crate) fn clear_stale_payloads_from_clients(&mut self) {
         for connection in self.clients.values_mut() {
-            connection.internal_clear_stale_received_payloads();
+            connection.unchecked_clear_stale_received_payloads();
         }
     }
 
-    /// Enables or disables [`ServerEndpointConfiguration::clear_stale_received_payloads`] on this server endpoint.
+    /// Enables or disables [`crate::shared::connection::ConnectionParameters::clear_stale_received_payloads`] for all connections on this server endpoint.
     #[inline(always)]
     pub fn set_clear_stale_client_payloads(&mut self, enable: bool) {
-        self.config.clear_stale_received_payloads = enable;
+        self.connections_params.clear_stale_received_payloads = enable;
     }
 
-    /// Returns the current configuration of this server endpoint
-    pub fn config(&self) -> &ServerEndpointConfiguration {
-        &self.config
+    /// Returns the current address configuration of this server endpoint
+    #[inline(always)]
+    pub fn addr_config(&self) -> &EndpointAddrConfiguration {
+        &self.addr_config
+    }
+
+    /// Returns the current connection parameters of this server endpoint
+    #[inline(always)]
+    pub fn connections_params(&self) -> &ConnectionParameters {
+        &self.connections_params
     }
 }
 
