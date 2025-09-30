@@ -393,7 +393,7 @@ pub fn handle_client_events_and_dispatch_payloads(
 }
 
 /// Clears stale payloads on all receive channels
-pub fn clear_stale_client_payloads(mut client: ResMut<QuinnetClient>) {
+pub fn clear_stale_received_payloads(mut client: ResMut<QuinnetClient>) {
     for connection in client.connections.values_mut() {
         connection.clear_stale_received_payloads();
     }
@@ -438,7 +438,7 @@ impl Plugin for QuinnetClientPlugin {
         );
         app.add_systems(
             Last,
-            clear_stale_client_payloads
+            clear_stale_received_payloads
                 .in_set(QuinnetSyncPostUpdate)
                 .run_if(resource_exists::<QuinnetClient>),
         );
