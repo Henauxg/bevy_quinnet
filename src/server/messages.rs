@@ -40,12 +40,40 @@ pub enum ServerMessageReceiveError {
     /// Failed deserialization
     #[error("Failed deserialization")]
     Deserialization,
+    /// There is no default channel
+    #[error("There is no default channel")]
+    NoDefaultChannel,
     /// Error while receiving data
     #[error("Error while receiving data")]
     ReceiveError(#[from] ServerReceiveError),
 }
 
 impl Endpoint {
+    /// Same as [Self::receive_message_from] but on the default channel
+    pub fn receive_message<T: serde::de::DeserializeOwned>(
+        &mut self,
+        client_id: ClientId,
+    ) -> Result<Option<T>, ServerMessageReceiveError> {
+        match self.default_channel() {
+            Some(channel) => self.receive_message_from(client_id, channel),
+            None => Err(ServerMessageReceiveError::NoDefaultChannel),
+        }
+    }
+
+    /// Same as [Self::receive_message_from] but will log the error instead of returning it
+    pub fn try_receive_message<T: serde::de::DeserializeOwned>(
+        &mut self,
+        client_id: ClientId,
+    ) -> Option<T> {
+        match self.receive_message(client_id) {
+            Ok(message) => message,
+            Err(err) => {
+                error!("try_receive_message: {}", err);
+                None
+            }
+        }
+    }
+
     /// Attempt to deserialise a message into type `T`.
     ///
     /// Will return [`Err`] if:

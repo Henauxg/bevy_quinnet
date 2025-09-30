@@ -25,19 +25,43 @@ pub enum ClientMessageReceiveError {
     /// Failed deserialization
     #[error("Failed deserialization")]
     Deserialization,
-    /// Error while receiving data
+    /// There is no default channel
+    #[error("There is no default channel")]
+    NoDefaultChannel,
+    /// Error while receiving data, client connection is closed
     #[error("Error while receiving data")]
     ConnectionClosed(#[from] ConnectionClosed),
 }
 
 impl ClientSideConnection {
+    /// Same as [Self::receive_message_on] but on the default channel
+    pub fn receive_message<T: serde::de::DeserializeOwned>(
+        &mut self,
+    ) -> Result<Option<T>, ClientMessageReceiveError> {
+        match self.default_channel() {
+            Some(channel) => self.receive_message_on(channel),
+            None => Err(ClientMessageReceiveError::NoDefaultChannel),
+        }
+    }
+
+    /// Same as [Self::receive_message] but will log the error instead of returning it
+    pub fn try_receive_message<T: serde::de::DeserializeOwned>(&mut self) -> Option<T> {
+        match self.receive_message() {
+            Ok(message) => message,
+            Err(err) => {
+                error!("try_receive_message: {}", err);
+                None
+            }
+        }
+    }
+
     /// Attempt to deserialise a message into type `T`.
     ///
     /// Will return an [`Err`] if:
     /// - the bytes accumulated from the server aren't deserializable to T
     /// - or if the client is disconnected
     /// - (or if the message queue is full)
-    pub fn receive_message<T: serde::de::DeserializeOwned, C: Into<ChannelId>>(
+    pub fn receive_message_on<T: serde::de::DeserializeOwned, C: Into<ChannelId>>(
         &mut self,
         channel_id: C,
     ) -> Result<Option<T>, ClientMessageReceiveError> {
@@ -53,11 +77,11 @@ impl ClientSideConnection {
     }
 
     /// Same as [Self::receive_message] but will log the error instead of returning it
-    pub fn try_receive_message<T: serde::de::DeserializeOwned, C: Into<ChannelId>>(
+    pub fn try_receive_message_on<T: serde::de::DeserializeOwned, C: Into<ChannelId>>(
         &mut self,
         channel_id: C,
     ) -> Option<T> {
-        match self.receive_message(channel_id) {
+        match self.receive_message_on(channel_id) {
             Ok(message) => message,
             Err(err) => {
                 error!("try_receive_message: {}", err);
