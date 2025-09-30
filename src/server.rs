@@ -38,7 +38,8 @@ use crate::{
 mod client_id;
 
 #[cfg(feature = "bincode-messages")]
-mod messages;
+/// Module for the server's bincode serde helpers feature
+pub mod messages;
 
 /// Module for the server's endpoint connections
 pub mod connection;

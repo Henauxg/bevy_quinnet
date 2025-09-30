@@ -24,7 +24,8 @@ use tokio::{
 mod client_id;
 
 #[cfg(feature = "bincode-messages")]
-mod messages;
+/// Module for the client's bincode serde helpers feature
+pub mod messages;
 
 use crate::shared::{
     channels::{
