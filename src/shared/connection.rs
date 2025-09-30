@@ -27,7 +27,7 @@ pub const DEFAULT_MAX_BUFFERED_PAYLOADS_COUNT_PER_CHANNEL: usize = 512;
 /// Default value for the `max_receive_channels_count` field of a [`ConnectionParameters`]
 pub const DEFAULT_MAX_RECEIVE_CHANNEL_COUNT: usize = MAX_CHANNEL_COUNT;
 /// Default value for the `clear_stale_payloads` fields
-pub const DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS: bool = true;
+pub const DEFAULT_CLEAR_STALE_RECEIVED_PAYLOADS: bool = false;
 
 pub(crate) type PayloadSend = mpsc::Sender<(ChannelId, Bytes)>;
 pub(crate) type PayloadRecv = mpsc::Receiver<(ChannelId, Bytes)>;
@@ -172,7 +172,6 @@ impl<S> PeerConnection<S> {
 
     pub(crate) fn internal_receive_payload(&mut self, channel_id: ChannelId) -> Option<Bytes> {
         match self.receive_channels.get_mut(channel_id as usize) {
-            // TODO Drain variant ?
             Some(payloads) => payloads.pop_front(),
             None => None,
         }
