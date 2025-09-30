@@ -34,7 +34,7 @@ impl ServerSideConnection {
 
     /// Returns statistics about a client connection
     #[inline(always)]
-    pub fn connection_stats(&self) -> quinn::ConnectionStats {
+    pub fn quinn_connection_stats(&self) -> quinn::ConnectionStats {
         self.specific.connection_handle.stats()
     }
 

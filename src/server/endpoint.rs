@@ -336,7 +336,7 @@ impl Endpoint {
     /// Returns statistics about a client if connected.
     pub fn get_connection_stats(&self, client_id: ClientId) -> Option<quinn::ConnectionStats> {
         match &self.clients.get(&client_id) {
-            Some(client) => Some(client.connection_stats()),
+            Some(client) => Some(client.quinn_connection_stats()),
             None => None,
         }
     }

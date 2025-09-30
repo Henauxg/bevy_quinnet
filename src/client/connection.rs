@@ -578,7 +578,7 @@ impl ClientSideConnection {
     }
 
     /// Returns statistics about the current connection if connected.
-    pub fn connection_stats(&self) -> Option<ConnectionStats> {
+    pub fn quinn_connection_stats(&self) -> Option<ConnectionStats> {
         match &self.internal_state() {
             InternalConnectionState::Connected(connection, _) => Some(connection.stats()),
             _ => None,
