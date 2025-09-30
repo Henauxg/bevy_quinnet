@@ -47,12 +47,14 @@ pub(crate) type InternalConnectionRef = quinn::Connection;
 ///
 /// This is where client & server events are raised.
 ///
-/// This system set runs in PreUpdate.
+/// This system set runs in [bevy::prelude::PreUpdate].
 #[derive(Debug, SystemSet, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QuinnetSyncPreUpdate;
 
-/// System set used to perform end-of-frame clean-up tasks. Runs in the [bevy::prelude::Last] schedule.
+/// System set used to perform end-of-frame clean-up tasks.
 ///
 /// May also be used to send buffered payloads at the end of a frame in the future.
+///
+/// This system set runs in [bevy::prelude::Last].
 #[derive(Debug, SystemSet, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct QuinnetSyncPostUpdate;
