@@ -2,11 +2,36 @@
 
 ## Version 0.18.0 (TBD)
 
-`bincode-messages` feature:
-- Adds a new `bincode-messages` cargo feature, disabled by default
-- `bincode` and `serde` dependencies are now optional and enabled by this feature
-- Updates `bincode` from  1.0 to 2.0
-- Gates all `send_message_` methods behind this feature
+Client and server now buffer received payloads per channel, and allow fetching payloads from a specific channel. Buffers can be cleared automatically every frame via `ConnectionParameters::clear_stale_received_payloads`, manually by draining them or by calling `Endpoint::clear_payloads_from_clients`/`PeerConnection::clear_received_payloads`.
+
+
+- `bincode-messages` feature:
+  - Added a new `bincode-messages` cargo feature, disabled by default
+  - `bincode` and `serde` dependencies are now optional and enabled by this feature
+  - Updated `bincode` from 1.0 to 2.0
+  - Gated all `send_message_`/`receive_message_` methods behind this feature in both server & client
+- Renamed `QuinnetSyncUpdate` to `QuinnetSyncPreUpdate`
+- Added `QuinnetSyncPostUpdate`
+- Refactored `ClientSideConnection` & `ServerSideConnection` to use a common `PeerConnection`
+  - Refactored some errors types
+  - Added new helpers to read statistics & config values
+  - Added `PeerConnection::clear_received_payloads` fn
+- Renamed `ChannelKind` to `ChannelConfig` and `ChannelsConfiguration::from_types` to  `ChannelsConfiguration::from_configs`
+- Added `default_ordered_reliable`, `default_unreliable`, `default_unordered_reliable` helpers
+
+#### Client
+- Renamed `ClientEndpointConfiguration` to `ClientAddrConfiguration`
+- Added an additional `ConnectionParameters` argument to the `open_connection` fn
+- Renamed `update_sync_client` to `handle_client_events_and_dispatch_payloads`
+- Added `clear_stale_received_payloads` system
+
+#### Server
+- Renamed `ServerEndpointConfiguration` to `EndpointAddrConfiguration`
+- Added an additional `ConnectionParameters` argument to the `start_endpoint` fn
+- Moved `ServerSideConnection` and `Endpoint` to their own submodule
+- Renamed `update_sync_server` to `handle_server_events_and_dispatch_payloads`
+- Added `clear_stale_received_payloads` system
+- Added `Endpoint::clear_payloads_from_clients` fn
 
 ## Version 0.17.0 (2025-04-27)
 
