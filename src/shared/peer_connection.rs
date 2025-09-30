@@ -208,18 +208,14 @@ impl<S> PeerConnection<S> {
         }
     }
 
-    pub(crate) fn checked_clear_stale_received_payloads(&mut self) {
+    pub(crate) fn clear_stale_received_payloads(&mut self) {
         if self.parameters.clear_stale_received_payloads {
-            self.internal_clear_stale_received_payloads();
+            self.clear_received_payloads();
         }
     }
 
-    #[inline(always)]
-    pub(crate) fn unchecked_clear_stale_received_payloads(&mut self) {
-        self.internal_clear_stale_received_payloads();
-    }
-
-    fn internal_clear_stale_received_payloads(&mut self) {
+    /// Clears all the received payloads buffers for this connection.
+    pub fn clear_received_payloads(&mut self) {
         for payloads in self.receive_channels.iter_mut() {
             payloads.clear();
         }

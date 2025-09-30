@@ -2,7 +2,7 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 
 use crate::{
     server::ServerSyncMessage,
-    shared::{connection::PeerConnection, InternalConnectionRef},
+    shared::{peer_connection::PeerConnection, InternalConnectionRef},
 };
 
 /// A connection to a client from the server's perspective.

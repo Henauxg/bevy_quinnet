@@ -20,7 +20,7 @@ use bevy_quinnet::{
         connection::{ClientAddrConfiguration, ConnectionEvent, ConnectionFailedEvent},
         QuinnetClient, QuinnetClientPlugin,
     },
-    shared::{channels::ChannelsConfiguration, connection::ConnectionParameters, ClientId},
+    shared::{channels::ChannelsConfiguration, peer_connection::ConnectionParameters, ClientId},
 };
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::sync::mpsc;

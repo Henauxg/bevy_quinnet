@@ -6,7 +6,7 @@ use bevy_quinnet::{
         certificate::CertificateRetrievalMode, endpoint::Endpoint, ConnectionLostEvent,
         EndpointAddrConfiguration, QuinnetServer, QuinnetServerPlugin,
     },
-    shared::{channels::ChannelsConfiguration, connection::ConnectionParameters, ClientId},
+    shared::{channels::ChannelsConfiguration, peer_connection::ConnectionParameters, ClientId},
 };
 
 use protocol::{ClientMessage, ServerMessage};

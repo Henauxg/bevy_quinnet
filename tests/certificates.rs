@@ -14,7 +14,7 @@ use bevy_quinnet::{
         certificate::CertificateRetrievalMode, EndpointAddrConfiguration, QuinnetServer,
         QuinnetServerPlugin,
     },
-    shared::{channels::ChannelsConfiguration, connection::ConnectionParameters},
+    shared::{channels::ChannelsConfiguration, peer_connection::ConnectionParameters},
 };
 
 // https://github.com/rust-lang/rust/issues/46379

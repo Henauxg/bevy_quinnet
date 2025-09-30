@@ -26,7 +26,7 @@ use crate::{
             tasks::{spawn_recv_channels_tasks, spawn_send_channels_tasks_spawner},
             ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelsConfiguration,
         },
-        connection::{ConnectionParameters, PeerConnection},
+        peer_connection::{ConnectionParameters, PeerConnection},
         AsyncRuntime, ClientId, QuinnetSyncPostUpdate, QuinnetSyncPreUpdate,
         DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE, DEFAULT_KEEP_ALIVE_INTERVAL_S,
         DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
@@ -478,7 +478,7 @@ pub fn clear_stale_received_payloads(mut server: ResMut<QuinnetServer>) {
     };
 
     if endpoint.connections_params().clear_stale_received_payloads {
-        endpoint.clear_stale_payloads_from_clients();
+        endpoint.clear_payloads_from_clients();
     }
 }
 

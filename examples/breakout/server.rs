@@ -12,7 +12,7 @@ use bevy_quinnet::{
         certificate::CertificateRetrievalMode, ConnectionEvent, EndpointAddrConfiguration,
         QuinnetServer,
     },
-    shared::{connection::ConnectionParameters, ClientId},
+    shared::{peer_connection::ConnectionParameters, ClientId},
 };
 
 use crate::{

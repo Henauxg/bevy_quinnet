@@ -17,8 +17,8 @@ use crate::{
     client::connection::{create_client_connection_async_channels, ClientConnection},
     shared::{
         channels::{ChannelAsyncMessage, ChannelsConfiguration},
-        connection::ConnectionParameters,
         error::AsyncChannelError,
+        peer_connection::ConnectionParameters,
         AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncPostUpdate, QuinnetSyncPreUpdate,
     },
 };

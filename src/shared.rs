@@ -11,10 +11,10 @@ use tokio::runtime::Runtime;
 pub mod certificate;
 /// Channel functionalities shared by client & server
 pub mod channels;
-/// Connection functionalities shared by client & server
-pub mod connection;
 /// Shared error types
 pub mod error;
+/// Connection functionalities shared by client & server
+pub mod peer_connection;
 
 /// Default max size of async channels used to hold network messages. 1 async channel per connection.
 pub const DEFAULT_MESSAGE_QUEUE_SIZE: usize = 150;

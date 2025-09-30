@@ -13,8 +13,8 @@ use crate::{
     },
     shared::{
         channels::{Channel, ChannelConfig, ChannelId, CloseReason},
-        connection::{ChannelsIdsPool, ConnectionParameters, PeerConnection},
         error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
+        peer_connection::{ChannelsIdsPool, ConnectionParameters, PeerConnection},
         ClientId,
     },
 };
@@ -507,9 +507,10 @@ impl Endpoint {
         }
     }
 
-    pub(crate) fn clear_stale_payloads_from_clients(&mut self) {
+    /// Clears all the received payloads buffers for all clients on this server endpoint.
+    pub fn clear_payloads_from_clients(&mut self) {
         for connection in self.clients.values_mut() {
-            connection.unchecked_clear_stale_received_payloads();
+            connection.clear_received_payloads();
         }
     }
 

@@ -22,7 +22,7 @@ use bevy_quinnet::{
         certificate::CertificateVerificationMode, connection::ClientAddrConfiguration,
         QuinnetClient,
     },
-    shared::{connection::ConnectionParameters, ClientId},
+    shared::{peer_connection::ConnectionParameters, ClientId},
 };
 
 use crate::{

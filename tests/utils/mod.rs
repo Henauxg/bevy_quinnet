@@ -25,7 +25,7 @@ use bevy_quinnet::{
     },
     shared::{
         channels::{ChannelConfig, ChannelId, ChannelsConfiguration},
-        connection::ConnectionParameters,
+        peer_connection::ConnectionParameters,
         ClientId,
     },
 };

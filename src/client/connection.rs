@@ -33,11 +33,11 @@ use crate::shared::{
         ChannelAsyncMessage, ChannelConfig, ChannelId, ChannelSyncMessage, ChannelsConfiguration,
         CloseReason, CloseRecv, CloseSend,
     },
-    connection::{
+    error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
+    peer_connection::{
         ChannelAsyncMsgRecv, ChannelAsyncMsgSend, ChannelSyncMsgRecv, ChannelSyncMsgSend,
         ChannelsIdsPool, PayloadRecv, PayloadSend, PeerConnection,
     },
-    error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
     ClientId, InternalConnectionRef, DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE,
     DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
     DEFAULT_QCHANNEL_MESSAGES_CHANNEL_SIZE,
@@ -522,11 +522,6 @@ impl ClientSideConnection {
             _ => (),
         }
         Ok(())
-    }
-
-    #[inline(always)]
-    pub(crate) fn clear_stale_received_payloads(&mut self) {
-        self.checked_clear_stale_received_payloads();
     }
 
     /// Immediately prevents new messages from being sent on the connection and signal the connection to closes all its background tasks.
