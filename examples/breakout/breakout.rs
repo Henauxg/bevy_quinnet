@@ -127,13 +127,12 @@ fn main() {
     app.add_event::<CollisionEvent>();
     app.init_state::<GameState>();
     app.insert_resource(ClearColor(BACKGROUND_COLOR))
-        .insert_resource(server::Players::default())
         .insert_resource(client::Scoreboard { score: 0 })
         .insert_resource(client::ClientData::default())
         .insert_resource(client::NetworkMapping::default())
         .insert_resource(client::BricksMapping::default());
 
-    // ------ Main menu
+    // ------ Main menu ------
     app.add_systems(Update, close_on_esc)
         .add_systems(OnEnter(GameState::MainMenu), client::setup_main_menu)
         .add_systems(
@@ -142,7 +141,7 @@ fn main() {
         )
         .add_systems(OnExit(GameState::MainMenu), client::teardown_main_menu);
 
-    // ------ Hosting a server on a client
+    // Hosting as both server & client
     app.add_systems(
         OnEnter(GameState::HostingLobby),
         (server::start_listening, client::start_connection),
@@ -152,28 +151,33 @@ fn main() {
         (
             server::handle_client_messages,
             server::handle_server_events,
-            client::handle_server_messages,
+            client::handle_server_setup_messages,
         )
             .run_if(in_state(GameState::HostingLobby)),
     );
 
-    // ------ or just Joining as a client
+    // Or just Joining as a client
     app.add_systems(OnEnter(GameState::JoiningLobby), client::start_connection)
         .add_systems(
             Update,
-            client::handle_server_messages.run_if(in_state(GameState::JoiningLobby)),
+            client::handle_server_setup_messages.run_if(in_state(GameState::JoiningLobby)),
         );
 
-    // ------ Running the game.
+    // ------ Running the game ------
 
-    // ------ Every app is a client
+    // Every app is a client
     app.add_systems(OnEnter(GameState::Running), client::setup_breakout);
+
     app.edit_schedule(FixedUpdate, |schedule| {
         schedule.configure_sets(GameSystems::ClientSystems.run_if(in_state(GameState::Running)));
         schedule.add_systems(
             (
-                client::handle_server_messages.before(client::apply_velocity),
-                client::apply_velocity,
+                (
+                    client::handle_server_gameplay_events,
+                    client::handle_server_updates,
+                    client::apply_velocity,
+                )
+                    .chain(),
                 client::move_paddle,
                 client::update_scoreboard,
                 client::play_collision_sound,
@@ -182,7 +186,7 @@ fn main() {
         );
     });
 
-    // ------ But hosting apps are also a server
+    // But hosting apps are also a server
     app.edit_schedule(FixedUpdate, |schedule| {
         schedule.configure_sets(
             GameSystems::HostSystems
@@ -190,12 +194,12 @@ fn main() {
                 .run_if(server_is_listening),
         );
         schedule.add_systems(
-            (
-                server::handle_client_messages.before(server::update_paddles),
-                server::update_paddles.before(server::check_for_collisions),
-                server::apply_velocity.before(server::check_for_collisions),
+            ((
+                server::handle_client_messages,
+                (server::update_paddles, server::apply_velocity),
                 server::check_for_collisions,
             )
+                .chain(),)
                 .in_set(GameSystems::HostSystems),
         );
     });

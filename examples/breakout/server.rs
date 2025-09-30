@@ -9,16 +9,19 @@ use bevy::{
 };
 use bevy_quinnet::{
     server::{
-        certificate::CertificateRetrievalMode, ConnectionEvent, QuinnetServer,
-        ServerEndpointConfiguration,
+        certificate::CertificateRetrievalMode, ConnectionEvent, EndpointAddrConfiguration,
+        QuinnetServer,
     },
-    shared::ClientId,
+    shared::{connection::ConnectionParameters, ClientId},
 };
 
 use crate::{
-    protocol::{ClientChannel, ClientMessage, PaddleInput, ServerChannel, ServerMessage},
-    BrickId, Velocity, WallLocation, BALL_DIAMETER, BALL_SIZE, BALL_SPEED, BOTTOM_WALL, BRICK_SIZE,
-    GAP_BETWEEN_BRICKS, GAP_BETWEEN_BRICKS_AND_SIDES, GAP_BETWEEN_PADDLE_AND_BRICKS,
+    protocol::{
+        ClientChannel, ClientMessage, PaddleInput, ServerChannel, ServerEvent, ServerSetupMessage,
+        ServerUpdate,
+    },
+    server, BrickId, Velocity, WallLocation, BALL_DIAMETER, BALL_SIZE, BALL_SPEED, BOTTOM_WALL,
+    BRICK_SIZE, GAP_BETWEEN_BRICKS, GAP_BETWEEN_BRICKS_AND_SIDES, GAP_BETWEEN_PADDLE_AND_BRICKS,
     GAP_BETWEEN_PADDLE_AND_FLOOR, LEFT_WALL, LOCAL_BIND_IP, PADDLE_PADDING, PADDLE_SIZE,
     PADDLE_SPEED, RIGHT_WALL, SERVER_HOST, SERVER_PORT, TIME_STEP, TOP_WALL, WALL_THICKNESS,
 };
@@ -77,14 +80,16 @@ struct WallBundle {
     collider: Collider,
 }
 
-pub(crate) fn start_listening(mut server: ResMut<QuinnetServer>) {
+pub(crate) fn start_listening(mut commands: Commands, mut server: ResMut<QuinnetServer>) {
+    commands.insert_resource(server::Players::default());
     server
         .start_endpoint(
-            ServerEndpointConfiguration::from_ip(LOCAL_BIND_IP, SERVER_PORT),
+            EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, SERVER_PORT),
             CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_HOST.to_string(),
             },
             ServerChannel::channels_configuration(),
+            ConnectionParameters::default(),
         )
         .unwrap();
 }
@@ -164,7 +169,7 @@ pub(crate) fn update_paddles(
                 server.endpoint_mut().try_send_group_message_on(
                     players.map.keys(),
                     ServerChannel::PaddleUpdates,
-                    ServerMessage::PaddleMoved {
+                    ServerUpdate::PaddleMoved {
                         entity: paddle_entity,
                         position: paddle_transform.translation,
                     },
@@ -204,7 +209,7 @@ pub(crate) fn check_for_collisions(
 
                     endpoint.try_broadcast_message_on(
                         ServerChannel::GameEvents,
-                        ServerMessage::BrickDestroyed {
+                        ServerEvent::BrickDestroyed {
                             by_client_id: ball.last_hit_by,
                             brick_id: brick.0,
                         },
@@ -236,7 +241,7 @@ pub(crate) fn check_for_collisions(
 
                 endpoint.try_broadcast_message_on(
                     ServerChannel::GameEvents,
-                    ServerMessage::BallCollided {
+                    ServerEvent::BallCollided {
                         owner_client_id: ball.last_hit_by,
                         entity: ball_entity,
                         position: ball_transform.translation,
@@ -266,7 +271,7 @@ fn start_game(
         endpoint
             .send_message(
                 *client_id,
-                ServerMessage::InitClient {
+                ServerSetupMessage::InitClient {
                     client_id: *client_id,
                 },
             )
@@ -283,7 +288,7 @@ fn start_game(
             .send_group_message_on(
                 players.map.keys(),
                 ServerChannel::GameSetup,
-                ServerMessage::SpawnPaddle {
+                ServerSetupMessage::SpawnPaddle {
                     owner_client_id: *client_id,
                     entity: paddle,
                     position: *position,
@@ -303,7 +308,7 @@ fn start_game(
             .send_group_message_on(
                 players.map.keys(),
                 ServerChannel::GameSetup,
-                ServerMessage::SpawnBall {
+                ServerSetupMessage::SpawnBall {
                     owner_client_id: *client_id,
                     entity: ball,
                     position: *position,
@@ -383,7 +388,7 @@ fn start_game(
     endpoint
         .send_group_message(
             players.map.keys(),
-            ServerMessage::SpawnBricks {
+            ServerSetupMessage::SpawnBricks {
                 offset: Vec2 {
                     x: offset_x,
                     y: offset_y,
@@ -395,7 +400,7 @@ fn start_game(
         .unwrap();
 
     endpoint
-        .send_group_message(players.map.keys(), ServerMessage::StartGame {})
+        .send_group_message(players.map.keys(), ServerSetupMessage::StartGame {})
         .unwrap();
 }
 

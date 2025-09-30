@@ -22,9 +22,9 @@ pub(crate) enum ClientMessage {
     PaddleInput { input: PaddleInput },
 }
 
-// Messages from the server
+// Game setup messages from the server
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) enum ServerMessage {
+pub(crate) enum ServerSetupMessage {
     InitClient {
         client_id: ClientId,
     },
@@ -45,6 +45,11 @@ pub(crate) enum ServerMessage {
         columns: usize,
     },
     StartGame,
+}
+
+// Game events from the server
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) enum ServerEvent {
     BrickDestroyed {
         by_client_id: ClientId,
         brick_id: BrickId,
@@ -55,10 +60,12 @@ pub(crate) enum ServerMessage {
         position: Vec3,
         velocity: Vec2,
     },
-    PaddleMoved {
-        entity: Entity,
-        position: Vec3,
-    },
+}
+
+// Game updates from the server
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) enum ServerUpdate {
+    PaddleMoved { entity: Entity, position: Vec3 },
 }
 
 #[derive(Debug, Clone, Copy, EnumIter)]
@@ -105,7 +112,7 @@ impl ServerChannel {
     pub fn to_channel_config(self) -> ChannelConfig {
         match self {
             ServerChannel::GameSetup => ChannelConfig::default_ordered_reliable(),
-            ServerChannel::GameEvents => ChannelConfig::default_unordered_reliable(),
+            ServerChannel::GameEvents => ChannelConfig::default_ordered_reliable(),
             ServerChannel::PaddleUpdates => ChannelConfig::default_unreliable(),
         }
     }

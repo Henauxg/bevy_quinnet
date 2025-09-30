@@ -19,14 +19,17 @@ use bevy::{
 };
 use bevy_quinnet::{
     client::{
-        certificate::CertificateVerificationMode, connection::ClientConfiguration,
+        certificate::CertificateVerificationMode, connection::ClientAddrConfiguration,
         QuinnetClient,
     },
-    shared::ClientId,
+    shared::{connection::ConnectionParameters, ClientId},
 };
 
 use crate::{
-    protocol::{ClientChannel, ClientMessage, PaddleInput, ServerMessage},
+    protocol::{
+        ClientChannel, ClientMessage, PaddleInput, ServerChannel, ServerEvent, ServerSetupMessage,
+        ServerUpdate,
+    },
     BrickId, CollisionEvent, CollisionSound, GameState, Score, Velocity, WallLocation, BALL_SIZE,
     BALL_SPEED, BRICK_SIZE, GAP_BETWEEN_BRICKS, LOCAL_BIND_IP, PADDLE_SIZE, SERVER_HOST,
     SERVER_PORT, TIME_STEP,
@@ -98,9 +101,10 @@ struct WallBundle {
 pub(crate) fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(
-            ClientConfiguration::from_ips(SERVER_HOST, SERVER_PORT, LOCAL_BIND_IP, 0),
+            ClientAddrConfiguration::from_ips(SERVER_HOST, SERVER_PORT, LOCAL_BIND_IP, 0),
             CertificateVerificationMode::SkipVerification,
             ClientChannel::channels_configuration(),
+            ConnectionParameters::default(),
         )
         .unwrap();
 }
@@ -161,36 +165,25 @@ pub(crate) fn spawn_bricks(
     }
 }
 
-pub(crate) fn handle_server_messages(
+pub(crate) fn handle_server_setup_messages(
     mut commands: Commands,
     mut client: ResMut<QuinnetClient>,
     mut client_data: ResMut<ClientData>,
     mut entity_mapping: ResMut<NetworkMapping>,
     mut next_state: ResMut<NextState<GameState>>,
-    mut paddles: Query<&mut Transform, With<Paddle>>,
-    mut balls: Query<
-        (
-            &mut Transform,
-            &mut Velocity,
-            &mut MeshMaterial2d<ColorMaterial>,
-        ),
-        (With<Ball>, Without<Paddle>),
-    >,
     mut bricks: ResMut<BricksMapping>,
-    mut scoreboard: ResMut<Scoreboard>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    mut collision_events: EventWriter<CollisionEvent>,
 ) {
-    while let Some((_, message)) = client
+    while let Some(message) = client
         .connection_mut()
-        .try_receive_message::<ServerMessage>()
+        .try_receive_message(ServerChannel::GameSetup)
     {
         match message {
-            ServerMessage::InitClient { client_id } => {
+            ServerSetupMessage::InitClient { client_id } => {
                 client_data.self_id = client_id;
             }
-            ServerMessage::SpawnPaddle {
+            ServerSetupMessage::SpawnPaddle {
                 owner_client_id,
                 entity,
                 position,
@@ -202,7 +195,7 @@ pub(crate) fn handle_server_messages(
                 );
                 entity_mapping.map.insert(entity, paddle);
             }
-            ServerMessage::SpawnBall {
+            ServerSetupMessage::SpawnBall {
                 owner_client_id,
                 entity,
                 position,
@@ -221,13 +214,40 @@ pub(crate) fn handle_server_messages(
                     .id();
                 entity_mapping.map.insert(entity, ball);
             }
-            ServerMessage::SpawnBricks {
+            ServerSetupMessage::SpawnBricks {
                 offset,
                 rows,
                 columns,
             } => spawn_bricks(&mut commands, &mut bricks, offset, rows, columns),
-            ServerMessage::StartGame {} => next_state.set(GameState::Running),
-            ServerMessage::BrickDestroyed {
+            ServerSetupMessage::StartGame {} => next_state.set(GameState::Running),
+        }
+    }
+}
+
+pub(crate) fn handle_server_gameplay_events(
+    mut commands: Commands,
+    mut client: ResMut<QuinnetClient>,
+    client_data: ResMut<ClientData>,
+    entity_mapping: ResMut<NetworkMapping>,
+    mut balls: Query<
+        (
+            &mut Transform,
+            &mut Velocity,
+            &mut MeshMaterial2d<ColorMaterial>,
+        ),
+        (With<Ball>, Without<Paddle>),
+    >,
+    bricks: ResMut<BricksMapping>,
+    mut scoreboard: ResMut<Scoreboard>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut collision_events: EventWriter<CollisionEvent>,
+) {
+    while let Some(message) = client
+        .connection_mut()
+        .try_receive_message(ServerChannel::GameEvents)
+    {
+        match message {
+            ServerEvent::BrickDestroyed {
                 by_client_id,
                 brick_id,
             } => {
@@ -240,7 +260,7 @@ pub(crate) fn handle_server_messages(
                     commands.entity(*brick_entity).despawn();
                 }
             }
-            ServerMessage::BallCollided {
+            ServerEvent::BallCollided {
                 owner_client_id,
                 entity,
                 position,
@@ -260,7 +280,21 @@ pub(crate) fn handle_server_messages(
                 // Sends a collision event so that other systems can react to the collision
                 collision_events.write_default();
             }
-            ServerMessage::PaddleMoved { entity, position } => {
+        }
+    }
+}
+
+pub(crate) fn handle_server_updates(
+    mut client: ResMut<QuinnetClient>,
+    entity_mapping: ResMut<NetworkMapping>,
+    mut paddles: Query<&mut Transform, With<Paddle>>,
+) {
+    while let Some(message) = client
+        .connection_mut()
+        .try_receive_message(ServerChannel::PaddleUpdates)
+    {
+        match message {
+            ServerUpdate::PaddleMoved { entity, position } => {
                 if let Some(local_paddle) = entity_mapping.map.get(&entity) {
                     if let Ok(mut paddle_transform) = paddles.get_mut(*local_paddle) {
                         paddle_transform.translation = position;
