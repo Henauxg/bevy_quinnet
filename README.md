@@ -1,8 +1,8 @@
 <div align="center">
 
-[![Bevy tracking](https://img.shields.io/badge/Bevy%20tracking-released%20version-lightblue)](https://github.com/bevyengine/bevy/blob/main/docs/plugins_guidelines.md#main-branch-tracking)
 [![crates.io](https://img.shields.io/crates/v/bevy_quinnet)](https://crates.io/crates/bevy_quinnet)
 [![bevy_quinnet on doc.rs](https://docs.rs/bevy_quinnet/badge.svg)](https://docs.rs/bevy_quinnet)
+[![Bevy tracking](https://img.shields.io/badge/Bevy%20tracking-released%20version-lightblue)](https://github.com/bevyengine/bevy/blob/main/docs/plugins_guidelines.md#main-branch-tracking)
 
 # Bevy Quinnet
 
@@ -12,37 +12,37 @@ A Client/Server game networking plugin using [QUIC](https://www.chromium.org/qui
 
 ## QUIC as a game networking protocol
 
-QUIC was really attractive to me as a game networking protocol because most of the hard-work is done by the protocol specification and the implementation (here [Quinn](https://github.com/quinn-rs/quinn)). No need to reinvent the wheel once again on error-prones subjects such as a UDP reliability wrapper, encryption & authentication mechanisms or congestion-control.
+QUIC seems really attractive as a game networking protocol because most of the hard-work is done by the protocol specification and the implementation (here [Quinn](https://github.com/quinn-rs/quinn)). No need to reinvent the wheel once again on error-prones subjects such as a UDP reliability wrapper, encryption & authentication mechanisms or congestion-control.
 
 Most of the features proposed by the big networking libs are supported by default through QUIC. As an example, here is the list of features presented in [GameNetworkingSockets](https://github.com/ValveSoftware/GameNetworkingSockets):
 
-* *Connection-oriented API (like TCP)*: -> by default
-* *... but message-oriented (like UDP), not stream-oriented*: -> by default (*)
-* *Supports both reliable and unreliable message types*: ->by default
-* *Messages can be larger than underlying MTU. The protocol performs fragmentation, reassembly, and retransmission for reliable messages*: -> by default (frag & reassembly is not done by the protocol for unreliable packets)
-* *A reliability layer [...]. It is based on the "ack vector" model from DCCP (RFC 4340, section 11.4) and Google QUIC and discussed in the context of games by Glenn Fiedler [...]*: -> by default.
-* *Encryption. [...] The details for shared key derivation and per-packet IV are based on the design used by Google's QUIC protocol*: -> by default
-* *Tools for simulating packet latency/loss, and detailed stats measurement*: -> Not by default
-* *Head-of-line blocking control and bandwidth sharing of multiple message streams on the same connection.*: -> by default
-* *IPv6 support*: -> by default
-* *Peer-to-peer networking (NAT traversal with ICE + signaling + symmetric connect mode)*: -> Not by default
-* *Cross platform*: -> by default, where UDP is available
+* *Connection-oriented API (like TCP)* -> by default
+* *... but message-oriented (like UDP), not stream-oriented* -> by default (*)
+* *Supports both reliable and unreliable message types* -> by default
+* *Messages can be larger than underlying MTU. The protocol performs fragmentation, reassembly, and retransmission for reliable messages* -> by default (frag & reassembly is not done by the protocol for unreliable packets)
+* *A reliability layer [...]. It is based on the "ack vector" model from DCCP (RFC 4340, section 11.4) and Google QUIC and discussed in the context of games by Glenn Fiedler [...]* -> by default.
+* *Encryption. [...] The details for shared key derivation and per-packet IV are based on the design used by Google's QUIC protocol* -> by default
+* *Tools for simulating packet latency/loss, and detailed stats measurement* -> Not by default
+* *Head-of-line blocking control and bandwidth sharing of multiple message streams on the same connection.* -> by default
+* *IPv6 support* -> by default
+* *Peer-to-peer networking (NAT traversal with ICE + signaling + symmetric connect mode)* -> Not by default
+* *Cross platform* -> by default, where UDP is available
 
 -> Roughly 9 points out of 11 by default.
 
-(*) Kinda, when sharing a QUIC stream, reliable messages need to be framed.
+*(\*) Almost, when sharing a QUIC stream, reliable messages need to be framed.*
 
 ## Features
 
 Quinnet can be used as a transport layer. It currently features:
 
-- A Client plugin which can:
+- A **Client plugin** which can:
     - Connect/disconnect to/from one or more server
     - Send & receive unreliable and ordered/unordered reliable messages
-- A Server plugin which can:
+- A **Server plugin** which can:
     - Accept client connections & disconnect them
     - Send & receive unreliable and ordered/unordered reliable messages
-- Both client & server accept custom protocol structs/enums defined by the user as the message format (as well as raw bytes).
+- Both client & server accept **custom protocol structs/enums** defined by the user as the message format, as well as **raw bytes**.
 - Communications are encrypted, and the client can [authenticate the server](#certificates-and-server-authentication).
 
 Although Quinn and parts of Quinnet are asynchronous, the APIs exposed by Quinnet for the client and server are synchronous. This makes the surface API easy to work with and adapted to a Bevy usage.
@@ -79,7 +79,7 @@ fn start_connection(client: ResMut<QuinnetClient>) {
             ConnectionParameters::default(),
         );
     
-    // When trully connected, you will receive a ConnectionEvent
+    // Once connected, you will receive a ConnectionEvent
 ```
 
 - To process server messages, you can use a bevy system such as the one below. The function `receive_message` is generic, here `ServerMessage` is a user provided enum deriving `Serialize` and `Deserialize`.
@@ -89,7 +89,7 @@ fn handle_server_messages(
     mut client: ResMut<QuinnetClient>,
     /*...*/
 ) {
-    while let Ok(Some((channel_id, message))) = client.connection_mut().receive_message::<ServerMessage>() {
+    while let Some(message) = client.connection_mut().try_receive_message() {
         match message {
             // Match on your own message types ...
             ServerMessage::ClientConnected { client_id, username} => {/*...*/}
@@ -138,12 +138,12 @@ fn handle_client_messages(
 ) {
     let mut endpoint = server.endpoint_mut();
     for client_id in endpoint.clients() {
-        while let Some((channel_id, message)) = endpoint.try_receive_message_from::<ClientMessage>(client_id) {
+        while let Some(message) = endpoint.try_receive_message(client_id) {
             match message {
                 // Match on your own message types ...
                 ClientMessage::Join { username} => {
                     // Send a messsage to 1 client
-                    endpoint.send_message(client_id, ServerMessage::InitClient {/*...*/}).unwrap();
+                    endpoint.try_send_message(client_id, ServerMessage::InitClient {/*...*/});
                     /*...*/
                 }
                 ClientMessage::Disconnect { } => {
@@ -153,11 +153,10 @@ fn handle_client_messages(
                 }
                 ClientMessage::ChatMessage { message } => {
                     // Send a message to a group of clients
-                    endpoint.send_group_message(
+                    endpoint.try_send_group_message(
                             client_group, // Iterator of ClientId
                             ServerMessage::ChatMessage {/*...*/}
-                        )
-                        .unwrap();
+                        );
                     /*...*/
                 }           
             }
@@ -275,7 +274,15 @@ See more about certificates in the [certificates readme](docs/Certificates.md)
 
 This demo comes with an headless [server](examples/chat/server.rs), a [terminal client](examples/chat/client.rs) and a shared [protocol](examples/chat/protocol.rs).
 
-Start the server with `cargo run --example chat-server --features=bincode-messages` and as many clients as needed with `cargo run --example chat-client --features=bincode-messages`. Type `quit` to disconnect with a client.
+Start the server with 
+```
+cargo run --example chat-server --features=bincode-messages
+```
+and as many clients as needed with
+```
+cargo run --example chat-client --features=bincode-messages
+```
+Type `quit` to disconnect with a client.
 
 ![terminal_chat_demo](https://user-images.githubusercontent.com/19689618/197757086-0643e6e7-6c69-4760-9af6-cb323529dc52.gif)
 
@@ -288,9 +295,13 @@ This demo is a modification of the classic [Bevy breakout](https://bevyengine.or
 
 It hosts a local server from inside a client, instead of a dedicated headless server as in the chat demo. You can find a [server module](examples/breakout/server.rs), a [client module](examples/breakout/client.rs), a shared [protocol](examples/breakout/protocol.rs) and the [bevy app schedule](examples/breakout/breakout.rs).
 
-It also makes uses of [`Channels`](#channels). The server broadcasts the paddle position every tick via the `PaddleMoved` message on an `Unreliable` channel, the `BrickDestroyed` and `BallCollided` events are emitted on an `UnorderedReliable` channel, while the game setup and start are using the default `OrderedReliable` channel.
+It also makes uses of [`Channels`](#channels). The server broadcasts the paddle position every tick via the `PaddleMoved` message on an `Unreliable` channel, while the `BrickDestroyed`, `BallCollided` and the game setup and start are using `OrderedReliable` channels.
 
-Start two clients with `cargo run --example breakout --features=bincode-messages`, "Host" on one and "Join" on the other.
+Start two clients with:
+```
+cargo run --example breakout --features=bincode-messages
+```
+"Host" on one and "Join" on the other.
 
 [breakout_versus_demo_short.mp4](https://user-images.githubusercontent.com/19689618/213700921-85967bd7-9a47-44ac-9471-77a33938569f.mp4)
 </details>
@@ -334,7 +345,7 @@ For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatboo
 
 ## Credits
 
-Thanks to the [Renet](https://github.com/lucaspoffo/renet) crate for the inspiration on the high level API.
+Thanks to the [Renet](https://github.com/lucaspoffo/renet) crate for the initial inspiration on the high level API.
 
 ## License
 
