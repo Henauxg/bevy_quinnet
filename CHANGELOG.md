@@ -14,7 +14,7 @@ Client and server now buffer received payloads per channel, and allow fetching p
 - Added `QuinnetSyncPostUpdate`
 - Refactored `ClientSideConnection` & `ServerSideConnection` to use a common `PeerConnection`
   - Refactored some errors types
-  - Added new helpers to read statistics & config values
+  - Added `PeerConnection::stats` & `PeerConnection::stats_mut`
   - Added `PeerConnection::clear_received_payloads` fn
 - Renamed `ChannelKind` to `ChannelConfig` and `ChannelsConfiguration::from_types` to  `ChannelsConfiguration::from_configs`
 - Added `default_ordered_reliable`, `default_unreliable`, `default_unordered_reliable` helpers
@@ -24,6 +24,7 @@ Client and server now buffer received payloads per channel, and allow fetching p
 - Added an additional `ConnectionParameters` argument to the `open_connection` fn
 - Renamed `update_sync_client` to `handle_client_events_and_dispatch_payloads`
 - Added `clear_stale_received_payloads` system
+- Renamed `ClientSideConnection::connection_stats` to `ClientSideConnection::quinn_connection_stats`
 
 #### Server
 - Renamed `ServerEndpointConfiguration` to `EndpointAddrConfiguration`
@@ -32,6 +33,7 @@ Client and server now buffer received payloads per channel, and allow fetching p
 - Renamed `update_sync_server` to `handle_server_events_and_dispatch_payloads`
 - Added `clear_stale_received_payloads` system
 - Added `Endpoint::clear_payloads_from_clients` fn
+- Renamed `ServerSideConnection::connection_stats` to `ServerSideConnection::quinn_connection_stats`
 
 ## Version 0.17.0 (2025-04-27)
 
