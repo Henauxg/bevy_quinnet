@@ -177,7 +177,7 @@ pub(crate) fn handle_server_setup_messages(
 ) {
     while let Some(message) = client
         .connection_mut()
-        .try_receive_message(ServerChannel::GameSetup)
+        .try_receive_message_on(ServerChannel::GameSetup)
     {
         match message {
             ServerSetupMessage::InitClient { client_id } => {
@@ -244,7 +244,7 @@ pub(crate) fn handle_server_gameplay_events(
 ) {
     while let Some(message) = client
         .connection_mut()
-        .try_receive_message(ServerChannel::GameEvents)
+        .try_receive_message_on(ServerChannel::GameEvents)
     {
         match message {
             ServerEvent::BrickDestroyed {
@@ -291,7 +291,7 @@ pub(crate) fn handle_server_updates(
 ) {
     while let Some(message) = client
         .connection_mut()
-        .try_receive_message(ServerChannel::PaddleUpdates)
+        .try_receive_message_on(ServerChannel::PaddleUpdates)
     {
         match message {
             ServerUpdate::PaddleMoved { entity, position } => {

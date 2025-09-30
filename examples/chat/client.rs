@@ -27,7 +27,7 @@ use tokio::sync::mpsc;
 
 use protocol::{ClientMessage, ServerMessage};
 
-use crate::protocol::NetworkChannels;
+// use crate::protocol::NetworkChannels;
 
 mod protocol;
 
@@ -52,10 +52,7 @@ pub fn on_app_exit(app_exit_events: EventReader<AppExit>, mut client: ResMut<Qui
 }
 
 fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<QuinnetClient>) {
-    while let Some(message) = client
-        .connection_mut()
-        .try_receive_message(NetworkChannels::Chat)
-    {
+    while let Some(message) = client.connection_mut().try_receive_message() {
         match message {
             ServerMessage::ClientConnected {
                 client_id,
