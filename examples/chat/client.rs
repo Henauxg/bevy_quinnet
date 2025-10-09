@@ -18,9 +18,11 @@ use bevy_quinnet::{
         certificate::CertificateVerificationMode,
         client_connected,
         connection::{ClientAddrConfiguration, ConnectionEvent, ConnectionFailedEvent},
-        QuinnetClient, QuinnetClientPlugin,
+        ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin,
     },
-    shared::{channels::ChannelsConfiguration, peer_connection::ConnectionParameters, ClientId},
+    shared::{
+        channels::SendChannelsConfiguration, peer_connection::RecvChannelsConfiguration, ClientId,
+    },
 };
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::sync::mpsc;
@@ -120,12 +122,11 @@ fn start_terminal_listener(mut commands: Commands) {
 
 fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
-        .open_connection(
-            ClientAddrConfiguration::from_strings("[::1]:6000", "[::]:0").unwrap(),
-            CertificateVerificationMode::SkipVerification,
-            ChannelsConfiguration::default(),
-            ConnectionParameters::default(),
-        )
+        .open_connection(ClientConnectionConfiguration {
+            addr_config: ClientAddrConfiguration::from_strings("[::1]:6000", "[::]:0").unwrap(),
+            cert_mode: CertificateVerificationMode::SkipVerification,
+            defaultables: SendChannelsConfiguration::default(),
+        })
         .unwrap();
 
     // You can already send message(s) even before being connected, they will be buffered. In this example we will wait for a ConnectionEvent.

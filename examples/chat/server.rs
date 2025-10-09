@@ -6,7 +6,9 @@ use bevy_quinnet::{
         certificate::CertificateRetrievalMode, endpoint::Endpoint, ConnectionLostEvent,
         EndpointAddrConfiguration, QuinnetServer, QuinnetServerPlugin,
     },
-    shared::{channels::ChannelsConfiguration, peer_connection::ConnectionParameters, ClientId},
+    shared::{
+        channels::SendChannelsConfiguration, peer_connection::RecvChannelsConfiguration, ClientId,
+    },
 };
 
 use protocol::{ClientMessage, ServerMessage};
@@ -114,14 +116,13 @@ fn handle_disconnect(endpoint: &mut Endpoint, users: &mut ResMut<Users>, client_
 
 fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
-        .start_endpoint(
-            EndpointAddrConfiguration::from_string("[::]:6000").unwrap(),
-            CertificateRetrievalMode::GenerateSelfSigned {
-                server_hostname: "::1".to_string(),
+        .start_endpoint(ServerEndpointConfiguration {
+            addr_config: EndpointAddrConfiguration::from_string("[::]:6000").unwrap(),
+            cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
+                server_hostname: "::1".to_owned(),
             },
-            ChannelsConfiguration::default(),
-            ConnectionParameters::default(),
-        )
+            defaultables: Default::default(),
+        })
         .unwrap();
 }
 

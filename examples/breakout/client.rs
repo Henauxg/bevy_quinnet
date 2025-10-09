@@ -22,7 +22,7 @@ use bevy_quinnet::{
         certificate::CertificateVerificationMode, connection::ClientAddrConfiguration,
         QuinnetClient,
     },
-    shared::{peer_connection::ConnectionParameters, ClientId},
+    shared::{peer_connection::RecvChannelsConfiguration, ClientId},
 };
 
 use crate::{
@@ -100,12 +100,19 @@ struct WallBundle {
 }
 pub(crate) fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
-        .open_connection(
-            ClientAddrConfiguration::from_ips(SERVER_HOST, SERVER_PORT, LOCAL_BIND_IP, 0),
-            CertificateVerificationMode::SkipVerification,
-            ClientChannel::channels_configuration(),
-            ConnectionParameters::default(),
-        )
+        .open_connection(ClientConnectionConfiguration {
+            addr_config: ClientAddrConfiguration::from_ips(
+                SERVER_HOST,
+                SERVER_PORT,
+                LOCAL_BIND_IP,
+                0,
+            ),
+            cert_mode: CertificateVerificationMode::SkipVerification,
+            defaultables: SendChannelsConfiguration {
+                send_channels_cfg: ClientChannel::channels_configuration(),
+                ..Default::default()
+            },
+        })
         .unwrap();
 }
 

@@ -10,9 +10,9 @@ use bevy::{
 use bevy_quinnet::{
     server::{
         certificate::CertificateRetrievalMode, ConnectionEvent, EndpointAddrConfiguration,
-        QuinnetServer,
+        QuinnetServer, ServerEndpointConfiguration,
     },
-    shared::{peer_connection::ConnectionParameters, ClientId},
+    shared::{peer_connection::RecvChannelsConfiguration, ClientId},
 };
 
 use crate::{
@@ -83,14 +83,16 @@ struct WallBundle {
 pub(crate) fn start_listening(mut commands: Commands, mut server: ResMut<QuinnetServer>) {
     commands.insert_resource(server::Players::default());
     server
-        .start_endpoint(
-            EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, SERVER_PORT),
-            CertificateRetrievalMode::GenerateSelfSigned {
+        .start_endpoint(ServerEndpointConfiguration {
+            addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, SERVER_PORT),
+            cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_HOST.to_string(),
             },
-            ServerChannel::channels_configuration(),
-            ConnectionParameters::default(),
-        )
+            defaultables: ServerEndpointConfigurationDefaultables {
+                send_channels_cfg: ServerChannel::channels_configuration(),
+                ..Default::default()
+            },
+        })
         .unwrap();
 }
 

@@ -1,6 +1,6 @@
 use bevy::prelude::{Entity, Vec2, Vec3};
 use bevy_quinnet::shared::{
-    channels::{ChannelConfig, ChannelId, ChannelsConfiguration},
+    channels::{ChannelConfig, ChannelId, SendChannelsConfiguration},
     ClientId,
 };
 use serde::{Deserialize, Serialize};
@@ -84,8 +84,8 @@ impl ClientChannel {
             ClientChannel::PaddleCommands => ChannelConfig::default_ordered_reliable(),
         }
     }
-    pub fn channels_configuration() -> ChannelsConfiguration {
-        ChannelsConfiguration::from_configs(
+    pub fn channels_configuration() -> SendChannelsConfiguration {
+        SendChannelsConfiguration::from_configs(
             ClientChannel::iter()
                 .map(ClientChannel::to_channel_config)
                 .collect(),
@@ -117,8 +117,8 @@ impl ServerChannel {
         }
     }
 
-    pub fn channels_configuration() -> ChannelsConfiguration {
-        ChannelsConfiguration::from_configs(
+    pub fn channels_configuration() -> SendChannelsConfiguration {
+        SendChannelsConfiguration::from_configs(
             ServerChannel::iter()
                 .map(ServerChannel::to_channel_config)
                 .collect(),
