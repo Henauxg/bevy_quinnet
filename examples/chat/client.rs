@@ -20,9 +20,7 @@ use bevy_quinnet::{
         connection::{ClientAddrConfiguration, ConnectionEvent, ConnectionFailedEvent},
         ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin,
     },
-    shared::{
-        channels::SendChannelsConfiguration, peer_connection::RecvChannelsConfiguration, ClientId,
-    },
+    shared::ClientId,
 };
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::sync::mpsc;
@@ -125,7 +123,7 @@ fn start_connection(mut client: ResMut<QuinnetClient>) {
         .open_connection(ClientConnectionConfiguration {
             addr_config: ClientAddrConfiguration::from_strings("[::1]:6000", "[::]:0").unwrap(),
             cert_mode: CertificateVerificationMode::SkipVerification,
-            defaultables: SendChannelsConfiguration::default(),
+            defaultables: Default::default(),
         })
         .unwrap();
 

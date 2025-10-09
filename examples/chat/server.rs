@@ -4,11 +4,9 @@ use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use bevy_quinnet::{
     server::{
         certificate::CertificateRetrievalMode, endpoint::Endpoint, ConnectionLostEvent,
-        EndpointAddrConfiguration, QuinnetServer, QuinnetServerPlugin,
+        EndpointAddrConfiguration, QuinnetServer, QuinnetServerPlugin, ServerEndpointConfiguration,
     },
-    shared::{
-        channels::SendChannelsConfiguration, peer_connection::RecvChannelsConfiguration, ClientId,
-    },
+    shared::ClientId,
 };
 
 use protocol::{ClientMessage, ServerMessage};

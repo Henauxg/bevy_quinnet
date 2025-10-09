@@ -10,9 +10,9 @@ use bevy::{
 use bevy_quinnet::{
     server::{
         certificate::CertificateRetrievalMode, ConnectionEvent, EndpointAddrConfiguration,
-        QuinnetServer, ServerEndpointConfiguration,
+        QuinnetServer, ServerEndpointConfiguration, ServerEndpointConfigurationDefaultables,
     },
-    shared::{peer_connection::RecvChannelsConfiguration, ClientId},
+    shared::ClientId,
 };
 
 use crate::{

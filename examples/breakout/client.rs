@@ -20,9 +20,9 @@ use bevy::{
 use bevy_quinnet::{
     client::{
         certificate::CertificateVerificationMode, connection::ClientAddrConfiguration,
-        QuinnetClient,
+        ClientConnectionConfiguration, ClientConnectionConfigurationDefaultables, QuinnetClient,
     },
-    shared::{peer_connection::RecvChannelsConfiguration, ClientId},
+    shared::ClientId,
 };
 
 use crate::{
@@ -108,7 +108,7 @@ pub(crate) fn start_connection(mut client: ResMut<QuinnetClient>) {
                 0,
             ),
             cert_mode: CertificateVerificationMode::SkipVerification,
-            defaultables: SendChannelsConfiguration {
+            defaultables: ClientConnectionConfigurationDefaultables {
                 send_channels_cfg: ClientChannel::channels_configuration(),
                 ..Default::default()
             },
