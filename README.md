@@ -67,17 +67,16 @@ The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channel
 ```rust
 fn start_connection(client: ResMut<QuinnetClient>) {
     client
-        .open_connection(
-            ClientAddrConfiguration::from_ips(
-                Ipv6Addr::LOCALHOST,
-                6000,
-                Ipv6Addr::UNSPECIFIED,
+        .open_connection(ClientConnectionConfiguration {
+            addr_config: ClientAddrConfiguration::from_ips(
+                SERVER_HOST,
+                SERVER_PORT,
+                LOCAL_BIND_IP,
                 0,
             ),
-            CertificateVerificationMode::SkipVerification,
-            ChannelsConfiguration::default(),
-            ConnectionParameters::default(),
-        );
+            cert_mode: CertificateVerificationMode::SkipVerification,
+            defaultables: Default::default(),
+        });
     
     // Once connected, you will receive a ConnectionEvent
 ```
@@ -117,15 +116,13 @@ fn handle_server_messages(
 ```rust
 fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
-        .start_endpoint(
-            EndpointAddrConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000),
-            CertificateRetrievalMode::GenerateSelfSigned {
+        .start_endpoint(ServerEndpointConfiguration {
+            addr_config: EndpointAddrConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000),
+            cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: Ipv6Addr::LOCALHOST.to_string(),
             },
-            ChannelsConfiguration::default(),
-            ConnectionParameters::default(),
-        )
-        .unwrap();
+            defaultables: Default::default(),
+        });
 }
 ```
 
@@ -174,15 +171,15 @@ There are currently 3 types of channels available when you send a message:
 - `UnorderedReliable`: ensure that messages sent are delivered, in any order (exemple usage: an animation trigger)
 - `Unreliable`: no guarantees on the delivery or the order of processing by the receiving end (exemple usage: an entity position sent every ticks)
 
-When you open a connection/endpoint, some channels are created directly according to the given `ChannelsConfiguration`.
+When you open a connection/endpoint, some channels are created directly according to the given `SendChannelsConfiguration`.
 
 ```rust
 // Default channels configuration contains only 1 channel of the OrderedReliable type,
 // akin to a TCP connection.
-let channels_config = ChannelsConfiguration::default();
+let channels_config = SendChannelsConfiguration::default();
 // Creates 2 OrderedReliable channels, and 1 unreliable channel,
 // with channel ids being respectively 0, 1 and 2.
-let channels_config = ChannelsConfiguration::from_configs(vec![
+let channels_config = SendChannelsConfiguration::from_configs(vec![
     ChannelConfig::default_ordered_reliable(),
     ChannelConfig::default_ordered_reliable(),
     ChannelConfig::default_reliable()]);
@@ -200,7 +197,7 @@ connection.send_message_on(channel_id, message);
 connection.set_default_channel(channel_id);
 ```
 
-In some cases, you may want to create more than one channel instance of the same type. As an example, using multiple `OrderedReliable` channels to avoid some [Head of line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking) issues. Although channels can be defined through a `ChannelsConfiguration`, they can also currently be opened & closed at any time. You may have up to 256 differents channels opened simultaneously.
+In some cases, you may want to create more than one channel instance of the same type. As an example, using multiple `OrderedReliable` channels to avoid some [Head of line blocking](https://en.wikipedia.org/wiki/Head-of-line_blocking) issues. Although channels can be defined through a `SendChannelsConfiguration`, they can also currently be opened & closed at any time. You may have up to 256 differents channels opened simultaneously.
 
 ```rust
 // If you want to create more channels
@@ -316,7 +313,7 @@ Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/
 
 | bevy_quinnet | bevy |
 | :----------- | :--- |
-| 0.17         | 0.16 |
+| 0.17-0.18    | 0.16 |
 | 0.12-0.16    | 0.15 |
 | 0.9-0.11     | 0.14 |
 | 0.7-0.8      | 0.13 |
@@ -331,9 +328,6 @@ Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/
 ### Cargo features
 
 *Find the list and description in [cargo.toml](Cargo.toml)*
-
-- `shared-client-id` *[default]*: When a new client connects to the server, the server sends its `ClientId` to the client. The client will consider himself `Connected` once it receives this id. When not enabled, the client does not know its `ClientId` on the server.
-- `bincode-messages`: adds some simple utilities to directly send & recieve Rust types as messages using `bincode`
 
 ### Logs
 
