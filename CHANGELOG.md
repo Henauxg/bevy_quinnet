@@ -2,36 +2,41 @@
 
 ## Version 0.18.0 (TBD)
 
-Client and server now buffer received payloads per channel, and allow fetching payloads from a specific channel. Buffers can be cleared automatically every frame via `ConnectionParameters::clear_stale_received_payloads`, manually by draining them or by calling `Endpoint::clear_payloads_from_clients`/`PeerConnection::clear_received_payloads`.
+- Added `recv_channels` feature:
+With the feature enabled, client and server buffer received payloads per channel, and allow fetching payloads from a specific channel. Buffers can be cleared automatically every frame via `RecvChannelsConfiguration::clear_stale_received_payloads` or manually by draining them or by calling `Endpoint::clear_payloads_from_clients`/`PeerConnection::clear_received_payloads`.
+- Added `RecvChannelError` enum and `RecvChannelErrorEvent` bevy Event
+- All `receive_payload_...` methods are now gated behind this feature. To retrieve received payloads without this feature enabled, the only function that can be called is `dequeue_undispatched_bytes_from_peer`
 
 
-- `bincode-messages` feature:
+- Added `bincode-messages` feature:
   - Added a new `bincode-messages` cargo feature, disabled by default
   - `bincode` and `serde` dependencies are now optional and enabled by this feature
   - Updated `bincode` from 1.0 to 2.0
   - Gated all `send_message_`/`receive_message_` methods behind this feature in both server & client
+
+
 - Renamed `QuinnetSyncUpdate` to `QuinnetSyncPreUpdate`
-- Added `QuinnetSyncPostUpdate`
+- Added `QuinnetSyncLast`
 - Refactored `ClientSideConnection` & `ServerSideConnection` to use a common `PeerConnection`
   - Refactored some errors types
   - Added `PeerConnection::stats` & `PeerConnection::stats_mut`
   - Added `PeerConnection::clear_received_payloads` fn
-- Renamed `ChannelKind` to `ChannelConfig` and `ChannelsConfiguration::from_types` to  `ChannelsConfiguration::from_configs`
+- Renamed `ChannelKind` to `ChannelConfig`, `ChannelsConfiguration` to `SendChannelsConfiguration` and `SendChannelsConfiguration::from_types` to  `SendChannelsConfiguration::from_configs`
 - Added `default_ordered_reliable`, `default_unreliable`, `default_unordered_reliable` helpers
 
 #### Client
 - Renamed `ClientEndpointConfiguration` to `ClientAddrConfiguration`
-- Added an additional `ConnectionParameters` argument to the `open_connection` fn
-- Renamed `update_sync_client` to `handle_client_events_and_dispatch_payloads`
-- Added `clear_stale_received_payloads` system
+- Added `ClientConnectionConfiguration` as parameter to `open_connection`
+- Renamed `update_sync_client` to `handle_client_events`
+- Added `clear_stale_received_payloads` and `dispatch_received_payloads` systems
 - Renamed `ClientSideConnection::connection_stats` to `ClientSideConnection::quinn_connection_stats`
 
 #### Server
-- Renamed `ServerEndpointConfiguration` to `EndpointAddrConfiguration`
-- Added an additional `ConnectionParameters` argument to the `start_endpoint` fn
+- Renamed previous `ServerEndpointConfiguration` to `EndpointAddrConfiguration`
+- Added a new `ServerEndpointConfiguration` as parameter to `start_endpoint`
 - Moved `ServerSideConnection` and `Endpoint` to their own submodule
-- Renamed `update_sync_server` to `handle_server_events_and_dispatch_payloads`
-- Added `clear_stale_received_payloads` system
+- Renamed `update_sync_server` to `handle_server_events`
+- Added `clear_stale_received_payloads` and `dispatch_received_payloads` systems
 - Added `Endpoint::clear_payloads_from_clients` fn
 - Renamed `ServerSideConnection::connection_stats` to `ServerSideConnection::quinn_connection_stats`
 
