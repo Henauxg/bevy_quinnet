@@ -6,15 +6,14 @@ use bevy::{
 };
 use bevy_quinnet::{
     client::{
-        self,
-        certificate::{CertVerificationStatus, CertificateVerificationMode},
-        QuinnetClient, QuinnetClientPlugin, DEFAULT_KNOWN_HOSTS_FILE,
+        certificate::{CertVerificationStatus, CertificateVerificationMode, TrustOnFirstUseConfig},
+        ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin,
+        DEFAULT_KNOWN_HOSTS_FILE,
     },
     server::{
         certificate::CertificateRetrievalMode, EndpointAddrConfiguration, QuinnetServer,
-        QuinnetServerPlugin,
+        QuinnetServerPlugin, ServerEndpointConfiguration,
     },
-    shared::{channels::ChannelsConfiguration, peer_connection::ConnectionParameters},
 };
 
 // https://github.com/rust-lang/rust/issues/46379
@@ -76,19 +75,33 @@ fn trust_on_first_use() {
     client_app.update();
     server_app.update();
 
+    // Client connects with empty cert store
+    {
+        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
+        client
+            .open_connection(ClientConnectionConfiguration {
+                addr_config: default_client_addr_configuration(port),
+                cert_mode: CertificateVerificationMode::TrustOnFirstUse(
+                    TrustOnFirstUseConfig::default(),
+                ),
+                // cert_mode: CertificateVerificationMode::SkipVerification,
+                defaultables: Default::default(),
+            })
+            .unwrap();
+    }
+
     // Server listens with a cert loaded from a file
     {
         let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
         let server_cert = server
-            .start_endpoint(
-                EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port),
-                CertificateRetrievalMode::LoadFromFile {
+            .start_endpoint(ServerEndpointConfiguration {
+                addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port),
+                cert_mode: CertificateRetrievalMode::LoadFromFile {
                     cert_file: TEST_CERT_FILE.to_string(),
                     key_file: TEST_KEY_FILE.to_string(),
                 },
-                ChannelsConfiguration::default(),
-                ConnectionParameters::default(),
-            )
+                defaultables: Default::default(),
+            })
             .unwrap();
         assert_eq!(
             TEST_CERT_FINGERPRINT_B64.to_string(),
@@ -97,22 +110,16 @@ fn trust_on_first_use() {
         );
     }
 
-    // Client connects with empty cert store
-    {
-        let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
-        client
-            .open_connection(
-                default_client_addr_configuration(port),
-                CertificateVerificationMode::TrustOnFirstUse(
-                    client::certificate::TrustOnFirstUseConfig {
-                        ..Default::default()
-                    },
-                ),
-                ChannelsConfiguration::default(),
-                ConnectionParameters::default(),
-            )
-            .unwrap();
-    }
+    assert!(
+        client_app
+            .world()
+            .resource::<QuinnetClient>()
+            .get_connection()
+            .is_some(),
+        "The default connection should exist"
+    );
+    let server = server_app.world().resource::<QuinnetServer>();
+    assert!(server.is_listening(), "The server should be listening");
 
     // Let the async runtime connection connect.
     wait_for_client_connected(&mut client_app, &mut server_app);
@@ -154,16 +161,13 @@ fn trust_on_first_use() {
         client.close_all_connections();
 
         client
-            .open_connection(
-                default_client_addr_configuration(port),
-                CertificateVerificationMode::TrustOnFirstUse(
-                    client::certificate::TrustOnFirstUseConfig {
-                        ..Default::default()
-                    },
+            .open_connection(ClientConnectionConfiguration {
+                addr_config: default_client_addr_configuration(port),
+                cert_mode: CertificateVerificationMode::TrustOnFirstUse(
+                    TrustOnFirstUseConfig::default(),
                 ),
-                ChannelsConfiguration::default(),
-                ConnectionParameters::default(),
-            )
+                defaultables: Default::default(),
+            })
             .unwrap();
     }
 
@@ -202,30 +206,26 @@ fn trust_on_first_use() {
     let server_cert = server_app
         .world_mut()
         .resource_mut::<QuinnetServer>()
-        .start_endpoint(
-            EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port),
-            CertificateRetrievalMode::GenerateSelfSigned {
+        .start_endpoint(ServerEndpointConfiguration {
+            addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port),
+            cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_IP.to_string(),
             },
-            ChannelsConfiguration::default(),
-            ConnectionParameters::default(),
-        )
+            defaultables: Default::default(),
+        })
         .unwrap();
 
     // Client reconnects with its cert store containing the previously store certificate fingerprint
     {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         client
-            .open_connection(
-                default_client_addr_configuration(port),
-                CertificateVerificationMode::TrustOnFirstUse(
-                    client::certificate::TrustOnFirstUseConfig {
-                        ..Default::default()
-                    },
+            .open_connection(ClientConnectionConfiguration {
+                addr_config: default_client_addr_configuration(port),
+                cert_mode: CertificateVerificationMode::TrustOnFirstUse(
+                    TrustOnFirstUseConfig::default(),
                 ),
-                ChannelsConfiguration::default(),
-                ConnectionParameters::default(),
-            )
+                defaultables: Default::default(),
+            })
             .unwrap();
     }
 

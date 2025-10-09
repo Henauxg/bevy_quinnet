@@ -1,8 +1,4 @@
-use std::{
-    net::{Ipv6Addr, SocketAddr},
-    thread::sleep,
-    time::Duration,
-};
+use std::{net::Ipv6Addr, thread::sleep, time::Duration};
 
 use bevy::{
     app::ScheduleRunnerPlugin,
@@ -17,18 +13,18 @@ use bevy_quinnet::{
             CertificateVerificationMode,
         },
         connection::ClientAddrConfiguration,
-        QuinnetClient, QuinnetClientPlugin,
+        ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin,
     },
     server::{
         self, certificate::CertificateRetrievalMode, EndpointAddrConfiguration, QuinnetServer,
-        QuinnetServerPlugin,
+        QuinnetServerPlugin, ServerEndpointConfiguration,
     },
     shared::{
-        channels::{ChannelConfig, ChannelId, ChannelsConfiguration},
-        peer_connection::ConnectionParameters,
+        channels::{ChannelConfig, ChannelId},
         ClientId,
     },
 };
+use tokio::sync::mpsc::error::TryRecvError;
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct ClientTestData {
@@ -94,35 +90,23 @@ pub fn default_client_addr_configuration(port: u16) -> ClientAddrConfiguration {
 
 pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port>) {
     client
-        .open_connection(
-            default_client_addr_configuration(port.0),
-            CertificateVerificationMode::SkipVerification,
-            ChannelsConfiguration::default(),
-            ConnectionParameters {
-                // During tests, we disable the clearing of stale payloads on the server since we check received messages after the whole Update schedule.
-                clear_stale_received_payloads: false,
-                ..Default::default()
-            },
-        )
+        .open_connection(ClientConnectionConfiguration {
+            addr_config: default_client_addr_configuration(port.0),
+            cert_mode: CertificateVerificationMode::SkipVerification,
+            defaultables: Default::default(),
+        })
         .unwrap();
 }
 
 pub fn start_listening(mut server: ResMut<QuinnetServer>, port: Res<Port>) {
     server
-        .start_endpoint(
-            EndpointAddrConfiguration {
-                local_bind_addr: SocketAddr::new(LOCAL_BIND_IP.into(), port.0),
-            },
-            CertificateRetrievalMode::GenerateSelfSigned {
+        .start_endpoint(ServerEndpointConfiguration {
+            addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port.0),
+            cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_IP.to_string(),
             },
-            ChannelsConfiguration::default(),
-            ConnectionParameters {
-                // During tests, we disable the clearing of stale payloads on the server since we check received messages after the whole Update schedule.
-                clear_stale_received_payloads: false,
-                ..Default::default()
-            },
-        )
+            defaultables: Default::default(),
+        })
         .unwrap();
 }
 
@@ -285,19 +269,20 @@ pub fn open_server_channel(channel_type: ChannelConfig, app: &mut App) -> Channe
 
 pub fn wait_for_client_message(
     client_id: ClientId,
-    channel_id: ChannelId,
     server_app: &mut App,
-) -> bytes::Bytes {
+) -> (ChannelId, bytes::Bytes) {
     for _ in 0..20 {
         server_app.update();
         match server_app
             .world_mut()
             .resource_mut::<QuinnetServer>()
             .endpoint_mut()
-            .receive_payload_from(client_id, channel_id)
+            .connection_mut(client_id)
+            .unwrap()
+            .dequeue_undispatched_bytes_from_peer()
         {
-            Ok(Some(payload)) => return payload,
-            Ok(None) => (),
+            Ok((channel_id, payload)) => return (channel_id, payload),
+            Err(TryRecvError::Empty) => (),
             Err(err) => panic!("Error when receiving payload from client: {:?}", err),
         }
         sleep(Duration::from_secs_f32(0.05));
@@ -305,17 +290,17 @@ pub fn wait_for_client_message(
     panic!("Did not receive a message from client in time");
 }
 
-pub fn wait_for_server_message(client_app: &mut App, channel_id: ChannelId) -> bytes::Bytes {
+pub fn wait_for_server_message(client_app: &mut App) -> (ChannelId, bytes::Bytes) {
     for _ in 0..20 {
         client_app.update();
         match client_app
             .world_mut()
             .resource_mut::<QuinnetClient>()
             .connection_mut()
-            .receive_payload(channel_id)
+            .dequeue_undispatched_bytes_from_peer()
         {
-            Ok(Some(payload)) => return payload,
-            Ok(None) => (),
+            Ok((channel_id, payload)) => return (channel_id, payload),
+            Err(TryRecvError::Empty) => (),
             Err(err) => panic!("Error when receiving payload from server: {:?}", err),
         }
         sleep(Duration::from_secs_f32(0.05));
@@ -339,13 +324,16 @@ pub fn send_and_test_client_message(
         .send_payload_on(channel_id, client_message_payload.clone())
         .unwrap();
 
-    let server_received = wait_for_client_message(client_id, channel_id, server_app);
-    assert_eq!(client_message_payload, server_received);
+    let (received_channel_id, server_received) = wait_for_client_message(client_id, server_app);
+    assert_eq!(
+        (channel_id, client_message_payload),
+        (received_channel_id, server_received)
+    );
 }
 
 pub fn send_and_test_server_message(
     client_id: ClientId,
-    channel: ChannelId,
+    channel_id: ChannelId,
     server_app: &mut App,
     client_app: &mut App,
     msg_counter: &mut u64,
@@ -356,9 +344,12 @@ pub fn send_and_test_server_message(
     let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
     server
         .endpoint_mut()
-        .send_payload_on(client_id, channel, server_message_payload.clone())
+        .send_payload_on(client_id, channel_id, server_message_payload.clone())
         .unwrap();
 
-    let client_received = wait_for_server_message(client_app, channel);
-    assert_eq!(server_message_payload, client_received);
+    let (received_channel_id, client_received) = wait_for_server_message(client_app);
+    assert_eq!(
+        (channel_id, server_message_payload),
+        (received_channel_id, client_received)
+    );
 }
