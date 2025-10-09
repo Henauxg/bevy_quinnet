@@ -20,7 +20,7 @@ pub(crate) async fn unreliable_channel_receiver_task<T: Display>(
                 if msg_bytes.len() <= CHANNEL_ID_LEN {
                     continue;
                 }
-                let payload = msg_bytes.split_off(1).into();
+                let payload = msg_bytes.split_off(1);
                 let channel_id = msg_bytes[0];
                 // TODO Clean: error handling
                 bytes_incoming_send.send((channel_id, payload)).await.unwrap();

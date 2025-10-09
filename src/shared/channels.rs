@@ -136,15 +136,15 @@ impl Channel {
 
 /// Stores a configuration that represents multiple channels to be opened by a [`crate::client::connection::ClientSideConnection`] or [`crate::server::endpoint::Endpoint`].
 ///
-/// Each channel in a [ChannelsConfiguration] is assigned a [ChannelId], starting from 0 and incrementing sequentially by 1.
+/// Each channel in a [SendChannelsConfiguration] is assigned a [ChannelId], starting from 0 and incrementing sequentially by 1.
 ///
 /// ### Example
 ///
 /// Declare 3 configured channels with their respective ids `0`, `1` and `2`:
 /// ```
-/// use bevy_quinnet::shared::channels::{ChannelConfig, ChannelsConfiguration};
+/// use bevy_quinnet::shared::channels::{ChannelConfig, SendChannelsConfiguration};
 ///
-/// let configs = ChannelsConfiguration::from_configs(vec![
+/// let configs = SendChannelsConfiguration::from_configs(vec![
 ///     ChannelConfig::OrderedReliable {
 ///         max_frame_size: 8 * 1_024 * 1_024,
 ///     },
@@ -157,11 +157,11 @@ impl Channel {
 /// ]).unwrap();
 /// ```
 #[derive(Debug, Clone)]
-pub struct ChannelsConfiguration {
+pub struct SendChannelsConfiguration {
     channels: Vec<ChannelConfig>,
 }
 
-impl Default for ChannelsConfiguration {
+impl Default for SendChannelsConfiguration {
     fn default() -> Self {
         Self {
             channels: vec![ChannelConfig::OrderedReliable {
@@ -171,7 +171,7 @@ impl Default for ChannelsConfiguration {
     }
 }
 
-impl ChannelsConfiguration {
+impl SendChannelsConfiguration {
     /// New empty configuration
     pub fn new() -> Self {
         Self {
@@ -184,7 +184,7 @@ impl ChannelsConfiguration {
     /// Opened channels (and their [`ChannelId`]) will have the same order as in this collection
     pub fn from_configs(
         channel_types: Vec<ChannelConfig>,
-    ) -> Result<ChannelsConfiguration, ChannelConfigError> {
+    ) -> Result<SendChannelsConfiguration, ChannelConfigError> {
         if channel_types.len() > MAX_CHANNEL_COUNT {
             Err(ChannelConfigError::MaxChannelsCountReached)
         } else {

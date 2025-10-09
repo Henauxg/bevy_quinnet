@@ -324,16 +324,14 @@ impl TofuServerVerification {
             CertVerifierAction::AbortConnection => {
                 match self
                     .to_sync_client
-                    .try_send(ClientAsyncMessage::CertificateConnectionAbort {
-                        status: status,
-                        cert_info,
-                    }) {
-                    Ok(_) => Err(rustls::Error::General(format!(
-                        "CertVerifierAction requested to abort the connection"
-                    ))),
-                    Err(_) => Err(rustls::Error::General(format!(
-                        "Failed to signal CertificateConnectionAbort"
-                    ))),
+                    .try_send(ClientAsyncMessage::CertificateConnectionAbort { status, cert_info })
+                {
+                    Ok(_) => Err(rustls::Error::General(
+                        "CertVerifierAction requested to abort the connection".to_owned(),
+                    )),
+                    Err(_) => Err(rustls::Error::General(
+                        "Failed to signal CertificateConnectionAbort".to_owned(),
+                    )),
                 }
             }
             CertVerifierAction::TrustOnce => {
@@ -345,7 +343,7 @@ impl TofuServerVerification {
                     let mut store_clone = self.store.clone();
                     store_clone
                         .insert(cert_info.server_name.clone(), cert_info.fingerprint.clone());
-                    if let Err(store_error) = store_known_hosts_to_file(&file, &store_clone) {
+                    if let Err(store_error) = store_known_hosts_to_file(file, &store_clone) {
                         return Err(rustls::Error::General(format!(
                             "Failed to store new certificate entry: {}",
                             store_error
@@ -358,9 +356,9 @@ impl TofuServerVerification {
                     .try_send(ClientAsyncMessage::CertificateTrustUpdate(cert_info))
                 {
                     Ok(_) => Ok(rustls::client::danger::ServerCertVerified::assertion()),
-                    Err(_) => Err(rustls::Error::General(format!(
-                        "Failed to signal new trusted certificate entry"
-                    ))),
+                    Err(_) => Err(rustls::Error::General(
+                        "Failed to signal new trusted certificate entry".to_owned(),
+                    )),
                 }
             }
         }
@@ -453,7 +451,7 @@ fn parse_known_host_line(
     let serv_name = ServerName(RustlsServerName::try_from(adr_str)?.to_owned());
 
     let fingerprint_b64 = parts.next().ok_or(InvalidHostFile)?;
-    let fingerprint_bytes = base64::decode(&fingerprint_b64)?;
+    let fingerprint_bytes = base64::decode(fingerprint_b64)?;
 
     match fingerprint_bytes.try_into() {
         Ok(buf) => Ok((serv_name, CertificateFingerprint::new(buf))),

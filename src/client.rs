@@ -16,10 +16,9 @@ use tokio::{
 use crate::{
     client::connection::{create_client_connection_async_channels, ClientConnection},
     shared::{
-        channels::{ChannelAsyncMessage, ChannelsConfiguration},
+        channels::{ChannelAsyncMessage, SendChannelsConfiguration},
         error::AsyncChannelError,
-        peer_connection::ConnectionParameters,
-        AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncPostUpdate, QuinnetSyncPreUpdate,
+        AsyncRuntime, ClientId, InternalConnectionRef, QuinnetSyncPreUpdate,
     },
 };
 
@@ -45,6 +44,27 @@ pub use error::*;
 
 /// Default path for the known hosts file
 pub const DEFAULT_KNOWN_HOSTS_FILE: &str = "quinnet/known_hosts";
+
+/// Configuration for a client's connection to a server
+#[derive(Debug, Clone)]
+pub struct ClientConnectionConfiguration {
+    /// See [ClientAddrConfiguration]
+    pub addr_config: ClientAddrConfiguration,
+    /// How the client should verify the server's certificate
+    pub cert_mode: CertificateVerificationMode,
+    /// Configuration for a [ClientConnectionConfiguration] that can be defaulted
+    pub defaultables: ClientConnectionConfigurationDefaultables,
+}
+
+/// Every configuration fields of a client's connection to a server that can be defaulted
+#[derive(Debug, Default, Clone)]
+pub struct ClientConnectionConfigurationDefaultables {
+    /// Configuration of the send channels opened on the connection
+    pub send_channels_cfg: SendChannelsConfiguration,
+    /// Configuration for the receive channels on the connection
+    #[cfg(feature = "recv_channels")]
+    pub recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
+}
 
 /// Possible errors occuring while a client is connecting to a server
 #[derive(thiserror::Error, Debug, Clone)]
@@ -197,10 +217,7 @@ impl QuinnetClient {
     /// Returns the [ConnectionLocalId]
     pub fn open_connection(
         &mut self,
-        addr_config: ClientAddrConfiguration,
-        cert_mode: CertificateVerificationMode,
-        channels_config: ChannelsConfiguration,
-        connection_params: ConnectionParameters,
+        config: ClientConnectionConfiguration,
     ) -> Result<ConnectionLocalId, AsyncChannelError> {
         // Generate a local connection id
         let local_id = self.connection_local_id_gen;
@@ -223,19 +240,20 @@ impl QuinnetClient {
             ClientConnection::new(
                 local_id,
                 self.runtime.clone(),
-                addr_config.clone(),
-                cert_mode.clone(),
-                channels_config.clone(),
+                config.addr_config.clone(),
+                config.cert_mode.clone(),
+                config.defaultables.send_channels_cfg.clone(),
                 to_sync_client_recv,
             ),
             bytes_from_server_recv,
             close_send,
             from_channels_recv,
             to_channels_send,
-            connection_params,
+            #[cfg(feature = "recv_channels")]
+            config.defaultables.recv_channels_cfg,
         );
 
-        connection.open_configured_channels(channels_config)?;
+        connection.open_configured_channels(config.defaultables.send_channels_cfg)?;
 
         self.connections.insert(local_id, connection);
         if self.default_connection_id.is_none() {
@@ -246,8 +264,8 @@ impl QuinnetClient {
         self.runtime.spawn(async move {
             async_connection_task(
                 local_id,
-                addr_config,
-                cert_mode,
+                config.addr_config,
+                config.cert_mode,
                 to_sync_client_send,
                 bytes_from_server_send,
                 to_channels_recv,
@@ -307,8 +325,8 @@ impl QuinnetClient {
 
 /// Receive messages from the async client tasks and update the sync client.
 ///
-/// This system generates the client's bevy events
-pub fn handle_client_events_and_dispatch_payloads(
+/// This system generates client's bevy events
+pub fn handle_client_events(
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_failed_events: EventWriter<ConnectionFailedEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
@@ -382,16 +400,44 @@ pub fn handle_client_events_and_dispatch_payloads(
                 },
             }
         }
+    }
+}
 
+#[cfg(feature = "recv_channels")]
+/// Type alias for the recv channel error event for the client
+pub type ClientRecvChannelError = crate::shared::error::RecvChannelErrorEvent<ConnectionLocalId>;
+
+#[cfg(feature = "recv_channels")]
+/// Dispatches received payloads to their respective channel buffers
+///
+/// This system generates client's bevy events
+pub fn dispatch_received_payloads(
+    mut recv_error_events: EventWriter<ClientRecvChannelError>,
+    mut client: ResMut<QuinnetClient>,
+) {
+    for (connection_id, connection) in &mut client.connections {
         match connection.internal_state() {
             InternalConnectionState::Disconnected => (),
             _ => {
-                connection.dispatch_received_payloads_to_channel_buffers();
+                if let Err(recv_errors) = connection.dispatch_received_payloads_to_channel_buffers()
+                {
+                    for error in recv_errors {
+                        error!(
+                            "Error while dispatching received payloads to channel buffers: {}",
+                            error
+                        );
+                        recv_error_events.write(ClientRecvChannelError {
+                            id: *connection_id,
+                            error,
+                        });
+                    }
+                }
             }
         }
     }
 }
 
+#[cfg(feature = "recv_channels")]
 /// Clears stale payloads on all receive channels
 pub fn clear_stale_received_payloads(mut client: ResMut<QuinnetClient>) {
     for connection in client.connections.values_mut() {
@@ -402,19 +448,12 @@ pub fn clear_stale_received_payloads(mut client: ResMut<QuinnetClient>) {
 /// Quinnet Client's plugin
 ///
 /// It is possbile to add both this plugin and the [`crate::server::QuinnetServerPlugin`]
+#[derive(Default)]
 pub struct QuinnetClientPlugin {
     /// In order to have more control and only do the strict necessary, which is registering systems and events in the Bevy schedule, `initialize_later` can be set to `true`. This will prevent the plugin from initializing the `Client` Resource.
     /// Client systems are scheduled to only run if the `Client` resource exists.
     /// A Bevy command to create the resource `commands.init_resource::<Client>();` can be done later on, when needed.
     pub initialize_later: bool,
-}
-
-impl Default for QuinnetClientPlugin {
-    fn default() -> Self {
-        Self {
-            initialize_later: false,
-        }
-    }
 }
 
 impl Plugin for QuinnetClientPlugin {
@@ -432,16 +471,26 @@ impl Plugin for QuinnetClientPlugin {
 
         app.add_systems(
             PreUpdate,
-            handle_client_events_and_dispatch_payloads
+            handle_client_events
                 .in_set(QuinnetSyncPreUpdate)
                 .run_if(resource_exists::<QuinnetClient>),
         );
-        app.add_systems(
-            Last,
-            clear_stale_received_payloads
-                .in_set(QuinnetSyncPostUpdate)
-                .run_if(resource_exists::<QuinnetClient>),
-        );
+        #[cfg(feature = "recv_channels")]
+        {
+            app.add_event::<ClientRecvChannelError>();
+            app.add_systems(
+                PreUpdate,
+                dispatch_received_payloads
+                    .in_set(QuinnetSyncPreUpdate)
+                    .run_if(resource_exists::<QuinnetClient>),
+            );
+            app.add_systems(
+                Last,
+                clear_stale_received_payloads
+                    .in_set(crate::shared::QuinnetSyncLast)
+                    .run_if(resource_exists::<QuinnetClient>),
+            );
+        }
     }
 }
 

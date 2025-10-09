@@ -24,12 +24,11 @@ use crate::{
     shared::{
         channels::{
             tasks::{spawn_recv_channels_tasks, spawn_send_channels_tasks_spawner},
-            ChannelAsyncMessage, ChannelId, ChannelSyncMessage, ChannelsConfiguration,
+            ChannelAsyncMessage, ChannelId, ChannelSyncMessage, SendChannelsConfiguration,
         },
-        peer_connection::{ConnectionParameters, PeerConnection},
-        AsyncRuntime, ClientId, QuinnetSyncPostUpdate, QuinnetSyncPreUpdate,
-        DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE, DEFAULT_KEEP_ALIVE_INTERVAL_S,
-        DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
+        peer_connection::PeerConnection,
+        AsyncRuntime, ClientId, QuinnetSyncPreUpdate, DEFAULT_INTERNAL_MESSAGES_CHANNEL_SIZE,
+        DEFAULT_KEEP_ALIVE_INTERVAL_S, DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
         DEFAULT_QCHANNEL_MESSAGES_CHANNEL_SIZE,
     },
 };
@@ -121,8 +120,7 @@ impl EndpointAddrConfiguration {
     ///
     /// # Arguments
     ///
-    /// * `local_bind_addr` - Local address and port to bind to.
-    /// See [`std::net::SocketAddrV4`] and [`std::net::SocketAddrV6`] for more precision.
+    /// * `local_bind_addr` - Local address and port to bind to. See [`std::net::SocketAddrV4`] and [`std::net::SocketAddrV6`] for more precision.
     ///
     /// # Examples
     ///
@@ -173,6 +171,27 @@ impl FromWorld for QuinnetServer {
     }
 }
 
+/// Configuration of the server's endpoint
+#[derive(Debug, Clone)]
+pub struct ServerEndpointConfiguration {
+    /// Address configuration of the endpoint
+    pub addr_config: EndpointAddrConfiguration,
+    /// How to retrieve the server certificate
+    pub cert_mode: CertificateRetrievalMode,
+    /// Configuration for a [ServerEndpointConfiguration] that can be defaulted
+    pub defaultables: ServerEndpointConfigurationDefaultables,
+}
+
+/// Every configuration fields of a server's [Endpoint] that can be defaulted
+#[derive(Debug, Default, Clone)]
+pub struct ServerEndpointConfigurationDefaultables {
+    /// Configuration of the send channels opened on each connection accepted by this endpoint
+    pub send_channels_cfg: SendChannelsConfiguration,
+    /// Configuration for the recv channels for each connection accepted by this endpoint
+    #[cfg(feature = "recv_channels")]
+    pub recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
+}
+
 impl QuinnetServer {
     fn new(runtime: tokio::runtime::Handle) -> Self {
         Self {
@@ -216,12 +235,9 @@ impl QuinnetServer {
     /// Returns the [ServerCertificate] generated or loaded
     pub fn start_endpoint(
         &mut self,
-        addr_config: EndpointAddrConfiguration,
-        cert_mode: CertificateRetrievalMode,
-        channels_config: ChannelsConfiguration,
-        connections_params: ConnectionParameters,
+        config: ServerEndpointConfiguration,
     ) -> Result<ServerCertificate, EndpointStartError> {
-        let server_cert = retrieve_certificate(cert_mode)?;
+        let server_cert = retrieve_certificate(config.cert_mode)?;
         let mut quinn_endpoint_config = ServerConfig::with_single_cert(
             server_cert.cert_chain.clone(),
             server_cert.priv_key.clone_key(),
@@ -235,17 +251,22 @@ impl QuinnetServer {
         let (endpoint_close_send, endpoint_close_recv) =
             broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
-        let socket = std::net::UdpSocket::bind(addr_config.local_bind_addr)?;
+        let socket = std::net::UdpSocket::bind(config.addr_config.local_bind_addr)?;
 
-        info!("Starting endpoint on: {} ...", addr_config.local_bind_addr);
-        let connections_config = connections_params.clone();
+        info!(
+            "Starting endpoint on: {} ...",
+            config.addr_config.local_bind_addr
+        );
+        #[cfg(feature = "recv_channels")]
+        let recv_channels_cfg_clone = config.defaultables.recv_channels_cfg.clone();
         self.runtime.spawn(async move {
             endpoint_task(
                 socket,
                 quinn_endpoint_config,
                 to_sync_endpoint_send.clone(),
                 endpoint_close_recv,
-                connections_config,
+                #[cfg(feature = "recv_channels")]
+                recv_channels_cfg_clone,
             )
             .await;
         });
@@ -253,10 +274,11 @@ impl QuinnetServer {
         let mut endpoint = Endpoint::new(
             endpoint_close_send,
             from_async_endpoint_recv,
-            addr_config,
-            connections_params,
+            config.addr_config,
+            #[cfg(feature = "recv_channels")]
+            config.defaultables.recv_channels_cfg,
         );
-        for channel_type in channels_config.configs() {
+        for channel_type in config.defaultables.send_channels_cfg.configs() {
             endpoint.unchecked_open_channel(*channel_type)?;
         }
 
@@ -283,10 +305,7 @@ impl QuinnetServer {
 
     /// Returns true if the server is currently listening for messages and connections.
     pub fn is_listening(&self) -> bool {
-        match &self.endpoint {
-            Some(_) => true,
-            None => false,
-        }
+        self.endpoint.is_some()
     }
 }
 
@@ -295,7 +314,8 @@ async fn endpoint_task(
     endpoint_config: ServerConfig,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
     mut endpoint_close_recv: broadcast::Receiver<()>,
-    connections_config: ConnectionParameters,
+    #[cfg(feature = "recv_channels")]
+    recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
 ) {
     let endpoint = QuinnEndpoint::new(
         EndpointConfig::default(),
@@ -316,12 +336,14 @@ async fn endpoint_task(
                     Err(err) => error!("An incoming connection failed: {}", err),
                     Ok(connection) => {
                         let to_sync_endpoint_send = to_sync_endpoint_send.clone();
-                        let connection_config = connections_config.clone();
+                        #[cfg(feature = "recv_channels")]
+                        let recv_channels_cfg = recv_channels_cfg.clone();
                         tokio::spawn(async move {
                             client_connection_task(
                                 connection,
                                 to_sync_endpoint_send,
-                                connection_config
+                                #[cfg(feature = "recv_channels")]
+                                recv_channels_cfg
                             )
                             .await
                         });
@@ -335,7 +357,8 @@ async fn endpoint_task(
 async fn client_connection_task(
     connection_handle: quinn::Connection,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
-    connections_config: ConnectionParameters,
+    #[cfg(feature = "recv_channels")]
+    recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
 ) {
     let (client_close_send, client_close_recv) =
         broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
@@ -356,7 +379,8 @@ async fn client_connection_task(
             client_close_send.clone(),
             from_channels_recv,
             to_channels_send,
-            connections_config,
+            #[cfg(feature = "recv_channels")]
+            recv_channels_cfg,
         )))
         .await
         .expect("Failed to signal connection to sync client");
@@ -416,11 +440,10 @@ async fn client_connection_task(
 }
 
 /// - Receives events from the async server tasks
-/// - Dispatches received payloads to the appropriate channels
 /// - Updates the sync server state
 ///
-/// This system generates the server's bevy events
-pub fn handle_server_events_and_dispatch_payloads(
+/// This system generates server's bevy events
+pub fn handle_server_events(
     mut server: ResMut<QuinnetServer>,
     mut connection_events: EventWriter<ConnectionEvent>,
     mut connection_lost_events: EventWriter<ConnectionLostEvent>,
@@ -467,17 +490,35 @@ pub fn handle_server_events_and_dispatch_payloads(
     for client_id in lost_clients.drain() {
         endpoint.try_disconnect_client(client_id);
     }
-
-    endpoint.dispatch_received_payloads();
 }
 
+#[cfg(feature = "recv_channels")]
+/// Type alias for the server's recv channel error event
+pub type ServerRecvChannelError = crate::shared::error::RecvChannelErrorEvent<ClientId>;
+
+#[cfg(feature = "recv_channels")]
+/// - Receives events from the async server tasks
+///
+/// This system generates server's bevy events
+pub fn dispatch_received_payloads(
+    mut server: ResMut<QuinnetServer>,
+    mut recv_error_events: EventWriter<ServerRecvChannelError>,
+) {
+    let Some(endpoint) = server.get_endpoint_mut() else {
+        return;
+    };
+
+    endpoint.dispatch_received_payloads(&mut recv_error_events);
+}
+
+#[cfg(feature = "recv_channels")]
 /// Clears stale payloads on all receive channels
 pub fn clear_stale_received_payloads(mut server: ResMut<QuinnetServer>) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
     };
 
-    if endpoint.connections_params().clear_stale_received_payloads {
+    if endpoint.recv_channels_cfg().clear_stale_received_payloads {
         endpoint.clear_payloads_from_clients();
     }
 }
@@ -485,19 +526,12 @@ pub fn clear_stale_received_payloads(mut server: ResMut<QuinnetServer>) {
 /// Quinnet Server's plugin
 ///
 /// It is possbile to add both this plugin and the [`crate::client::QuinnetClientPlugin`]
+#[derive(Default)]
 pub struct QuinnetServerPlugin {
     /// In order to have more control and only do the strict necessary, which is registering systems and events in the Bevy schedule, `initialize_later` can be set to `true`. This will prevent the plugin from initializing the `Server` Resource.
     /// Server systems are scheduled to only run if the `Server` resource exists.
     /// A Bevy command to create the resource `commands.init_resource::<Server>();` can be done later on, when needed.
     pub initialize_later: bool,
-}
-
-impl Default for QuinnetServerPlugin {
-    fn default() -> Self {
-        Self {
-            initialize_later: false,
-        }
-    }
 }
 
 impl Plugin for QuinnetServerPlugin {
@@ -511,16 +545,26 @@ impl Plugin for QuinnetServerPlugin {
 
         app.add_systems(
             PreUpdate,
-            handle_server_events_and_dispatch_payloads
+            handle_server_events
                 .in_set(QuinnetSyncPreUpdate)
                 .run_if(resource_exists::<QuinnetServer>),
         );
-        app.add_systems(
-            Last,
-            clear_stale_received_payloads
-                .in_set(QuinnetSyncPostUpdate)
-                .run_if(resource_exists::<QuinnetServer>),
-        );
+        #[cfg(feature = "recv_channels")]
+        {
+            app.add_event::<ServerRecvChannelError>();
+            app.add_systems(
+                PreUpdate,
+                dispatch_received_payloads
+                    .in_set(QuinnetSyncPreUpdate)
+                    .run_if(resource_exists::<QuinnetServer>),
+            );
+            app.add_systems(
+                Last,
+                clear_stale_received_payloads
+                    .in_set(crate::shared::QuinnetSyncLast)
+                    .run_if(resource_exists::<QuinnetServer>),
+            );
+        }
     }
 }
 

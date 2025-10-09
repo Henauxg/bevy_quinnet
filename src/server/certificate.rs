@@ -68,7 +68,7 @@ fn read_cert_from_files(
     let cert_chain: Vec<rustls::pki_types::CertificateDer> =
         rustls_pemfile::certs(&mut cert_chain_reader).collect::<Result<_, _>>()?;
 
-    assert!(cert_chain.len() >= 1);
+    assert!(!cert_chain.is_empty());
 
     let mut key_reader = BufReader::new(File::open(key_file)?);
     let priv_key = rustls_pemfile::private_key(&mut key_reader)?.expect("private key is present");
@@ -86,7 +86,7 @@ fn write_cert_to_files(
     cert_file: &String,
     key_file: &String,
 ) -> std::io::Result<()> {
-    for file in vec![cert_file, key_file] {
+    for file in [cert_file, key_file] {
         if let Some(parent) = std::path::Path::new(file).parent() {
             std::fs::create_dir_all(parent)?;
         }

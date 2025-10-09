@@ -57,4 +57,4 @@ pub struct QuinnetSyncPreUpdate;
 ///
 /// This system set runs in [bevy::prelude::Last].
 #[derive(Debug, SystemSet, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct QuinnetSyncPostUpdate;
+pub struct QuinnetSyncLast;

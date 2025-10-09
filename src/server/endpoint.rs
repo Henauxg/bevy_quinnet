@@ -9,12 +9,12 @@ use crate::{
     server::{
         connection::ServerConnection, EndpointAddrConfiguration, ServerAsyncMessage,
         ServerDisconnectError, ServerGroupPayloadSendError, ServerGroupSendError,
-        ServerPayloadSendError, ServerReceiveError, ServerSendError, ServerSyncMessage,
+        ServerPayloadSendError, ServerSendError, ServerSyncMessage,
     },
     shared::{
         channels::{Channel, ChannelConfig, ChannelId, CloseReason},
         error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
-        peer_connection::{ChannelsIdsPool, ConnectionParameters, PeerConnection},
+        peer_connection::{ChannelsIdsPool, PeerConnection},
         ClientId,
     },
 };
@@ -34,9 +34,11 @@ pub struct Endpoint {
     from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
     /// Address configuration for this endpoint
     addr_config: EndpointAddrConfiguration,
-    /// Parameters for all connections on this endpoint
-    connections_params: ConnectionParameters,
     stats: EndpointStats,
+
+    /// Parameters for all connections on this endpoint
+    #[cfg(feature = "recv_channels")]
+    recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
 }
 
 impl Endpoint {
@@ -44,7 +46,8 @@ impl Endpoint {
         endpoint_close_send: broadcast::Sender<()>,
         from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
         addr_config: EndpointAddrConfiguration,
-        connections_params: ConnectionParameters,
+        #[cfg(feature = "recv_channels")]
+        recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
     ) -> Self {
         Self {
             clients: HashMap::new(),
@@ -55,52 +58,14 @@ impl Endpoint {
             from_async_endpoint_recv,
             stats: EndpointStats::default(),
             addr_config,
-            connections_params,
+            #[cfg(feature = "recv_channels")]
+            recv_channels_cfg,
         }
     }
 
     /// Returns an allocated vector of all the currently connected client ids
     pub fn clients(&self) -> Vec<ClientId> {
         self.clients.keys().cloned().collect()
-    }
-
-    /// Attempts to receive a full payload sent by the specified client.
-    ///
-    /// - Returns an [`Ok`] result containg [`Some`] if there is a message from the client in the message buffer
-    /// - Returns an [`Ok`] result containg [`None`] if there is no message from the client in the message buffer
-    /// - Can return an [`Err`] if:
-    ///  - the client id is not valid
-    ///  - the channel id is not valid
-    pub fn receive_payload_from<C: Into<ChannelId>>(
-        &mut self,
-        client_id: ClientId,
-        channel_id: C,
-    ) -> Result<Option<Bytes>, ServerReceiveError> {
-        match self.clients.get_mut(&client_id) {
-            Some(connection) => {
-                let payload = connection.internal_receive_payload(channel_id.into());
-                if payload.is_some() {
-                    self.stats.received_messages_count += 1;
-                }
-                Ok(payload)
-            }
-            None => Err(ServerReceiveError::UnknownClient(client_id)),
-        }
-    }
-
-    /// [`Endpoint::receive_payload_from`] that logs the error instead of returning a result.
-    pub fn try_receive_payload_from<C: Into<ChannelId>>(
-        &mut self,
-        client_id: ClientId,
-        channel_id: C,
-    ) -> Option<Bytes> {
-        match self.receive_payload_from(client_id, channel_id.into()) {
-            Ok(payload) => payload,
-            Err(err) => {
-                error!("try_receive_payload: {}", err);
-                None
-            }
-        }
     }
 
     /// Same as [Endpoint::send_group_payload_on] but on the default channel
@@ -148,7 +113,7 @@ impl Endpoint {
 
         for &client_id in client_ids {
             if let Err(e) = self.send_payload_on(client_id, channel_id, bytes.clone()) {
-                errs.push((client_id, e.into()));
+                errs.push((client_id, e));
             }
         }
 
@@ -201,7 +166,7 @@ impl Endpoint {
 
         let mut errs = vec![];
         for (&client_id, connection) in self.clients.iter_mut() {
-            if let Err(e) = connection.internal_send_payload(channel_id.into(), payload.clone()) {
+            if let Err(e) = connection.internal_send_payload(channel_id, payload.clone()) {
                 errs.push((client_id, e.into()));
             }
         }
@@ -237,7 +202,7 @@ impl Endpoint {
     ) -> Result<(), ServerPayloadSendError> {
         match self.send_channel_ids.default_channel() {
             Some(channel) => Ok(self.send_payload_on(client_id, channel, payload)?),
-            None => Err(ServerPayloadSendError::NoDefaultChannel.into()),
+            None => Err(ServerPayloadSendError::NoDefaultChannel),
         }
     }
 
@@ -335,10 +300,10 @@ impl Endpoint {
 
     /// Returns statistics about a client if connected.
     pub fn get_connection_stats(&self, client_id: ClientId) -> Option<quinn::ConnectionStats> {
-        match &self.clients.get(&client_id) {
-            Some(client) => Some(client.quinn_connection_stats()),
-            None => None,
-        }
+        self.clients
+            .get(&client_id)
+            .as_ref()
+            .map(|client| client.quinn_connection_stats())
     }
 
     /// Returns a mutable reference to a client connection if it exists
@@ -501,9 +466,74 @@ impl Endpoint {
         self.from_async_endpoint_recv.try_recv()
     }
 
-    pub(crate) fn dispatch_received_payloads(&mut self) {
-        for connection in self.clients.values_mut() {
-            connection.dispatch_received_payloads_to_channel_buffers();
+    /// Returns the current address configuration of this server endpoint
+    #[inline(always)]
+    pub fn addr_config(&self) -> &EndpointAddrConfiguration {
+        &self.addr_config
+    }
+}
+
+#[cfg(feature = "recv_channels")]
+use crate::server::ServerRecvChannelError;
+
+#[cfg(feature = "recv_channels")]
+impl Endpoint {
+    /// Attempts to receive a full payload sent by the specified client.
+    ///
+    /// - Returns an [`Ok`] result containg [`Some`] if there is a message from the client in the message buffer
+    /// - Returns an [`Ok`] result containg [`None`] if there is no message from the client in the message buffer
+    /// - Can return an [`Err`] if:
+    ///  - the client id is not valid
+    ///  - the channel id is not valid
+    pub fn receive_payload_from<C: Into<ChannelId>>(
+        &mut self,
+        client_id: ClientId,
+        channel_id: C,
+    ) -> Result<Option<Bytes>, crate::server::ServerReceiveError> {
+        match self.clients.get_mut(&client_id) {
+            Some(connection) => {
+                let payload = connection.internal_receive_payload(channel_id.into());
+                if payload.is_some() {
+                    self.stats.received_messages_count += 1;
+                }
+                Ok(payload)
+            }
+            None => Err(crate::server::ServerReceiveError::UnknownClient(client_id)),
+        }
+    }
+
+    /// [`Endpoint::receive_payload_from`] that logs the error instead of returning a result.
+    pub fn try_receive_payload_from<C: Into<ChannelId>>(
+        &mut self,
+        client_id: ClientId,
+        channel_id: C,
+    ) -> Option<Bytes> {
+        match self.receive_payload_from(client_id, channel_id.into()) {
+            Ok(payload) => payload,
+            Err(err) => {
+                error!("try_receive_payload: {}", err);
+                None
+            }
+        }
+    }
+
+    pub(crate) fn dispatch_received_payloads(
+        &mut self,
+        recv_error_events: &mut bevy::ecs::event::EventWriter<ServerRecvChannelError>,
+    ) {
+        for (client_id, connection) in self.clients.iter_mut() {
+            if let Err(recv_errors) = connection.dispatch_received_payloads_to_channel_buffers() {
+                for error in recv_errors {
+                    error!(
+                        "Error while dispatching received payloads to channel buffers: {}",
+                        error
+                    );
+                    recv_error_events.write(ServerRecvChannelError {
+                        id: *client_id,
+                        error,
+                    });
+                }
+            }
         }
     }
 
@@ -514,22 +544,16 @@ impl Endpoint {
         }
     }
 
-    /// Enables or disables [`crate::shared::connection::ConnectionParameters::clear_stale_received_payloads`] for all connections on this server endpoint.
+    /// Enables or disables [`crate::shared::peer_connection::RecvChannelsConfiguration::clear_stale_received_payloads`] for all connections on this server endpoint.
     #[inline(always)]
     pub fn set_clear_stale_client_payloads(&mut self, enable: bool) {
-        self.connections_params.clear_stale_received_payloads = enable;
-    }
-
-    /// Returns the current address configuration of this server endpoint
-    #[inline(always)]
-    pub fn addr_config(&self) -> &EndpointAddrConfiguration {
-        &self.addr_config
+        self.recv_channels_cfg.clear_stale_received_payloads = enable;
     }
 
     /// Returns the current connection parameters of this server endpoint
     #[inline(always)]
-    pub fn connections_params(&self) -> &ConnectionParameters {
-        &self.connections_params
+    pub fn recv_channels_cfg(&self) -> &crate::shared::peer_connection::RecvChannelsConfiguration {
+        &self.recv_channels_cfg
     }
 }
 

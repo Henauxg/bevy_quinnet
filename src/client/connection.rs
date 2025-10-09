@@ -30,8 +30,8 @@ pub mod messages;
 use crate::shared::{
     channels::{
         tasks::{spawn_recv_channels_tasks, spawn_send_channels_tasks_spawner},
-        ChannelAsyncMessage, ChannelConfig, ChannelId, ChannelSyncMessage, ChannelsConfiguration,
-        CloseReason, CloseRecv, CloseSend,
+        ChannelAsyncMessage, ChannelConfig, ChannelId, ChannelSyncMessage, CloseReason, CloseRecv,
+        CloseSend, SendChannelsConfiguration,
     },
     error::{AsyncChannelError, ChannelCloseError, ChannelCreationError},
     peer_connection::{
@@ -49,7 +49,7 @@ use super::{
         TofuServerVerification,
     },
     error::{ClientPayloadSendError, ClientSendError},
-    ClientAsyncMessage, ClientConnectionCloseError, ConnectionClosed, QuinnetConnectionError,
+    ClientAsyncMessage, ClientConnectionCloseError, QuinnetConnectionError,
 };
 
 /// Alias type for a local id of a connection
@@ -306,7 +306,7 @@ pub struct ClientConnection {
     // Configuration
     addr_config: ClientAddrConfiguration,
     cert_mode: CertificateVerificationMode,
-    channels_config: ChannelsConfiguration,
+    channels_config: SendChannelsConfiguration,
 
     state: InternalConnectionState,
     send_channel_ids: ChannelsIdsPool,
@@ -318,7 +318,7 @@ impl ClientConnection {
         runtime: runtime::Handle,
         client_config: ClientAddrConfiguration,
         cert_mode: CertificateVerificationMode,
-        channels_config: ChannelsConfiguration,
+        channels_config: SendChannelsConfiguration,
         from_async_client_recv: mpsc::Receiver<ClientAsyncMessage>,
     ) -> Self {
         Self {
@@ -381,32 +381,6 @@ impl ClientSideConnection {
         }
     }
 
-    /// Attempts to receive a full payload sent by the server.
-    ///
-    /// - Returns an [`Ok`] result containg [`Some`] if there is a message from the server in the message buffer
-    /// - Returns an [`Ok`] result containg [`None`] if there is no message from the server in the message buffer
-    /// - Can return an [`Err`] if the connection is closed
-    pub fn receive_payload<C: Into<ChannelId>>(
-        &mut self,
-        channel_id: C,
-    ) -> Result<Option<Bytes>, ConnectionClosed> {
-        match &self.internal_state() {
-            InternalConnectionState::Disconnected => Err(ConnectionClosed),
-            _ => Ok(self.internal_receive_payload(channel_id.into())),
-        }
-    }
-
-    /// Same as [Self::receive_payload] but will log the error instead of returning it
-    pub fn try_receive_payload<C: Into<ChannelId>>(&mut self, channel_id: C) -> Option<Bytes> {
-        match self.receive_payload(channel_id) {
-            Ok(payload) => payload,
-            Err(err) => {
-                error!("try_receive_payload: {}", err);
-                None
-            }
-        }
-    }
-
     /// Opens a channel of the requested [ChannelConfig] and returns its [ChannelId].
     ///
     /// If no channels were previously opened, the opened channel will be the new default channel.
@@ -436,12 +410,12 @@ impl ClientSideConnection {
 
     pub(crate) fn open_configured_channels(
         &mut self,
-        channel_configs: ChannelsConfiguration,
+        channel_configs: SendChannelsConfiguration,
     ) -> Result<(), AsyncChannelError> {
         for channel_config in channel_configs.configs() {
             // Unchecked because we know we have enough ids
             let channel_id = self.specific.send_channel_ids.take_id().unwrap();
-            match self.create_unregistered_connection_channel(channel_id, channel_config.clone()) {
+            match self.create_unregistered_connection_channel(channel_id, *channel_config) {
                 Ok(channel) => self.register_connection_channel(channel),
                 Err(e) => {
                     self.specific.send_channel_ids.release_id(channel_id);
@@ -471,55 +445,52 @@ impl ClientSideConnection {
     ///
     /// Does nothing if the connection state is not [`ConnectionState::Disconnected`]
     pub fn reconnect(&mut self) -> Result<(), AsyncChannelError> {
-        match &self.internal_state() {
-            InternalConnectionState::Disconnected => {
-                let (
-                    bytes_from_server_send,
-                    bytes_from_server_recv,
+        if let InternalConnectionState::Disconnected = &self.internal_state() {
+            let (
+                bytes_from_server_send,
+                bytes_from_server_recv,
+                to_sync_client_send,
+                to_sync_client_recv,
+                from_channels_send,
+                from_channels_recv,
+                to_channels_send,
+                to_channels_recv,
+                close_send,
+                close_recv,
+            ) = create_client_connection_async_channels();
+
+            // Connection state reset
+            self.set_state(InternalConnectionState::Connecting);
+            self.specific.send_channel_ids = ChannelsIdsPool::new();
+            self.specific.from_async_client_recv = to_sync_client_recv;
+            self.internal_reset(
+                close_send,
+                to_channels_send,
+                from_channels_recv,
+                bytes_from_server_recv,
+                self.specific.channels_config.configs().len(),
+            );
+
+            // Re-open channels
+            self.open_configured_channels(self.specific.channels_config.clone())?;
+
+            // Async connection
+            let local_id = self.specific.local_id;
+            let endpoint_config = self.specific.addr_config.clone();
+            let cert_mode = self.specific.cert_mode.clone();
+            self.specific.runtime.spawn(async move {
+                async_connection_task(
+                    local_id,
+                    endpoint_config,
+                    cert_mode,
                     to_sync_client_send,
-                    to_sync_client_recv,
-                    from_channels_send,
-                    from_channels_recv,
-                    to_channels_send,
+                    bytes_from_server_send,
                     to_channels_recv,
-                    close_send,
+                    from_channels_send,
                     close_recv,
-                ) = create_client_connection_async_channels();
-
-                // Connection state reset
-                self.set_state(InternalConnectionState::Connecting);
-                self.specific.send_channel_ids = ChannelsIdsPool::new();
-                self.specific.from_async_client_recv = to_sync_client_recv;
-                self.internal_reset(
-                    close_send,
-                    to_channels_send,
-                    from_channels_recv,
-                    bytes_from_server_recv,
-                    self.specific.channels_config.configs().len(),
-                );
-
-                // Re-open channels
-                self.open_configured_channels(self.specific.channels_config.clone())?;
-
-                // Async connection
-                let local_id = self.specific.local_id;
-                let endpoint_config = self.specific.addr_config.clone();
-                let cert_mode = self.specific.cert_mode.clone();
-                self.specific.runtime.spawn(async move {
-                    async_connection_task(
-                        local_id,
-                        endpoint_config,
-                        cert_mode,
-                        to_sync_client_send,
-                        bytes_from_server_send,
-                        to_channels_recv,
-                        from_channels_send,
-                        close_recv,
-                    )
-                    .await
-                });
-            }
-            _ => (),
+                )
+                .await
+            });
         }
         Ok(())
     }
@@ -614,13 +585,42 @@ impl ClientSideConnection {
     }
 
     /// Returns the channels configuration used by this connection
-    pub fn channels_config(&self) -> &ChannelsConfiguration {
+    pub fn channels_config(&self) -> &SendChannelsConfiguration {
         &self.specific.channels_config
     }
 
     /// Returns the client configuration used by this connection
     pub fn client_config(&self) -> &ClientAddrConfiguration {
         &self.specific.addr_config
+    }
+}
+
+#[cfg(feature = "recv_channels")]
+impl ClientSideConnection {
+    /// Attempts to receive a full payload sent by the server.
+    ///
+    /// - Returns an [`Ok`] result containg [`Some`] if there is a message from the server in the message buffer
+    /// - Returns an [`Ok`] result containg [`None`] if there is no message from the server in the message buffer
+    /// - Can return an [`Err`] if the connection is closed
+    pub fn receive_payload<C: Into<ChannelId>>(
+        &mut self,
+        channel_id: C,
+    ) -> Result<Option<Bytes>, crate::client::error::ConnectionClosed> {
+        match &self.internal_state() {
+            InternalConnectionState::Disconnected => Err(crate::client::error::ConnectionClosed),
+            _ => Ok(self.internal_receive_payload(channel_id.into())),
+        }
+    }
+
+    /// Same as [Self::receive_payload] but will log the error instead of returning it
+    pub fn try_receive_payload<C: Into<ChannelId>>(&mut self, channel_id: C) -> Option<Bytes> {
+        match self.receive_payload(channel_id) {
+            Ok(payload) => payload,
+            Err(err) => {
+                error!("try_receive_payload: {}", err);
+                None
+            }
+        }
     }
 }
 

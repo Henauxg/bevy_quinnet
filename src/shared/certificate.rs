@@ -12,13 +12,13 @@ impl CertificateFingerprint {
 
     /// Encodes the wrapped buffer content to base64
     pub fn to_base64(&self) -> String {
-        base64::encode(&self.0)
+        base64::encode(self.0)
     }
 }
 
 impl From<&rustls::pki_types::CertificateDer<'_>> for CertificateFingerprint {
     fn from(cert: &rustls::pki_types::CertificateDer<'_>) -> CertificateFingerprint {
-        let hash = ring::digest::digest(&ring::digest::SHA256, &cert);
+        let hash = ring::digest::digest(&ring::digest::SHA256, cert);
         let fingerprint_bytes = hash.as_ref().try_into().unwrap();
         CertificateFingerprint(fingerprint_bytes)
     }
