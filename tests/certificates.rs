@@ -201,7 +201,7 @@ fn trust_on_first_use() {
         .unwrap();
 
     // Let the endpoint fully stop.
-    sleep(Duration::from_secs_f32(0.1));
+    sleep(Duration::from_secs_f32(0.2));
 
     let server_cert = server_app
         .world_mut()

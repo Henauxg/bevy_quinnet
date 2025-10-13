@@ -73,16 +73,16 @@ fn connection_with_two_apps() {
         .endpoint_mut()
         .default_channel()
         .unwrap();
-    let (received_channel_id, client_payload) = server_app
+    let client_payload = server_app
         .world_mut()
         .resource_mut::<QuinnetServer>()
         .endpoint_mut()
-        .connection_mut(client_id)
-        .unwrap()
-        .dequeue_undispatched_bytes_from_peer()
+        .receive_payload_from(client_id, default_server_channel_id)
         .expect("Failed to receive client message");
-    assert_eq!(client_payload.iter().as_slice(), TEST_MESSAGE_PAYLOAD);
-    assert_eq!(received_channel_id, default_server_channel_id);
+    assert_eq!(
+        client_payload.unwrap().iter().as_slice(),
+        TEST_MESSAGE_PAYLOAD
+    );
 
     server_app
         .world_mut()
@@ -95,14 +95,16 @@ fn connection_with_two_apps() {
     sleep(Duration::from_secs_f32(0.1));
     client_app.update();
 
-    let (received_channel_id, server_message) = client_app
+    let server_message = client_app
         .world_mut()
         .resource_mut::<QuinnetClient>()
         .connection_mut()
-        .dequeue_undispatched_bytes_from_peer()
+        .receive_payload(default_server_channel_id)
         .expect("Failed to receive server message");
-    assert_eq!(server_message.iter().as_slice(), TEST_MESSAGE_PAYLOAD);
-    assert_eq!(received_channel_id, default_server_channel_id);
+    assert_eq!(
+        server_message.unwrap().iter().as_slice(),
+        TEST_MESSAGE_PAYLOAD
+    );
 }
 
 ///////////////////////////////////////////////////////////

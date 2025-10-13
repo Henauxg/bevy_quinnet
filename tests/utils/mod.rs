@@ -24,7 +24,6 @@ use bevy_quinnet::{
         ClientId,
     },
 };
-use tokio::sync::mpsc::error::TryRecvError;
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct ClientTestData {
@@ -269,20 +268,19 @@ pub fn open_server_channel(channel_type: ChannelConfig, app: &mut App) -> Channe
 
 pub fn wait_for_client_message(
     client_id: ClientId,
+    channel_id: ChannelId,
     server_app: &mut App,
-) -> (ChannelId, bytes::Bytes) {
+) -> bytes::Bytes {
     for _ in 0..20 {
         server_app.update();
         match server_app
             .world_mut()
             .resource_mut::<QuinnetServer>()
             .endpoint_mut()
-            .connection_mut(client_id)
-            .unwrap()
-            .dequeue_undispatched_bytes_from_peer()
+            .receive_payload_from(client_id, channel_id)
         {
-            Ok((channel_id, payload)) => return (channel_id, payload),
-            Err(TryRecvError::Empty) => (),
+            Ok(Some(payload)) => return payload,
+            Ok(None) => (),
             Err(err) => panic!("Error when receiving payload from client: {:?}", err),
         }
         sleep(Duration::from_secs_f32(0.05));
@@ -290,17 +288,17 @@ pub fn wait_for_client_message(
     panic!("Did not receive a message from client in time");
 }
 
-pub fn wait_for_server_message(client_app: &mut App) -> (ChannelId, bytes::Bytes) {
+pub fn wait_for_server_message(client_app: &mut App, channel_id: ChannelId) -> bytes::Bytes {
     for _ in 0..20 {
         client_app.update();
         match client_app
             .world_mut()
             .resource_mut::<QuinnetClient>()
             .connection_mut()
-            .dequeue_undispatched_bytes_from_peer()
+            .receive_payload(channel_id)
         {
-            Ok((channel_id, payload)) => return (channel_id, payload),
-            Err(TryRecvError::Empty) => (),
+            Ok(Some(payload)) => return payload,
+            Ok(None) => (),
             Err(err) => panic!("Error when receiving payload from server: {:?}", err),
         }
         sleep(Duration::from_secs_f32(0.05));
@@ -324,11 +322,8 @@ pub fn send_and_test_client_message(
         .send_payload_on(channel_id, client_message_payload.clone())
         .unwrap();
 
-    let (received_channel_id, server_received) = wait_for_client_message(client_id, server_app);
-    assert_eq!(
-        (channel_id, client_message_payload),
-        (received_channel_id, server_received)
-    );
+    let server_received = wait_for_client_message(client_id, channel_id, server_app);
+    assert_eq!(client_message_payload, server_received);
 }
 
 pub fn send_and_test_server_message(
@@ -347,9 +342,6 @@ pub fn send_and_test_server_message(
         .send_payload_on(client_id, channel_id, server_message_payload.clone())
         .unwrap();
 
-    let (received_channel_id, client_received) = wait_for_server_message(client_app);
-    assert_eq!(
-        (channel_id, server_message_payload),
-        (received_channel_id, client_received)
-    );
+    let client_received = wait_for_server_message(client_app, channel_id);
+    assert_eq!(server_message_payload, client_received);
 }
