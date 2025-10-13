@@ -1,6 +1,6 @@
 # Changelog
 
-## Version 0.18.0 (TBD)
+## Version 0.18.0 (2025-10-13)
 
 - Added `recv_channels` feature:
 With the feature enabled, client and server buffer received payloads per channel, and allow fetching payloads from a specific channel. Buffers can be cleared automatically every frame via `RecvChannelsConfiguration::clear_stale_received_payloads` or manually by draining them or by calling `Endpoint::clear_payloads_from_clients`/`PeerConnection::clear_received_payloads`.
