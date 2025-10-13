@@ -39,6 +39,7 @@ With the feature enabled, client and server buffer received payloads per channel
 - Added `clear_stale_received_payloads` and `dispatch_received_payloads` systems
 - Added `Endpoint::clear_payloads_from_clients` fn
 - Renamed `ServerSideConnection::connection_stats` to `ServerSideConnection::quinn_connection_stats`
+- Removed `received_message_count` from `EndpointStats`
 
 ## Version 0.17.0 (2025-04-27)
 

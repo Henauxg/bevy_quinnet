@@ -491,18 +491,12 @@ impl Endpoint {
         channel_id: C,
     ) -> Result<Option<Bytes>, crate::server::ServerReceiveError> {
         match self.clients.get_mut(&client_id) {
-            Some(connection) => {
-                let payload = connection.internal_receive_payload(channel_id.into());
-                if payload.is_some() {
-                    self.stats.received_messages_count += 1;
-                }
-                Ok(payload)
-            }
+            Some(connection) => Ok(connection.internal_receive_payload(channel_id.into())),
             None => Err(crate::server::ServerReceiveError::UnknownClient(client_id)),
         }
     }
 
-    /// [`Endpoint::receive_payload_on`] that logs the error instead of returning a result.
+    /// [`Endpoint::receive_payload`] that logs the error instead of returning a result.
     pub fn try_receive_payload<C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
@@ -560,15 +554,10 @@ impl Endpoint {
 /// Basic quinnet stats about this server endpoint
 #[derive(Default)]
 pub struct EndpointStats {
-    received_messages_count: u64,
     connect_count: u32,
     disconnect_count: u32,
 }
 impl EndpointStats {
-    /// Returns how many messages were received (read) on this endpoint
-    pub fn received_messages_count(&self) -> u64 {
-        self.received_messages_count
-    }
     /// Returns how many connection events occurred on this endpoint
     pub fn connect_count(&self) -> u32 {
         self.connect_count
