@@ -228,11 +228,11 @@ On the client:
 
 ```rust
     // To accept any certificate
-    client.open_connection(/*...*/, CertificateVerificationMode::SkipVerification);
+    client.open_connection(/*...*/ CertificateVerificationMode::SkipVerification);
     // To only accept certificates issued by a Certificate Authority
-    client.open_connection(/*...*/, CertificateVerificationMode::SignedByCertificateAuthority);
+    client.open_connection(/*...*/ CertificateVerificationMode::SignedByCertificateAuthority);
     // To use the default configuration of the Trust on first use authentication scheme
-    client.open_connection(/*...*/, CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
+    client.open_connection(/*...*/ CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
             // You can configure TrustOnFirstUse through the TrustOnFirstUseConfig:
             // Provide your own fingerprint store variable/file,
             // or configure the actions to apply for each possible certificate verification status.
@@ -245,16 +245,16 @@ On the server:
 
 ```rust
     // To generate a new self-signed certificate on each startup 
-    server.start_endpoint(/*...*/, CertificateRetrievalMode::GenerateSelfSigned { 
+    server.start_endpoint(/*...*/ CertificateRetrievalMode::GenerateSelfSigned { 
         server_hostname: Ipv6Addr::LOCALHOST.to_string(),
     });
     // To load a pre-existing one from files
-    server.start_endpoint(/*...*/, CertificateRetrievalMode::LoadFromFile {
+    server.start_endpoint(/*...*/ CertificateRetrievalMode::LoadFromFile {
         cert_file: "./certificates.pem".into(),
         key_file: "./privkey.pem".into(),
     });
     // To load one from files, or to generate a new self-signed one if the files do not exist.
-    server.start_endpoint(/*...*/, CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
+    server.start_endpoint(/*...*/ CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
         cert_file: "./certificates.pem".into(),
         key_file: "./privkey.pem".into(),
         save_on_disk: true, // To persist on disk if generated
