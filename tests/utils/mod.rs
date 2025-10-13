@@ -277,7 +277,7 @@ pub fn wait_for_client_message(
             .world_mut()
             .resource_mut::<QuinnetServer>()
             .endpoint_mut()
-            .receive_payload_from(client_id, channel_id)
+            .receive_payload(client_id, channel_id)
         {
             Ok(Some(payload)) => return payload,
             Ok(None) => (),

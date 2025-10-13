@@ -77,7 +77,7 @@ fn connection_with_two_apps() {
         .world_mut()
         .resource_mut::<QuinnetServer>()
         .endpoint_mut()
-        .receive_payload_from(client_id, default_server_channel_id)
+        .receive_payload(client_id, default_server_channel_id)
         .expect("Failed to receive client message");
     assert_eq!(
         client_payload.unwrap().iter().as_slice(),

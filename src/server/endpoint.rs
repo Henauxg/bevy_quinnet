@@ -485,7 +485,7 @@ impl Endpoint {
     /// - Can return an [`Err`] if:
     ///  - the client id is not valid
     ///  - the channel id is not valid
-    pub fn receive_payload_from<C: Into<ChannelId>>(
+    pub fn receive_payload<C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
         channel_id: C,
@@ -502,13 +502,13 @@ impl Endpoint {
         }
     }
 
-    /// [`Endpoint::receive_payload_from`] that logs the error instead of returning a result.
-    pub fn try_receive_payload_from<C: Into<ChannelId>>(
+    /// [`Endpoint::receive_payload_on`] that logs the error instead of returning a result.
+    pub fn try_receive_payload<C: Into<ChannelId>>(
         &mut self,
         client_id: ClientId,
         channel_id: C,
     ) -> Option<Bytes> {
-        match self.receive_payload_from(client_id, channel_id.into()) {
+        match self.receive_payload(client_id, channel_id.into()) {
             Ok(payload) => payload,
             Err(err) => {
                 error!("try_receive_payload: {}", err);
