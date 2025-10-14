@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.19.0 (2025-10-14)
+
+- Updated `bevy` to 0.17
+
 ## Version 0.18.0 (2025-10-13)
 
 - Added `recv_channels` feature:
