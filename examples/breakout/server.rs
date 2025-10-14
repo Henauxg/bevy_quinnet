@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use bevy::{
+    ecs::message::MessageReader,
     math::bounding::{Aabb2d, BoundingCircle, BoundingVolume, IntersectsVolume},
     prelude::{
-        default, Bundle, Commands, Component, Entity, EventReader, Query, ResMut, Resource,
-        Transform, Vec2, Vec3, With,
+        default, Bundle, Commands, Component, Entity, Query, ResMut, Resource, Transform, Vec2,
+        Vec3, With,
     },
 };
 use bevy_quinnet::{
@@ -118,7 +119,7 @@ pub(crate) fn handle_client_messages(
 
 pub(crate) fn handle_server_events(
     mut commands: Commands,
-    mut connection_events: EventReader<ConnectionEvent>,
+    mut connection_events: MessageReader<ConnectionEvent>,
     mut server: ResMut<QuinnetServer>,
     mut players: ResMut<Players>,
 ) {

@@ -3,14 +3,18 @@ use std::{collections::HashMap, ops::DerefMut};
 use bevy::{
     asset::Assets,
     audio::{AudioPlayer, Volume},
-    ecs::system::Single,
+    ecs::{
+        message::{MessageReader, MessageWriter},
+        system::Single,
+    },
     input::ButtonInput,
     prelude::{
         default, AssetServer, Bundle, Button, Camera2d, Changed, Circle, Color, Commands,
-        Component, Entity, EventReader, EventWriter, KeyCode, Local, Mesh, Mesh2d,
-        PlaybackSettings, Query, Res, ResMut, Resource, Text, Transform, Vec2, Vec3, With, Without,
+        Component, Entity, KeyCode, Local, Mesh, Mesh2d, PlaybackSettings, Query, Res, ResMut,
+        Resource, Text, Transform, Vec2, Vec3, With, Without,
     },
-    sprite::{ColorMaterial, MeshMaterial2d, Sprite},
+    sprite::Sprite,
+    sprite_render::{ColorMaterial, MeshMaterial2d},
     state::state::NextState,
     text::{TextColor, TextFont, TextSpan},
     ui::{
@@ -247,7 +251,7 @@ pub(crate) fn handle_server_gameplay_events(
     bricks: ResMut<BricksMapping>,
     mut scoreboard: ResMut<Scoreboard>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    mut collision_events: EventWriter<CollisionEvent>,
+    mut collision_events: MessageWriter<CollisionEvent>,
 ) {
     while let Some(message) = client
         .connection_mut()
@@ -354,7 +358,7 @@ pub(crate) fn update_scoreboard(
 
 pub(crate) fn play_collision_sound(
     mut commands: Commands,
-    mut collision_events: EventReader<CollisionEvent>,
+    mut collision_events: MessageReader<CollisionEvent>,
     sound: Res<CollisionSound>,
 ) {
     // Play a sound once per frame if a collision occurred.

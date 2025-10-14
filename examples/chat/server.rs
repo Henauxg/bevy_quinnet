@@ -79,7 +79,7 @@ fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut users: ResMut<U
 }
 
 fn handle_server_events(
-    mut connection_lost_events: EventReader<ConnectionLostEvent>,
+    mut connection_lost_events: MessageReader<ConnectionLostEvent>,
     mut server: ResMut<QuinnetServer>,
     mut users: ResMut<Users>,
 ) {

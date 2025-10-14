@@ -66,7 +66,7 @@ pub enum GameSystems {
 #[derive(Component, Deref, DerefMut)]
 struct Velocity(Vec2);
 
-#[derive(Default, Event)]
+#[derive(Default, Message)]
 struct CollisionEvent;
 
 #[derive(Component)]
@@ -124,7 +124,7 @@ fn main() {
         QuinnetServerPlugin::default(),
         QuinnetClientPlugin::default(),
     ));
-    app.add_event::<CollisionEvent>();
+    app.add_message::<CollisionEvent>();
     app.init_state::<GameState>();
     app.insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(client::Scoreboard { score: 0 })

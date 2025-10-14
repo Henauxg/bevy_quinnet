@@ -55,6 +55,7 @@ bevy = { version = "0.17.0", default-features = false, features = [
 	"bevy_window",        # Windowing layer
 	"bevy_render",        # Provides rendering functionality
 	"bevy_sprite",        # Provides sprite functionality
+	"bevy_sprite_render", # Provides sprite rendering functionality
 	"bevy_ui",            # A custom ECS-driven UI framework
 	"bevy_state",         # Provides state management functionality
 	"bevy_text",          # Provides text functionality

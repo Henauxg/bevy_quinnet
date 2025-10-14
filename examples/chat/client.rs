@@ -6,12 +6,12 @@ use std::{
 
 use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
-    ecs::schedule::IntoScheduleConfigs,
-    log::{info, warn, LogPlugin},
-    prelude::{
-        App, Commands, Deref, DerefMut, EventReader, EventWriter, PostUpdate, ResMut, Resource,
-        Startup, Update,
+    ecs::{
+        message::{MessageReader, MessageWriter},
+        schedule::IntoScheduleConfigs,
     },
+    log::{info, warn, LogPlugin},
+    prelude::{App, Commands, Deref, DerefMut, PostUpdate, ResMut, Resource, Startup, Update},
 };
 use bevy_quinnet::{
     client::{
@@ -40,7 +40,7 @@ struct Users {
 #[derive(Resource, Deref, DerefMut)]
 struct TerminalReceiver(mpsc::Receiver<String>);
 
-pub fn on_app_exit(app_exit_events: EventReader<AppExit>, mut client: ResMut<QuinnetClient>) {
+pub fn on_app_exit(app_exit_events: MessageReader<AppExit>, mut client: ResMut<QuinnetClient>) {
     if !app_exit_events.is_empty() {
         client
             .connection_mut()
@@ -90,7 +90,7 @@ fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<QuinnetCl
 
 fn handle_terminal_messages(
     mut terminal_messages: ResMut<TerminalReceiver>,
-    mut app_exit_events: EventWriter<AppExit>,
+    mut app_exit_events: MessageWriter<AppExit>,
     mut client: ResMut<QuinnetClient>,
 ) {
     while let Ok(message) = terminal_messages.try_recv() {
@@ -131,8 +131,8 @@ fn start_connection(mut client: ResMut<QuinnetClient>) {
 }
 
 fn handle_client_events(
-    mut connection_events: EventReader<ConnectionEvent>,
-    mut connection_failed_events: EventReader<ConnectionFailedEvent>,
+    mut connection_events: MessageReader<ConnectionEvent>,
+    mut connection_failed_events: MessageReader<ConnectionFailedEvent>,
     mut client: ResMut<QuinnetClient>,
 ) {
     if !connection_events.is_empty() {
