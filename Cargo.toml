@@ -49,17 +49,18 @@ bincode-messages = ["bincode", "serde"]
 
 [dev-dependencies]
 bevy = { version = "0.17.0", default-features = false, features = [
-	"bevy_asset",         # Provides asset functionality
-	"bevy_audio",         # Provides audio functionality
+	"bevy_asset",
+	"bevy_audio",
 	"vorbis",             # OGG/VORBIS audio format support
 	"bevy_window",        # Windowing layer
-	"bevy_render",        # Provides rendering functionality
-	"bevy_sprite",        # Provides sprite functionality
-	"bevy_sprite_render", # Provides sprite rendering functionality
-	"bevy_ui",            # A custom ECS-driven UI framework
-	"bevy_state",         # Provides state management functionality
-	"bevy_text",          # Provides text functionality
-	"bevy_core_pipeline", # Provides cameras and other basic render pipeline feature
+	"bevy_render",
+	"bevy_sprite",
+	"bevy_sprite_render",
+	"bevy_ui",
+	"bevy_ui_render",
+	"bevy_state",
+	"bevy_text",
+	"bevy_core_pipeline",
 	"serialize",
 	"x11",                # X11 display server support
 ] }
