@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.18.1 (2025-10-14)
+
+- Fixed: `receive_message_from` in server `Endpoint` when feature `bincode-messages` is enabled
+
 ## Version 0.18.0 (2025-10-13)
 
 - Added `recv_channels` feature:
