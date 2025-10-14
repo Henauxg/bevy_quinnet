@@ -84,7 +84,7 @@ impl Endpoint {
         client_id: ClientId,
         channel_id: C,
     ) -> Result<Option<T>, ServerMessageReceiveError> {
-        match self.receive_payload_from(client_id, channel_id)? {
+        match self.receive_payload(client_id, channel_id)? {
             Some(payload) => {
                 match bincode::serde::decode_from_slice(&payload, bincode::config::standard()) {
                     Ok((msg, _size)) => Ok(Some(msg)),
