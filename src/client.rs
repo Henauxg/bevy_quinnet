@@ -327,12 +327,12 @@ impl QuinnetClient {
 ///
 /// This system generates client's bevy events
 pub fn handle_client_events(
-    mut connection_events: EventWriter<ConnectionEvent>,
-    mut connection_failed_events: EventWriter<ConnectionFailedEvent>,
-    mut connection_lost_events: EventWriter<ConnectionLostEvent>,
-    mut certificate_interaction_events: EventWriter<CertInteractionEvent>,
-    mut cert_trust_update_events: EventWriter<CertTrustUpdateEvent>,
-    mut cert_connection_abort_events: EventWriter<CertConnectionAbortEvent>,
+    mut connection_events: MessageWriter<ConnectionEvent>,
+    mut connection_failed_events: MessageWriter<ConnectionFailedEvent>,
+    mut connection_lost_events: MessageWriter<ConnectionLostEvent>,
+    mut certificate_interaction_events: MessageWriter<CertInteractionEvent>,
+    mut cert_trust_update_events: MessageWriter<CertTrustUpdateEvent>,
+    mut cert_connection_abort_events: MessageWriter<CertConnectionAbortEvent>,
     mut client: ResMut<QuinnetClient>,
 ) {
     for (connection_id, connection) in &mut client.connections {
@@ -412,7 +412,7 @@ pub type ClientRecvChannelError = crate::shared::error::RecvChannelErrorEvent<Co
 ///
 /// This system generates client's bevy events
 pub fn dispatch_received_payloads(
-    mut recv_error_events: EventWriter<ClientRecvChannelError>,
+    mut recv_error_events: MessageWriter<ClientRecvChannelError>,
     mut client: ResMut<QuinnetClient>,
 ) {
     for (connection_id, connection) in &mut client.connections {
@@ -458,12 +458,12 @@ pub struct QuinnetClientPlugin {
 
 impl Plugin for QuinnetClientPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<ConnectionEvent>()
-            .add_event::<ConnectionFailedEvent>()
-            .add_event::<ConnectionLostEvent>()
-            .add_event::<CertInteractionEvent>()
-            .add_event::<CertTrustUpdateEvent>()
-            .add_event::<CertConnectionAbortEvent>();
+        app.add_message::<ConnectionEvent>()
+            .add_message::<ConnectionFailedEvent>()
+            .add_message::<ConnectionLostEvent>()
+            .add_message::<CertInteractionEvent>()
+            .add_message::<CertTrustUpdateEvent>()
+            .add_message::<CertConnectionAbortEvent>();
 
         if !self.initialize_later {
             app.init_resource::<QuinnetClient>();
@@ -477,7 +477,7 @@ impl Plugin for QuinnetClientPlugin {
         );
         #[cfg(feature = "recv_channels")]
         {
-            app.add_event::<ClientRecvChannelError>();
+            app.add_message::<ClientRecvChannelError>();
             app.add_systems(
                 PreUpdate,
                 dispatch_received_payloads

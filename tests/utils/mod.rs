@@ -2,7 +2,8 @@ use std::{net::Ipv6Addr, thread::sleep, time::Duration};
 
 use bevy::{
     app::ScheduleRunnerPlugin,
-    prelude::{App, EventReader, Res, ResMut, Resource, Startup, Update},
+    ecs::message::MessageReader,
+    prelude::{App, Res, ResMut, Resource, Startup, Update},
 };
 use bevy_quinnet::{
     client::{
@@ -110,10 +111,10 @@ pub fn start_listening(mut server: ResMut<QuinnetServer>, port: Res<Port>) {
 }
 
 pub fn handle_client_events(
-    mut connection_events: EventReader<client::connection::ConnectionEvent>,
-    mut cert_trust_update_events: EventReader<CertTrustUpdateEvent>,
-    mut cert_interaction_events: EventReader<CertInteractionEvent>,
-    mut cert_connection_abort_events: EventReader<CertConnectionAbortEvent>,
+    mut connection_events: MessageReader<client::connection::ConnectionEvent>,
+    mut cert_trust_update_events: MessageReader<CertTrustUpdateEvent>,
+    mut cert_interaction_events: MessageReader<CertInteractionEvent>,
+    mut cert_connection_abort_events: MessageReader<CertConnectionAbortEvent>,
     mut test_data: ResMut<ClientTestData>,
 ) {
     for _connected_event in connection_events.read() {
@@ -146,8 +147,8 @@ pub fn handle_client_events(
 }
 
 pub fn handle_server_events(
-    mut connection_events: EventReader<server::ConnectionEvent>,
-    mut connection_lost_events: EventReader<server::ConnectionLostEvent>,
+    mut connection_events: MessageReader<server::ConnectionEvent>,
+    mut connection_lost_events: MessageReader<server::ConnectionLostEvent>,
     mut test_data: ResMut<ServerTestData>,
 ) {
     for event in connection_events.read() {

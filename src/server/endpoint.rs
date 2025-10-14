@@ -513,7 +513,7 @@ impl Endpoint {
 
     pub(crate) fn dispatch_received_payloads(
         &mut self,
-        recv_error_events: &mut bevy::ecs::event::EventWriter<ServerRecvChannelError>,
+        recv_error_events: &mut bevy::ecs::message::MessageWriter<ServerRecvChannelError>,
     ) {
         for (client_id, connection) in self.clients.iter_mut() {
             if let Err(recv_errors) = connection.dispatch_received_payloads_to_channel_buffers() {

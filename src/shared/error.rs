@@ -79,7 +79,7 @@ pub enum RecvChannelError {
 
 #[cfg(feature = "recv_channels")]
 /// Event raised when there is an error while receiving data from the server
-#[derive(bevy::ecs::event::Event, Debug, Clone)]
+#[derive(bevy::ecs::message::Message, Debug, Clone)]
 pub struct RecvChannelErrorEvent<T> {
     /// Local id of the connection
     pub id: T,

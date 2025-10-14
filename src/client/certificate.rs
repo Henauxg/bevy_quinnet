@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use bevy::{log::warn, prelude::Event};
+use bevy::log::warn;
 use futures::executor::block_on;
 use rustls::pki_types::{CertificateDer, ServerName as RustlsServerName, UnixTime};
 use tokio::sync::{mpsc, oneshot};
@@ -25,7 +25,7 @@ pub const DEFAULT_CERT_VERIFIER_BEHAVIOUR: CertVerifierBehaviour =
     CertVerifierBehaviour::ImmediateAction(CertVerifierAction::AbortConnection);
 
 /// Event raised when a user/app interaction is needed for the server's certificate validation
-#[derive(Event)]
+#[derive(bevy::ecs::message::Message)]
 pub struct CertInteractionEvent {
     /// Local id of the concerned connection
     pub connection_id: ConnectionLocalId,
@@ -56,7 +56,7 @@ impl CertInteractionEvent {
 }
 
 /// Event raised when a new certificate is trusted
-#[derive(Event)]
+#[derive(bevy::ecs::message::Message)]
 pub struct CertTrustUpdateEvent {
     /// Local id of the concerned connection
     pub connection_id: ConnectionLocalId,
@@ -65,7 +65,7 @@ pub struct CertTrustUpdateEvent {
 }
 
 /// Event raised when a connection is aborted during the certificate verification
-#[derive(Event)]
+#[derive(bevy::ecs::message::Message)]
 pub struct CertConnectionAbortEvent {
     /// Local id of the concerned connection
     pub connection_id: ConnectionLocalId,

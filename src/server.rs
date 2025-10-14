@@ -53,14 +53,14 @@ pub use error::*;
 pub mod certificate;
 
 /// Connection event raised when a client just connected to the server. Raised in the CoreStage::PreUpdate stage.
-#[derive(Event, Debug, Copy, Clone)]
+#[derive(bevy::ecs::message::Message, Debug, Copy, Clone)]
 pub struct ConnectionEvent {
     /// Id of the client who connected
     pub id: ClientId,
 }
 
 /// ConnectionLost event raised when a client is considered disconnected from the server. Raised in the CoreStage::PreUpdate stage.
-#[derive(Event, Debug, Copy, Clone)]
+#[derive(bevy::ecs::message::Message, Debug, Copy, Clone)]
 pub struct ConnectionLostEvent {
     /// Id of the client who lost connection
     pub id: ClientId,
@@ -445,8 +445,8 @@ async fn client_connection_task(
 /// This system generates server's bevy events
 pub fn handle_server_events(
     mut server: ResMut<QuinnetServer>,
-    mut connection_events: EventWriter<ConnectionEvent>,
-    mut connection_lost_events: EventWriter<ConnectionLostEvent>,
+    mut connection_events: MessageWriter<ConnectionEvent>,
+    mut connection_lost_events: MessageWriter<ConnectionLostEvent>,
     mut lost_clients: Local<HashSet<ClientId>>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
@@ -502,7 +502,7 @@ pub type ServerRecvChannelError = crate::shared::error::RecvChannelErrorEvent<Cl
 /// This system generates server's bevy events
 pub fn dispatch_received_payloads(
     mut server: ResMut<QuinnetServer>,
-    mut recv_error_events: EventWriter<ServerRecvChannelError>,
+    mut recv_error_events: MessageWriter<ServerRecvChannelError>,
 ) {
     let Some(endpoint) = server.get_endpoint_mut() else {
         return;
@@ -536,8 +536,8 @@ pub struct QuinnetServerPlugin {
 
 impl Plugin for QuinnetServerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<ConnectionEvent>()
-            .add_event::<ConnectionLostEvent>();
+        app.add_message::<ConnectionEvent>()
+            .add_message::<ConnectionLostEvent>();
 
         if !self.initialize_later {
             app.init_resource::<QuinnetServer>();
@@ -551,7 +551,7 @@ impl Plugin for QuinnetServerPlugin {
         );
         #[cfg(feature = "recv_channels")]
         {
-            app.add_event::<ServerRecvChannelError>();
+            app.add_message::<ServerRecvChannelError>();
             app.add_systems(
                 PreUpdate,
                 dispatch_received_payloads
