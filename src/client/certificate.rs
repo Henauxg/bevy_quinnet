@@ -151,7 +151,7 @@ pub struct CertVerificationInfo {
     /// If any, previously known fingerprint for this server
     pub known_fingerprint: Option<CertificateFingerprint>,
     /// The DER-encoded certificate chain representing this certificate, the first being the end certificate up to the authority.
-    pub certificate_chain: Vec<CertificateDer<'static>>
+    pub certificate_chain: Vec<CertificateDer<'static>>,
 }
 
 /// Encodes ways a client can know the expected name of the server. See [`rustls::pki_types::ServerName`]
@@ -380,14 +380,15 @@ impl rustls::client::danger::ServerCertVerifier for TofuServerVerification {
         let status;
         let server_name = ServerName(_server_name.to_owned());
         let known_fingerprint = self.store.get(&server_name).cloned();
-        let mut certificate_chain = Vec::new();
-        certificate_chain.push(_end_entity.clone().into_owned());
-        certificate_chain.extend(_intermediates.iter().map(|x| x.clone().into_owned()));
+        let certificate_chain = std::iter::once(_end_entity)
+            .chain(_intermediates)
+            .map(|x| x.clone().into_owned())
+            .collect();
         let cert_info = CertVerificationInfo {
             server_name,
             fingerprint: CertificateFingerprint::from(_end_entity),
             known_fingerprint,
-            certificate_chain
+            certificate_chain,
         };
         if let Some(ref known_fingerprint) = cert_info.known_fingerprint {
             if *known_fingerprint == cert_info.fingerprint {
