@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use tokio::sync::mpsc::{self, error::TrySendError};
 
 use crate::{
@@ -44,5 +46,11 @@ impl ServerSideConnection {
         msg: ServerSyncMessage,
     ) -> Result<(), TrySendError<ServerSyncMessage>> {
         self.specific.to_connection_send.try_send(msg)
+    }
+
+    /// Returns the remote IP address of the client.
+    #[inline(always)]
+    pub fn remote_addr(&self) -> SocketAddr {
+        self.specific.connection_handle.remote_address()
     }
 }
