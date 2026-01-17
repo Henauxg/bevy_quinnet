@@ -3,6 +3,8 @@
 ## Version 0.20.0 (2026-01-17)
 
 - Updated `bevy` to 0.18
+- Added `certificate_chain` to client `CertVerificationInfo` (thanks to [radiantgurl](https://github.com/radiantgurl), PR [#45](https://github.com/Henauxg/bevy_quinnet/pull/45))
+- Added `remote_addr` getter on `ServerSideConnection ` (thanks to [radiantgurl](https://github.com/radiantgurl), PR [#46](https://github.com/Henauxg/bevy_quinnet/pull/45))
 
 ## Version 0.19.0 (2025-10-14)
 
