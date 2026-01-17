@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.20.0 (2026-01-17)
+
+- Updated `bevy` to 0.18
+
 ## Version 0.19.0 (2025-10-14)
 
 - Updated `bevy` to 0.17

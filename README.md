@@ -313,6 +313,7 @@ Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/
 
 | bevy_quinnet | bevy |
 | :----------- | :--- |
+| 0.20         | 0.18 |
 | 0.19         | 0.17 |
 | 0.17-0.18    | 0.16 |
 | 0.12-0.16    | 0.15 |
