@@ -82,7 +82,7 @@ fn read_cert_from_files(
 }
 
 fn write_cert_to_files(
-    cert: &rcgen::CertifiedKey,
+    cert: &rcgen::CertifiedKey<rcgen::KeyPair>,
     cert_file: &String,
     key_file: &String,
 ) -> std::io::Result<()> {
@@ -93,18 +93,18 @@ fn write_cert_to_files(
     }
 
     fs::write(cert_file, cert.cert.pem())?;
-    fs::write(key_file, cert.key_pair.serialize_pem())?;
+    fs::write(key_file, cert.signing_key.serialize_pem())?;
 
     Ok(())
 }
 
 fn generate_self_signed_certificate(
     server_host: &String,
-) -> Result<(ServerCertificate, rcgen::CertifiedKey), EndpointCertificateError> {
+) -> Result<(ServerCertificate, rcgen::CertifiedKey<rcgen::KeyPair>), EndpointCertificateError> {
     let generated = rcgen::generate_simple_self_signed(vec![server_host.into()])?;
 
     let priv_key_der =
-        rustls::pki_types::PrivatePkcs8KeyDer::from(generated.key_pair.serialize_der()).into();
+        rustls::pki_types::PrivatePkcs8KeyDer::from(generated.signing_key.serialize_der()).into();
     let cert_der = generated.cert.der();
     let fingerprint = CertificateFingerprint::from(cert_der);
 

@@ -22,7 +22,7 @@ use bevy_quinnet::{
     },
     shared::ClientId,
 };
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, RngExt};
 use tokio::sync::mpsc;
 
 use protocol::{ClientMessage, ServerMessage};
@@ -137,7 +137,7 @@ fn handle_client_events(
 ) {
     if !connection_events.is_empty() {
         // We are connected
-        let username: String = rand::thread_rng()
+        let username: String = rand::rng()
             .sample_iter(&Alphanumeric)
             .take(7)
             .map(char::from)

@@ -390,8 +390,8 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
     };
 
     let text_font = TextFont {
-        font: asset_server.load(BOLD_FONT),
-        font_size: 40.,
+        font: asset_server.load(BOLD_FONT).into(),
+        font_size: 40.0_f32.into(),
         ..Default::default()
     };
     let text_color = TextColor(BUTTON_TEXT_COLOR);
@@ -474,8 +474,8 @@ pub(crate) fn setup_breakout(mut commands: Commands, asset_server: Res<AssetServ
             },
             Text("Score: ".into()),
             TextFont {
-                font: asset_server.load(BOLD_FONT),
-                font_size: SCOREBOARD_FONT_SIZE,
+                font: asset_server.load(BOLD_FONT).into(),
+                font_size: SCOREBOARD_FONT_SIZE.into(),
                 ..default()
             },
             TextColor(TEXT_COLOR),
@@ -483,8 +483,8 @@ pub(crate) fn setup_breakout(mut commands: Commands, asset_server: Res<AssetServ
         .with_child((
             TextSpan("".into()),
             TextFont {
-                font: asset_server.load(NORMAL_FONT),
-                font_size: SCOREBOARD_FONT_SIZE,
+                font: asset_server.load(NORMAL_FONT).into(),
+                font_size: SCOREBOARD_FONT_SIZE.into(),
                 ..default()
             },
             TextColor(SCORE_COLOR),
