@@ -1,22 +1,15 @@
-use std::{collections::HashMap, ops::DerefMut};
+use std::collections::HashMap;
 
 use bevy::{
     asset::Assets,
     audio::{AudioPlayer, Volume},
-    ecs::{
-        message::{MessageReader, MessageWriter},
-        system::Single,
-    },
+    ecs::system::Single,
     input::ButtonInput,
-    prelude::{
-        default, AssetServer, Bundle, Button, Camera2d, Changed, Circle, Color, Commands,
-        Component, Entity, KeyCode, Local, Mesh, Mesh2d, PlaybackSettings, Query, Res, ResMut,
-        Resource, Text, Transform, Vec2, Vec3, With, Without,
-    },
+    prelude::*,
     sprite::Sprite,
     sprite_render::{ColorMaterial, MeshMaterial2d},
     state::state::NextState,
-    text::{TextColor, TextFont, TextSpan},
+    text::{FontSize, TextColor, TextFont, TextSpan},
     ui::{
         AlignItems, BackgroundColor, FlexDirection, Interaction, JustifyContent, Node,
         PositionType, Val,
@@ -35,13 +28,14 @@ use crate::{
         ClientChannel, ClientMessage, PaddleInput, ServerChannel, ServerEvent, ServerSetupMessage,
         ServerUpdate,
     },
-    BrickId, CollisionEvent, CollisionSound, GameState, Score, Velocity, WallLocation, BALL_SIZE,
+    BallCollided, BrickId, CollisionSound, GameState, Velocity, WallLocation, BALL_SIZE,
     BALL_SPEED, BRICK_SIZE, GAP_BETWEEN_BRICKS, LOCAL_BIND_IP, PADDLE_SIZE, SERVER_HOST,
     SERVER_PORT, TIME_STEP,
 };
 
-const SCOREBOARD_FONT_SIZE: f32 = 40.0;
+const SCOREBOARD_FONT_SIZE: FontSize = FontSize::Px(40.0);
 const SCOREBOARD_TEXT_PADDING: Val = Val::Px(5.0);
+const BUTTON_FONT_SIZE: FontSize = FontSize::Px(40.0);
 
 pub(crate) const BACKGROUND_COLOR: Color = Color::srgb(0.9, 0.9, 0.9);
 const PADDLE_COLOR: Color = Color::srgb(0.3, 0.3, 0.7);
@@ -95,6 +89,10 @@ pub(crate) struct Brick;
 #[derive(Component)]
 pub(crate) struct MainMenu;
 
+/// Marks the scoreboard UI root entity.
+#[derive(Component)]
+pub(crate) struct ScoreboardUi;
+
 /// The buttons in the main menu.
 #[derive(Clone, Copy, Component)]
 pub(crate) enum MenuItem {
@@ -102,11 +100,32 @@ pub(crate) enum MenuItem {
     Join,
 }
 
-#[derive(Bundle)]
-struct WallBundle {
-    sprite: Sprite,
-    transform: Transform,
+#[derive(Component, Default)]
+struct Collider;
+
+#[derive(Component)]
+#[require(Sprite, Transform, Collider)]
+struct Wall;
+
+impl Wall {
+    fn new(location: WallLocation) -> (Wall, Sprite, Transform) {
+        (
+            Wall,
+            Sprite::from_color(WALL_COLOR, Vec2::ONE),
+            Transform {
+                // We need to convert our Vec2 into a Vec3, by giving it a z-coordinate
+                // This is used to determine the order of our sprites
+                translation: location.position().extend(0.0),
+                // The z-scale of 2D objects must always be 1.0,
+                // or their ordering will be affected in surprising ways.
+                // See https://github.com/bevyengine/bevy/issues/4149
+                scale: location.size().extend(1.0),
+                ..default()
+            },
+        )
+    }
 }
+
 pub(crate) fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(ClientConnectionConfiguration {
@@ -256,7 +275,6 @@ pub(crate) fn handle_server_gameplay_events(
     bricks: ResMut<BricksMapping>,
     mut scoreboard: ResMut<Scoreboard>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    mut collision_events: MessageWriter<CollisionEvent>,
 ) {
     while let Some(message) = client
         .connection_mut()
@@ -293,8 +311,7 @@ pub(crate) fn handle_server_gameplay_events(
                         ));
                     }
                 }
-                // Sends a collision event so that other systems can react to the collision
-                collision_events.write_default();
+                commands.trigger(BallCollided);
             }
         }
     }
@@ -354,28 +371,23 @@ pub(crate) fn move_paddle(
 
 pub(crate) fn update_scoreboard(
     scoreboard: Res<Scoreboard>,
-    mut query: Single<(&mut TextSpan, &mut TextColor), With<Score>>,
+    score_root: Single<Entity, (With<ScoreboardUi>, With<Text>)>,
+    mut writer: TextUiWriter,
 ) {
-    let (ref mut text, ref mut text_color) = query.deref_mut();
-    text.0 = scoreboard.score.to_string();
-    text_color.0 = player_color_from_bool(scoreboard.score >= 0);
+    *writer.text(*score_root, 1) = scoreboard.score.to_string();
+    writer.color(*score_root, 1).0 = player_color_from_bool(scoreboard.score >= 0);
 }
 
 pub(crate) fn play_collision_sound(
+    _collided: On<BallCollided>,
     mut commands: Commands,
-    mut collision_events: MessageReader<CollisionEvent>,
     sound: Res<CollisionSound>,
 ) {
-    // Play a sound once per frame if a collision occurred.
-    if !collision_events.is_empty() {
-        // This prevents events staying active on the next frame.
-        collision_events.clear();
-        commands.spawn((
-            AudioPlayer(sound.clone()),
-            // auto-despawn the entity when playback finishes
-            PlaybackSettings::DESPAWN.with_volume(Volume::Linear(0.03)),
-        ));
-    }
+    commands.spawn((
+        AudioPlayer(sound.clone()),
+        // auto-despawn the entity when playback finishes
+        PlaybackSettings::DESPAWN.with_volume(Volume::Linear(0.03)),
+    ));
 }
 
 pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -391,46 +403,39 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
 
     let text_font = TextFont {
         font: asset_server.load(BOLD_FONT).into(),
-        font_size: 40.0_f32.into(),
+        font_size: BUTTON_FONT_SIZE,
         ..Default::default()
     };
     let text_color = TextColor(BUTTON_TEXT_COLOR);
-    commands
-        .spawn((
-            Node {
-                width: Val::Vw(100.0),
-                height: Val::Vh(100.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(16.0),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            BackgroundColor(Color::NONE),
-            MainMenu,
-        ))
-        .with_children(|parent| {
-            parent
-                .spawn((
-                    button_style.clone(),
-                    Button,
-                    BackgroundColor(NORMAL_BUTTON_COLOR),
-                    MenuItem::Host,
-                ))
-                .with_children(|parent| {
-                    parent.spawn((Text("Host".into()), text_font.clone(), text_color));
-                });
-            parent
-                .spawn((
-                    button_style.clone(),
-                    Button,
-                    BackgroundColor(NORMAL_BUTTON_COLOR),
-                    MenuItem::Join,
-                ))
-                .with_children(|parent| {
-                    parent.spawn((Text("Join".into()), text_font.clone(), text_color));
-                });
-        });
+    commands.spawn((
+        Node {
+            width: Val::Vw(100.0),
+            height: Val::Vh(100.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(16.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        BackgroundColor(Color::NONE),
+        MainMenu,
+        children![
+            (
+                button_style.clone(),
+                Button,
+                BackgroundColor(NORMAL_BUTTON_COLOR),
+                MenuItem::Host,
+                children![(Text::new("Host"), text_font.clone(), text_color)],
+            ),
+            (
+                button_style,
+                Button,
+                BackgroundColor(NORMAL_BUTTON_COLOR),
+                MenuItem::Join,
+                children![(Text::new("Join"), text_font, text_color)],
+            ),
+        ],
+    ));
 }
 
 pub(crate) fn handle_menu_buttons(
@@ -465,38 +470,37 @@ pub(crate) fn setup_breakout(mut commands: Commands, asset_server: Res<AssetServ
     commands.insert_resource(CollisionSound(ball_collision_sound));
 
     // Scoreboard
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                top: SCOREBOARD_TEXT_PADDING,
-                left: SCOREBOARD_TEXT_PADDING,
-                ..default()
-            },
-            Text("Score: ".into()),
-            TextFont {
-                font: asset_server.load(BOLD_FONT).into(),
-                font_size: SCOREBOARD_FONT_SIZE.into(),
-                ..default()
-            },
-            TextColor(TEXT_COLOR),
-        ))
-        .with_child((
-            TextSpan("".into()),
+    commands.spawn((
+        Text::new("Score: "),
+        TextFont {
+            font: asset_server.load(BOLD_FONT).into(),
+            font_size: SCOREBOARD_FONT_SIZE,
+            ..default()
+        },
+        TextColor(TEXT_COLOR),
+        ScoreboardUi,
+        Node {
+            position_type: PositionType::Absolute,
+            top: SCOREBOARD_TEXT_PADDING,
+            left: SCOREBOARD_TEXT_PADDING,
+            ..default()
+        },
+        children![(
+            TextSpan::default(),
             TextFont {
                 font: asset_server.load(NORMAL_FONT).into(),
-                font_size: SCOREBOARD_FONT_SIZE.into(),
+                font_size: SCOREBOARD_FONT_SIZE,
                 ..default()
             },
             TextColor(SCORE_COLOR),
-            Score,
-        ));
+        )],
+    ));
 
     // Walls
-    commands.spawn(WallBundle::new(WallLocation::Left));
-    commands.spawn(WallBundle::new(WallLocation::Right));
-    commands.spawn(WallBundle::new(WallLocation::Bottom));
-    commands.spawn(WallBundle::new(WallLocation::Top));
+    commands.spawn(Wall::new(WallLocation::Left));
+    commands.spawn(Wall::new(WallLocation::Right));
+    commands.spawn(Wall::new(WallLocation::Bottom));
+    commands.spawn(Wall::new(WallLocation::Top));
 }
 
 pub(crate) fn apply_velocity(mut query: Query<(&mut Transform, &Velocity), With<Ball>>) {
@@ -511,23 +515,5 @@ fn player_color_from_bool(owned: bool) -> Color {
         BALL_COLOR
     } else {
         OPPONENT_BALL_COLOR
-    }
-}
-
-impl WallBundle {
-    fn new(location: WallLocation) -> WallBundle {
-        WallBundle {
-            sprite: Sprite::from_color(WALL_COLOR, Vec2::ONE),
-            transform: Transform {
-                // We need to convert our Vec2 into a Vec3, by giving it a z-coordinate
-                // This is used to determine the order of our sprites
-                translation: location.position().extend(0.0),
-                // The z-scale of 2D objects must always be 1.0,
-                // or their ordering will be affected in surprising ways.
-                // See https://github.com/bevyengine/bevy/issues/4149
-                scale: location.size().extend(1.0),
-                ..default()
-            },
-        }
     }
 }

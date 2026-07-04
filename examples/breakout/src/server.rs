@@ -191,7 +191,7 @@ pub(crate) fn check_for_collisions(
     for (mut ball_velocity, ball_transform, ball_entity, mut ball) in ball_query.iter_mut() {
         // check collision with walls
         for (collider_entity, transform, maybe_brick, maybe_paddle) in &collider_query {
-            let collision = collide_with_side(
+            let collision = ball_collision(
                 BoundingCircle::new(ball_transform.translation.truncate(), BALL_DIAMETER / 2.),
                 Aabb2d::new(
                     transform.translation.truncate(),
@@ -467,7 +467,7 @@ enum Collision {
 
 // Returns `Some` if `ball` collides with `wall`. The returned `Collision` is the
 // side of `wall` that `ball` hit.
-fn collide_with_side(ball: BoundingCircle, wall: Aabb2d) -> Option<Collision> {
+fn ball_collision(ball: BoundingCircle, wall: Aabb2d) -> Option<Collision> {
     if !ball.intersects(&wall) {
         return None;
     }

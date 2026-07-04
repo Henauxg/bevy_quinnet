@@ -66,11 +66,8 @@ pub enum GameSystems {
 #[derive(Component, Deref, DerefMut)]
 struct Velocity(Vec2);
 
-#[derive(Default, Message)]
-struct CollisionEvent;
-
-#[derive(Component)]
-struct Score;
+#[derive(Event)]
+pub(crate) struct BallCollided;
 
 #[derive(Resource, Deref)]
 struct CollisionSound(Handle<AudioSource>);
@@ -127,8 +124,8 @@ fn main() {
         QuinnetServerPlugin::default(),
         QuinnetClientPlugin::default(),
     ));
-    app.add_message::<CollisionEvent>();
     app.init_state::<GameState>();
+    app.add_observer(client::play_collision_sound);
     app.insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(client::Scoreboard { score: 0 })
         .insert_resource(client::ClientData::default())
@@ -183,7 +180,6 @@ fn main() {
                     .chain(),
                 client::move_paddle,
                 client::update_scoreboard,
-                client::play_collision_sound,
             )
                 .in_set(GameSystems::ClientSystems),
         );
