@@ -22,7 +22,7 @@ use bevy_quinnet::{
     },
     shared::ClientId,
 };
-use bevy_quinnet_chat::protocol::{ClientMessage, ServerMessage};
+use bevy_quinnet_chat::protocol::{ClientMessage, ServerMessage, SERVER_PORT};
 use rand::{distr::Alphanumeric, RngExt};
 use tokio::sync::mpsc;
 
@@ -116,7 +116,11 @@ fn start_terminal_listener(mut commands: Commands) {
 fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(ClientConnectionConfiguration {
-            addr_config: ClientAddrConfiguration::from_strings("[::1]:6000", "[::]:0").unwrap(),
+            addr_config: ClientAddrConfiguration::from_strings(
+                &format!("[::1]:{SERVER_PORT}"),
+                "[::]:0",
+            )
+            .unwrap(),
             cert_mode: CertificateVerificationMode::SkipVerification,
             defaultables: Default::default(),
         })

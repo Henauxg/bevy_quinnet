@@ -8,7 +8,7 @@ use bevy_quinnet::{
     },
     shared::ClientId,
 };
-use bevy_quinnet_chat::protocol::{ClientMessage, ServerMessage};
+use bevy_quinnet_chat::protocol::{ClientMessage, ServerMessage, SERVER_PORT};
 
 #[derive(Resource, Debug, Clone, Default)]
 struct Users {
@@ -112,7 +112,8 @@ fn handle_disconnect(endpoint: &mut Endpoint, users: &mut ResMut<Users>, client_
 fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
         .start_endpoint(ServerEndpointConfiguration {
-            addr_config: EndpointAddrConfiguration::from_string("[::]:6000").unwrap(),
+            addr_config: EndpointAddrConfiguration::from_string(&format!("[::]:{SERVER_PORT}"))
+                .unwrap(),
             cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: "::1".to_owned(),
             },

@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use bevy_quinnet::shared::ClientId;
 use serde::{Deserialize, Serialize};
 
+pub const SERVER_PORT: u16 = 6001;
+
 // Messages from clients
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMessage {
