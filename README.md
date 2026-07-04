@@ -346,7 +346,7 @@ just breakout       # two breakout windows (Host + Join)
 
 ### Logs
 
-For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatbook.github.io/features/log.html).
+For logs configuration, see the unoffical [bevy cheatbook](https://bevy-cheatbook.github.io/fundamentals/log.html).
 
 ### Limitations
 
