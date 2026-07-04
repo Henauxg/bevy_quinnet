@@ -15,6 +15,9 @@ categories = ["game-development", "network-programming"]
 readme = "README.md"
 exclude = ["examples/"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [dependencies]
 bevy = { version = "0.19.0", default-features = false, features = ["bevy_log"] }
 rustls = { version = "0.23", default-features = false, features = [] }
