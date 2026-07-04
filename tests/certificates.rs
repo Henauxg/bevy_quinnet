@@ -89,9 +89,7 @@ fn trust_on_first_use() {
         client
             .open_connection(ClientConnectionConfiguration {
                 addr_config: default_client_addr_configuration(port),
-                cert_mode: CertificateVerificationMode::TrustOnFirstUse(tofu_with_hosts(
-                    &hosts,
-                )),
+                cert_mode: CertificateVerificationMode::TrustOnFirstUse(tofu_with_hosts(&hosts)),
                 // cert_mode: CertificateVerificationMode::SkipVerification,
                 defaultables: Default::default(),
             })
@@ -155,9 +153,7 @@ fn trust_on_first_use() {
         client
             .open_connection(ClientConnectionConfiguration {
                 addr_config: default_client_addr_configuration(port),
-                cert_mode: CertificateVerificationMode::TrustOnFirstUse(tofu_with_hosts(
-                    &hosts,
-                )),
+                cert_mode: CertificateVerificationMode::TrustOnFirstUse(tofu_with_hosts(&hosts)),
                 defaultables: Default::default(),
             })
             .unwrap();
@@ -217,9 +213,7 @@ fn trust_on_first_use() {
         client
             .open_connection(ClientConnectionConfiguration {
                 addr_config: default_client_addr_configuration(port),
-                cert_mode: CertificateVerificationMode::TrustOnFirstUse(tofu_with_hosts(
-                    &hosts,
-                )),
+                cert_mode: CertificateVerificationMode::TrustOnFirstUse(tofu_with_hosts(&hosts)),
                 defaultables: Default::default(),
             })
             .unwrap();
@@ -333,10 +327,7 @@ fn tofu_unknown_certificate_client_action() {
     open_tofu_connection(
         &mut client_app,
         port,
-        tofu_config_requesting_client_action(
-            CertVerificationStatus::UnknownCertificate,
-            &hosts,
-        ),
+        tofu_config_requesting_client_action(CertVerificationStatus::UnknownCertificate, &hosts),
     );
     wait_for_cert_interaction(
         &mut client_app,
@@ -384,10 +375,7 @@ fn tofu_trusted_certificate_client_action() {
     open_tofu_connection(
         &mut client_app,
         port,
-        tofu_config_requesting_client_action(
-            CertVerificationStatus::TrustedCertificate,
-            &hosts,
-        ),
+        tofu_config_requesting_client_action(CertVerificationStatus::TrustedCertificate, &hosts),
     );
     wait_for_cert_interaction(
         &mut client_app,
