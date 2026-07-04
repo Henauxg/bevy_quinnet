@@ -1,3 +1,4 @@
+use base64::Engine;
 use std::fmt;
 
 /// SHA-256 hash of the certificate data in DER form
@@ -12,7 +13,7 @@ impl CertificateFingerprint {
 
     /// Encodes the wrapped buffer content to base64
     pub fn to_base64(&self) -> String {
-        base64::encode(self.0)
+        base64::engine::general_purpose::STANDARD.encode(self.0)
     }
 }
 

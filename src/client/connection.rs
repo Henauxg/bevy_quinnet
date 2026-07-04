@@ -776,7 +776,7 @@ fn configure_client(
             .with_protocol_versions(&[&rustls::version::TLS13])
             .unwrap()
             // We use `rustls-platform-verifier::with_platform_verifier` directly instead (used internally by Quinn).
-            .with_platform_verifier()
+            .with_platform_verifier()?
             .with_no_client_auth()
         }
         CertificateVerificationMode::TrustOnFirstUse(config) => {

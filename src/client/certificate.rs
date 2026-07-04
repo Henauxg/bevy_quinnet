@@ -8,6 +8,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use base64::Engine;
 use bevy::log::warn;
 use futures::executor::block_on;
 use rustls::pki_types::{CertificateDer, ServerName as RustlsServerName, UnixTime};
@@ -458,7 +459,7 @@ fn parse_known_host_line(
     let serv_name = ServerName(RustlsServerName::try_from(adr_str)?.to_owned());
 
     let fingerprint_b64 = parts.next().ok_or(InvalidHostFile)?;
-    let fingerprint_bytes = base64::decode(fingerprint_b64)?;
+    let fingerprint_bytes = base64::engine::general_purpose::STANDARD.decode(fingerprint_b64)?;
 
     match fingerprint_bytes.try_into() {
         Ok(buf) => Ok((serv_name, CertificateFingerprint::new(buf))),
