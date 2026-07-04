@@ -337,6 +337,8 @@ just check          # fmt, clippy, check, test, doc, machete
 just run-examples   # launch chat + breakout examples
 ```
 
+`Cargo.lock` is committed. After changing dependencies, run `cargo check` and commit the updated lockfile. `just check` runs with `--locked` and will fail otherwise.
+
 ### Cargo features
 
 *Find the list and description in [cargo.toml](Cargo.toml)*

@@ -8,13 +8,13 @@ check:
     @echo "==> fmt"
     cargo fmt --all -- --check
     @echo "==> clippy"
-    cargo clippy --workspace --all-features -- -D warnings
+    cargo clippy --workspace --all-features --locked -- -D warnings
     @echo "==> checking workspace"
-    cargo check --workspace --all-features
+    cargo check --workspace --all-features --locked
     @echo "==> testing library"
-    cargo test -p bevy_quinnet --all-features
+    cargo test -p bevy_quinnet --all-features --locked
     @echo "==> docs"
-    cargo doc -p bevy_quinnet --no-deps --all-features
+    cargo doc -p bevy_quinnet --no-deps --all-features --locked
     @echo "==> machete"
     cargo machete
 
