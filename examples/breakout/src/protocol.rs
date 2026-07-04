@@ -73,9 +73,9 @@ pub(crate) enum ServerUpdate {
 pub enum ClientChannel {
     PaddleCommands,
 }
-impl Into<ChannelId> for ClientChannel {
-    fn into(self) -> ChannelId {
-        self as ChannelId
+impl From<ClientChannel> for ChannelId {
+    fn from(val: ClientChannel) -> Self {
+        val as ChannelId
     }
 }
 impl ClientChannel {
@@ -102,9 +102,9 @@ pub enum ServerChannel {
     PaddleUpdates,
 }
 
-impl Into<ChannelId> for ServerChannel {
-    fn into(self) -> ChannelId {
-        self as ChannelId
+impl From<ServerChannel> for ChannelId {
+    fn from(val: ServerChannel) -> Self {
+        val as ChannelId
     }
 }
 

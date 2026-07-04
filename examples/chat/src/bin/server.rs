@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 use bevy::{app::ScheduleRunnerPlugin, log::LogPlugin, prelude::*};
 use bevy_quinnet::{
@@ -20,21 +20,16 @@ fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut users: ResMut<U
     for client_id in endpoint.clients() {
         while let Some(message) = endpoint.try_receive_message(client_id) {
             match message {
-                ClientMessage::Join { name } => {
-                    if users.names.contains_key(&client_id) {
-                        warn!(
-                            "Received a Join from an already connected client: {}",
-                            client_id
-                        )
-                    } else {
+                ClientMessage::Join { name } => match users.names.entry(client_id) {
+                    Entry::Vacant(entry) => {
                         info!("{} connected", name);
-                        users.names.insert(client_id, name.clone());
+                        entry.insert(name.clone());
                         // Initialize this client with existing state
                         endpoint
                             .send_message(
                                 client_id,
                                 ServerMessage::InitClient {
-                                    client_id: client_id,
+                                    client_id,
                                     usernames: users.names.clone(),
                                 },
                             )
@@ -44,13 +39,19 @@ fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut users: ResMut<U
                             .send_group_message(
                                 users.names.keys(),
                                 ServerMessage::ClientConnected {
-                                    client_id: client_id,
+                                    client_id,
                                     username: name,
                                 },
                             )
                             .unwrap();
                     }
-                }
+                    Entry::Occupied(_) => {
+                        warn!(
+                            "Received a Join from an already connected client: {}",
+                            client_id
+                        )
+                    }
+                },
                 ClientMessage::Disconnect {} => {
                     // Tell the server endpoint to disconnect this user
                     endpoint.disconnect_client(client_id).unwrap();
@@ -64,10 +65,7 @@ fn handle_client_messages(mut server: ResMut<QuinnetServer>, mut users: ResMut<U
                     );
                     endpoint.try_send_group_message(
                         users.names.keys(),
-                        ServerMessage::ChatMessage {
-                            client_id: client_id,
-                            message: message,
-                        },
+                        ServerMessage::ChatMessage { client_id, message },
                     );
                 }
             }
@@ -95,9 +93,7 @@ fn handle_disconnect(endpoint: &mut Endpoint, users: &mut ResMut<Users>, client_
         endpoint
             .send_group_message(
                 users.names.keys(),
-                ServerMessage::ClientDisconnected {
-                    client_id: client_id,
-                },
+                ServerMessage::ClientDisconnected { client_id },
             )
             .unwrap();
         info!("{} disconnected", username);

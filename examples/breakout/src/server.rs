@@ -282,11 +282,8 @@ fn start_game(
     }
 
     // Spawn paddles
-    for (position, client_id) in PADDLES_STARTING_POSITION
-        .iter()
-        .zip(players.map.keys().into_iter())
-    {
-        let paddle = spawn_paddle(commands, *client_id, &position);
+    for (position, client_id) in PADDLES_STARTING_POSITION.iter().zip(players.map.keys()) {
+        let paddle = spawn_paddle(commands, *client_id, position);
         endpoint
             .send_group_message_on(
                 players.map.keys(),
@@ -304,7 +301,7 @@ fn start_game(
     for ((position, direction), client_id) in BALLS_STARTING_POSITION
         .iter()
         .zip(INITIAL_BALLS_DIRECTION.iter())
-        .zip(players.map.keys().into_iter())
+        .zip(players.map.keys())
     {
         let ball = spawn_ball(commands, *client_id, position, direction);
         endpoint
@@ -330,8 +327,8 @@ fn start_game(
     // Spawn bricks
     // Negative scales result in flipped sprites / meshes,
     // which is definitely not what we want here
-    assert!(BRICK_SIZE.x > 0.0);
-    assert!(BRICK_SIZE.y > 0.0);
+    const { assert!(BRICK_SIZE.x > 0.0) };
+    const { assert!(BRICK_SIZE.y > 0.0) };
 
     let total_width_of_bricks = (RIGHT_WALL - LEFT_WALL) - 2. * GAP_BETWEEN_BRICKS_AND_SIDES;
     let bottom_edge_of_bricks =

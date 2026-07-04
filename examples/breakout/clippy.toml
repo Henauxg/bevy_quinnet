@@ -1,0 +1,3 @@
+# Bevy systems commonly exceed default thresholds.
+too-many-arguments-threshold = 10
+type-complexity-threshold = 600

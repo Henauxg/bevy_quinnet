@@ -94,7 +94,7 @@ fn handle_terminal_messages(
         } else {
             client
                 .connection_mut()
-                .try_send_message(ClientMessage::ChatMessage { message: message });
+                .try_send_message(ClientMessage::ChatMessage { message });
         }
     }
 }

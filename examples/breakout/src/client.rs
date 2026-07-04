@@ -230,7 +230,7 @@ pub(crate) fn handle_server_setup_messages(
                 rows,
                 columns,
             } => spawn_bricks(&mut commands, &mut bricks, offset, rows, columns),
-            ServerSetupMessage::StartGame {} => next_state.set(GameState::Running),
+            ServerSetupMessage::StartGame => next_state.set(GameState::Running),
         }
     }
 }
@@ -375,7 +375,7 @@ pub(crate) fn play_collision_sound(
 
 pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Camera
-    commands.spawn(Camera2d::default());
+    commands.spawn(Camera2d);
 
     let button_style = Node {
         width: Val::Px(150.0),
@@ -404,28 +404,28 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
                 align_items: AlignItems::Center,
                 ..default()
             },
-            BackgroundColor(Color::NONE.into()),
+            BackgroundColor(Color::NONE),
         ))
         .with_children(|parent| {
             parent
                 .spawn((
                     button_style.clone(),
                     Button,
-                    BackgroundColor(NORMAL_BUTTON_COLOR.into()),
+                    BackgroundColor(NORMAL_BUTTON_COLOR),
                     MenuItem::Host,
                 ))
                 .with_children(|parent| {
-                    parent.spawn((Text("Host".into()), text_font.clone(), text_color.clone()));
+                    parent.spawn((Text("Host".into()), text_font.clone(), text_color));
                 });
             parent
                 .spawn((
                     button_style.clone(),
                     Button,
-                    BackgroundColor(NORMAL_BUTTON_COLOR.into()),
+                    BackgroundColor(NORMAL_BUTTON_COLOR),
                     MenuItem::Join,
                 ))
                 .with_children(|parent| {
-                    parent.spawn((Text("Join".into()), text_font.clone(), text_color.clone()));
+                    parent.spawn((Text("Join".into()), text_font.clone(), text_color));
                 });
         });
 }
