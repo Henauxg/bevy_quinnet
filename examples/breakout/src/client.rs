@@ -18,7 +18,8 @@ use bevy::{
     state::state::NextState,
     text::{TextColor, TextFont, TextSpan},
     ui::{
-        AlignItems, BackgroundColor, Interaction, JustifyContent, Node, PositionType, UiRect, Val,
+        AlignItems, BackgroundColor, FlexDirection, Interaction, JustifyContent, Node,
+        PositionType, Val,
     },
 };
 use bevy_quinnet::{
@@ -380,11 +381,7 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
     let button_style = Node {
         width: Val::Px(150.0),
         height: Val::Px(65.0),
-        // center button
-        margin: UiRect::all(Val::Auto),
-        // horizontally center child text
         justify_content: JustifyContent::Center,
-        // vertically center child text
         align_items: AlignItems::Center,
         ..default()
     };
@@ -400,6 +397,8 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
             Node {
                 width: Val::Vw(100.0),
                 height: Val::Vh(100.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(16.0),
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
                 ..default()
