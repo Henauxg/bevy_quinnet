@@ -87,8 +87,3 @@ breakout:
         exit 0
     fi
     just _unix-terminal "{{breakout_cmd}}"
-
-# Launch all examples for manual smoke testing
-run-examples:
-    just chat
-    just breakout

@@ -334,7 +334,8 @@ With [just](https://github.com/casey/just) installed (`cargo install just`):
 
 ```
 just check          # fmt, clippy, check, test, doc, machete
-just run-examples   # launch chat + breakout examples
+just chat 3         # chat server + 3 clients
+just breakout       # two breakout windows (Host + Join)
 ```
 
 `Cargo.lock` is committed. After changing dependencies, run `cargo check` and commit the updated lockfile. `just check` runs with `--locked` and will fail otherwise.
