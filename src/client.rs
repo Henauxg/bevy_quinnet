@@ -28,9 +28,9 @@ use self::{
         CertVerificationStatus, CertVerifierAction, CertificateVerificationMode,
     },
     connection::{
-        async_connection_task, ClientAddrConfiguration, ClientSideConnection, ConnectionEvent,
-        ConnectionFailedEvent, ConnectionLocalId, ConnectionLostEvent, ConnectionState,
-        InternalConnectionState,
+        async_connection_task, AsyncConnectionConfig, ClientAddrConfiguration,
+        ClientSideConnection, ConnectionEvent, ConnectionFailedEvent, ConnectionLocalId,
+        ConnectionLostEvent, ConnectionState, InternalConnectionState,
     },
 };
 
@@ -263,9 +263,11 @@ impl QuinnetClient {
         // Async connection
         self.runtime.spawn(async move {
             async_connection_task(
-                local_id,
-                config.addr_config,
-                config.cert_mode,
+                AsyncConnectionConfig {
+                    local_id,
+                    endpoint_config: config.addr_config,
+                    cert_mode: config.cert_mode,
+                },
                 to_sync_client_send,
                 bytes_from_server_send,
                 to_channels_recv,

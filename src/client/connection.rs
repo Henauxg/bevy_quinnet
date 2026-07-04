@@ -256,6 +256,12 @@ pub(crate) enum InternalConnectionState {
 pub(crate) type ClientAsyncMsgSend = mpsc::Sender<ClientAsyncMessage>;
 pub(crate) type ClientAsyncMsgRecv = mpsc::Receiver<ClientAsyncMessage>;
 
+pub(crate) struct AsyncConnectionConfig {
+    pub local_id: ConnectionLocalId,
+    pub endpoint_config: ClientAddrConfiguration,
+    pub cert_mode: CertificateVerificationMode,
+}
+
 pub(crate) fn create_client_connection_async_channels() -> (
     PayloadSend,
     PayloadRecv,
@@ -472,14 +478,14 @@ impl ClientSideConnection {
             self.open_configured_channels(self.specific.channels_config.clone())?;
 
             // Async connection
-            let local_id = self.specific.local_id;
-            let endpoint_config = self.specific.addr_config.clone();
-            let cert_mode = self.specific.cert_mode.clone();
+            let config = AsyncConnectionConfig {
+                local_id: self.specific.local_id,
+                endpoint_config: self.specific.addr_config.clone(),
+                cert_mode: self.specific.cert_mode.clone(),
+            };
             self.specific.runtime.spawn(async move {
                 async_connection_task(
-                    local_id,
-                    endpoint_config,
-                    cert_mode,
+                    config,
                     to_sync_client_send,
                     bytes_from_server_send,
                     to_channels_recv,
@@ -622,9 +628,11 @@ impl ClientSideConnection {
 }
 
 pub(crate) async fn async_connection_task(
-    local_id: ConnectionLocalId,
-    endpoint_config: ClientAddrConfiguration,
-    cert_mode: CertificateVerificationMode,
+    AsyncConnectionConfig {
+        local_id,
+        endpoint_config,
+        cert_mode,
+    }: AsyncConnectionConfig,
     to_sync_client_send: ClientAsyncMsgSend,
     bytes_from_server_send: PayloadSend,
     to_channels_recv: ChannelSyncMsgRecv,
