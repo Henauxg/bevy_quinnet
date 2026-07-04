@@ -8,6 +8,8 @@
 - Updated `base64` to 0.22
 - Updated `rustls-platform-verifier` to 0.7
 - Moved examples into workspace sub-crates (`examples/breakout`, `examples/chat`) to isolate their Bevy dependencies from the library crate
+- Added `Endpoint::local_addr()` to return the actual socket address after bind (including the OS-assigned port when using port `0`)
+- Tests: integration tests now bind the server on port `0` instead of hardcoded ports to avoid collisions in parallel runs
 
 ## Version 0.20.0 (2026-01-17)
 

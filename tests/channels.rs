@@ -19,8 +19,8 @@ mod utils;
 
 #[test]
 fn default_channel() {
-    let port = 6001; // TODO Use port 0 and retrieve the port used by the server.
-    let mut server_app: App = start_simple_server_app(port);
+    let mut server_app: App = start_simple_server_app();
+    let port = server_listen_port(&server_app);
     let mut client_app: App = start_simple_client_app(port);
 
     let client_default_channel = get_default_client_channel(&client_app);
@@ -98,8 +98,8 @@ fn default_channel() {
 
 #[test]
 fn multi_instance_channels() {
-    let port = 6002; // TODO Use port 0 and retrieve the port used by the server.
-    let mut server_app: App = start_simple_server_app(port);
+    let mut server_app: App = start_simple_server_app();
+    let port = server_listen_port(&server_app);
 
     for channel_type in vec![
         ChannelConfig::default_ordered_reliable(),

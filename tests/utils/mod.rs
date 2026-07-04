@@ -98,16 +98,25 @@ pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port
         .unwrap();
 }
 
-pub fn start_listening(mut server: ResMut<QuinnetServer>, port: Res<Port>) {
+pub fn start_listening(mut server: ResMut<QuinnetServer>) {
     server
         .start_endpoint(ServerEndpointConfiguration {
-            addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port.0),
+            addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, 0),
             cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
                 server_hostname: SERVER_IP.to_string(),
             },
             defaultables: Default::default(),
         })
         .unwrap();
+}
+
+pub fn server_listen_port(server_app: &App) -> u16 {
+    server_app
+        .world()
+        .resource::<QuinnetServer>()
+        .endpoint()
+        .local_addr()
+        .port()
 }
 
 pub fn handle_client_events(
@@ -161,13 +170,19 @@ pub fn handle_server_events(
     }
 }
 
-pub fn start_simple_server_app(port: u16) -> App {
+pub fn start_simple_server_app() -> App {
     let mut server_app = build_server_app();
-    server_app.insert_resource(Port(port));
 
     // Startup
     server_app.update();
     server_app
+}
+
+pub fn start_test_pair() -> (App, App, u16) {
+    let server_app = start_simple_server_app();
+    let port = server_listen_port(&server_app);
+    let client_app = start_simple_client_app(port);
+    (client_app, server_app, port)
 }
 
 pub fn start_simple_client_app(port: u16) -> App {

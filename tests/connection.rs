@@ -15,10 +15,8 @@ mod utils;
 
 #[test]
 fn connection_with_two_apps() {
-    let port = 6000; // TODO Use port 0 and retrieve the port used by the server.
-
-    let mut client_app = start_simple_client_app(port);
-    let mut server_app = start_simple_server_app(port);
+    let (mut client_app, mut server_app, port) = start_test_pair();
+    assert_ne!(port, 0, "Server should bind to an OS-assigned port");
 
     assert!(
         client_app
@@ -115,10 +113,7 @@ fn connection_with_two_apps() {
 
 #[test]
 fn reconnection() {
-    let port = 6005; // TODO Use port 0 and retrieve the port used by the server.
-
-    let mut client_app = start_simple_client_app(port);
-    let mut server_app = start_simple_server_app(port);
+    let (mut client_app, mut server_app, _port) = start_test_pair();
 
     let client_id_1 = wait_for_client_connected(&mut client_app, &mut server_app);
 

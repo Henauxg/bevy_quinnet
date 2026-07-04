@@ -46,8 +46,6 @@ fn trust_on_first_use() {
     // -> The server's certificate is treatead as Untrusted by the client, which requests a client action
     // We receive the client action request and ask to abort the connection
 
-    let port = 6004; // TODO Use port 0 and retrieve the port used by the server.
-
     if Path::new(DEFAULT_KNOWN_HOSTS_FILE).exists() {
         fs::remove_file(DEFAULT_KNOWN_HOSTS_FILE)
             .expect("Failed to remove default known hosts file");
@@ -75,6 +73,28 @@ fn trust_on_first_use() {
     client_app.update();
     server_app.update();
 
+    // Server listens with a cert loaded from a file
+    {
+        let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
+        let server_cert = server
+            .start_endpoint(ServerEndpointConfiguration {
+                addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, 0),
+                cert_mode: CertificateRetrievalMode::LoadFromFile {
+                    cert_file: TEST_CERT_FILE.to_string(),
+                    key_file: TEST_KEY_FILE.to_string(),
+                },
+                defaultables: Default::default(),
+            })
+            .unwrap();
+        assert_eq!(
+            TEST_CERT_FINGERPRINT_B64.to_string(),
+            server_cert.fingerprint.to_base64(),
+            "The loaded cert fingerprint should match the known test fingerprint"
+        );
+    }
+
+    let port = server_listen_port(&server_app);
+
     // Client connects with empty cert store
     {
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
@@ -88,26 +108,6 @@ fn trust_on_first_use() {
                 defaultables: Default::default(),
             })
             .unwrap();
-    }
-
-    // Server listens with a cert loaded from a file
-    {
-        let mut server = server_app.world_mut().resource_mut::<QuinnetServer>();
-        let server_cert = server
-            .start_endpoint(ServerEndpointConfiguration {
-                addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, port),
-                cert_mode: CertificateRetrievalMode::LoadFromFile {
-                    cert_file: TEST_CERT_FILE.to_string(),
-                    key_file: TEST_KEY_FILE.to_string(),
-                },
-                defaultables: Default::default(),
-            })
-            .unwrap();
-        assert_eq!(
-            TEST_CERT_FINGERPRINT_B64.to_string(),
-            server_cert.fingerprint.to_base64(),
-            "The loaded cert fingerprint should match the known test fingerprint"
-        );
     }
 
     assert!(
