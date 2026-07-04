@@ -197,7 +197,7 @@ impl Endpoint {
         let mut errs = vec![];
         for &client_id in client_ids {
             if let Err(e) = self.send_payload_on(client_id, channel_id, bytes.clone()) {
-                errs.push((client_id, e.into()));
+                errs.push((client_id, e));
             }
         }
         match errs.is_empty() {
