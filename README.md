@@ -50,6 +50,14 @@ The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channel
 
 ## Quickstart
 
+Message helpers such as `send_message` and `try_receive_message` require the `bincode-messages` feature:
+
+```toml
+bevy_quinnet = { version = "0.21", features = ["bincode-messages"] }
+```
+
+Receiving payloads uses the default `recv_channels` feature (`receive_payload`, etc.).
+
 ### Client
 
 - Add the `QuinnetClientPlugin` to the bevy app:
@@ -62,10 +70,10 @@ The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channel
         .run();
 ```
 
-- You can then use the `Client` resource to connect, send & receive messages:
+- You can then use the `QuinnetClient` resource to connect, send & receive messages:
 
 ```rust
-fn start_connection(client: ResMut<QuinnetClient>) {
+fn start_connection(mut client: ResMut<QuinnetClient>) {
     client
         .open_connection(ClientConnectionConfiguration {
             addr_config: ClientAddrConfiguration::from_ips(
@@ -76,8 +84,9 @@ fn start_connection(client: ResMut<QuinnetClient>) {
             ),
             cert_mode: CertificateVerificationMode::SkipVerification,
             defaultables: Default::default(),
-        });
-    
+        })
+        .unwrap();
+
     // Once connected, you will receive a ConnectionEvent
 ```
 
@@ -111,7 +120,7 @@ fn handle_server_messages(
         .run();
 ```
 
-- You can then use the `Server` resource to start the listening server:
+- You can then use the `QuinnetServer` resource to start the listening server:
 
 ```rust
 fn start_listening(mut server: ResMut<QuinnetServer>) {
@@ -122,7 +131,8 @@ fn start_listening(mut server: ResMut<QuinnetServer>) {
                 server_hostname: Ipv6Addr::LOCALHOST.to_string(),
             },
             defaultables: Default::default(),
-        });
+        })
+        .unwrap();
 }
 ```
 
@@ -182,7 +192,8 @@ let channels_config = SendChannelsConfiguration::default();
 let channels_config = SendChannelsConfiguration::from_configs(vec![
     ChannelConfig::default_ordered_reliable(),
     ChannelConfig::default_ordered_reliable(),
-    ChannelConfig::default_reliable()]);
+    ChannelConfig::default_unreliable(),
+]);
 ```
 
 Each channel is identified by its own `ChannelId`. Among those, there is a `default` channel which will be used when you don't specify the channel. At startup, the first opened channel becomes the default channel.
@@ -224,42 +235,40 @@ Here are the current options available to the server and client plugins for the 
     - [x] Generate and issue a self-signed certificate
     - [x] Issue an already existing certificate (CA or self-signed)
 
-On the client:
+On the client (`cert_mode` field of `ClientConnectionConfiguration`):
 
 ```rust
-    // To accept any certificate
-    client.open_connection(/*...*/ CertificateVerificationMode::SkipVerification);
-    // To only accept certificates issued by a Certificate Authority
-    client.open_connection(/*...*/ CertificateVerificationMode::SignedByCertificateAuthority);
-    // To use the default configuration of the Trust on first use authentication scheme
-    client.open_connection(/*...*/ CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
-            // You can configure TrustOnFirstUse through the TrustOnFirstUseConfig:
-            // Provide your own fingerprint store variable/file,
-            // or configure the actions to apply for each possible certificate verification status.
-            ..Default::default()
-        }),
-    );
+// To accept any certificate
+cert_mode: CertificateVerificationMode::SkipVerification,
+// To only accept certificates issued by a Certificate Authority
+cert_mode: CertificateVerificationMode::SignedByCertificateAuthority,
+// To use the default configuration of the Trust on first use authentication scheme
+cert_mode: CertificateVerificationMode::TrustOnFirstUse(TrustOnFirstUseConfig {
+    // Provide your own fingerprint store variable/file,
+    // or configure the actions to apply for each possible certificate verification status.
+    ..Default::default()
+}),
 ```
 
-On the server:
+On the server (`cert_mode` field of `ServerEndpointConfiguration`):
 
 ```rust
-    // To generate a new self-signed certificate on each startup 
-    server.start_endpoint(/*...*/ CertificateRetrievalMode::GenerateSelfSigned { 
-        server_hostname: Ipv6Addr::LOCALHOST.to_string(),
-    });
-    // To load a pre-existing one from files
-    server.start_endpoint(/*...*/ CertificateRetrievalMode::LoadFromFile {
-        cert_file: "./certificates.pem".into(),
-        key_file: "./privkey.pem".into(),
-    });
-    // To load one from files, or to generate a new self-signed one if the files do not exist.
-    server.start_endpoint(/*...*/ CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
-        cert_file: "./certificates.pem".into(),
-        key_file: "./privkey.pem".into(),
-        save_on_disk: true, // To persist on disk if generated
-        server_hostname: Ipv6Addr::LOCALHOST.to_string(),
-    });
+// To generate a new self-signed certificate on each startup
+cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
+    server_hostname: Ipv6Addr::LOCALHOST.to_string(),
+},
+// To load a pre-existing one from files
+cert_mode: CertificateRetrievalMode::LoadFromFile {
+    cert_file: "./certificates.pem".into(),
+    key_file: "./privkey.pem".into(),
+},
+// To load one from files, or to generate a new self-signed one if the files do not exist.
+cert_mode: CertificateRetrievalMode::LoadFromFileOrGenerateSelfSigned {
+    cert_file: "./certificates.pem".into(),
+    key_file: "./privkey.pem".into(),
+    save_on_disk: true, // To persist on disk if generated
+    server_hostname: Ipv6Addr::LOCALHOST.to_string(),
+},
 ```
 
 See more about certificates in the [certificates readme](docs/Certificates.md)
@@ -342,7 +351,7 @@ just breakout       # two breakout windows (Host + Join)
 
 ### Cargo features
 
-*Find the list and description in [cargo.toml](Cargo.toml)*
+See [Cargo.toml](Cargo.toml) for the full list.
 
 ### Logs
 
