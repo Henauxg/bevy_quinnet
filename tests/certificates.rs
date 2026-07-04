@@ -1,4 +1,4 @@
-use std::{fs, path::Path, thread::sleep, time::Duration};
+use std::{fs, path::Path};
 
 use bevy::{
     app::ScheduleRunnerPlugin,
@@ -200,8 +200,8 @@ fn trust_on_first_use() {
         .stop_endpoint()
         .unwrap();
 
-    // Let the endpoint fully stop.
-    sleep(Duration::from_secs_f32(0.2));
+    // Let the endpoint fully stop and the port be released.
+    wait_for_udp_port_available(port, Some(&mut server_app));
 
     let server_cert = server_app
         .world_mut()
@@ -229,18 +229,27 @@ fn trust_on_first_use() {
             .unwrap();
     }
 
-    // Let the async runtime connection connect.
-    sleep(Duration::from_secs_f32(0.1));
-
-    // Connection & event propagation: certificate interaction event
-    server_app.update();
-    client_app.update();
-
-    // Let the async runtime process the certificate action & connection.
-    sleep(Duration::from_secs_f32(0.1));
-
-    // Connection abort event
-    client_app.update();
+    // Let the async runtime process the certificate action and connection abort.
+    poll_apps_until(
+        "cert abort event",
+        Some(&mut client_app),
+        Some(&mut server_app),
+        DEFAULT_TEST_TIMEOUT,
+        DEFAULT_POLL_INTERVAL,
+        |client, _| {
+            let client = client?;
+            if client
+                .world()
+                .resource::<ClientTestData>()
+                .cert_verif_connection_abort_events_received
+                > 0
+            {
+                Some(())
+            } else {
+                None
+            }
+        },
+    );
 
     // The server's certificate is treatead as Untrusted by the client, which requests a client action
     // We received the client action request and asked to abort the connection

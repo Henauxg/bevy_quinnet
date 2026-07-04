@@ -1,4 +1,8 @@
-use std::{net::Ipv6Addr, thread::sleep, time::Duration};
+use std::{
+    net::{Ipv6Addr, UdpSocket},
+    thread::sleep,
+    time::{Duration, Instant},
+};
 
 use bevy::{
     app::ScheduleRunnerPlugin,
@@ -57,6 +61,81 @@ pub const TEST_MESSAGE_PAYLOAD: &[u8] = &[0x1, 0x2, 0x3, 0x4];
 
 pub const SERVER_IP: Ipv6Addr = Ipv6Addr::LOCALHOST;
 pub const LOCAL_BIND_IP: Ipv6Addr = Ipv6Addr::UNSPECIFIED;
+
+pub const DEFAULT_TEST_TIMEOUT: Duration = Duration::from_secs(5);
+pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+/// Poll until `f()` returns `Some(T)` or `timeout` is reached.
+pub fn poll_until<T>(
+    label: &'static str,
+    timeout: Duration,
+    poll_interval: Duration,
+    mut f: impl FnMut() -> Option<T>,
+) -> T {
+    let start = Instant::now();
+    let deadline = start + timeout;
+    loop {
+        if let Some(value) = f() {
+            return value;
+        }
+        if Instant::now() >= deadline {
+            panic!(
+                "timed out waiting for {label} (timeout: {timeout:?}, elapsed: {:?})",
+                start.elapsed()
+            );
+        }
+        sleep(poll_interval);
+    }
+}
+
+/// Update the given apps each iteration, then run `condition` on immutable app refs.
+pub fn poll_apps_until<T>(
+    label: &'static str,
+    mut client_app: Option<&mut App>,
+    mut server_app: Option<&mut App>,
+    timeout: Duration,
+    poll_interval: Duration,
+    mut condition: impl FnMut(Option<&App>, Option<&App>) -> Option<T>,
+) -> T {
+    let start = Instant::now();
+    let deadline = start + timeout;
+    loop {
+        if let Some(client) = client_app.as_deref_mut() {
+            client.update();
+        }
+        if let Some(server) = server_app.as_deref_mut() {
+            server.update();
+        }
+        if let Some(value) = condition(client_app.as_deref(), server_app.as_deref()) {
+            return value;
+        }
+        if Instant::now() >= deadline {
+            panic!(
+                "timed out waiting for {label} (timeout: {timeout:?}, elapsed: {:?})",
+                start.elapsed()
+            );
+        }
+        sleep(poll_interval);
+    }
+}
+
+/// Poll until the given UDP port can be bound locally (e.g. after `stop_endpoint`).
+pub fn wait_for_udp_port_available(port: u16, server_app: Option<&mut App>) {
+    poll_apps_until(
+        "UDP port available",
+        None,
+        server_app,
+        DEFAULT_TEST_TIMEOUT,
+        DEFAULT_POLL_INTERVAL,
+        |_, _| {
+            if UdpSocket::bind((LOCAL_BIND_IP, port)).is_ok() {
+                Some(())
+            } else {
+                None
+            }
+        },
+    );
+}
 
 pub fn build_client_app() -> App {
     let mut client_app = App::new();
@@ -195,43 +274,52 @@ pub fn start_simple_client_app(port: u16) -> App {
 }
 
 pub fn wait_for_client_connected(client_app: &mut App, server_app: &mut App) -> ClientId {
-    loop {
-        client_app.update();
-        server_app.update();
-        if client_app
-            .world()
-            .resource::<QuinnetClient>()
-            .is_connected()
-        {
-            break;
-        }
-    }
-    server_app
-        .world()
-        .resource::<ServerTestData>()
-        .last_connected_client_id
-        .expect("A client should have connected")
+    poll_apps_until(
+        "client connected",
+        Some(client_app),
+        Some(server_app),
+        DEFAULT_TEST_TIMEOUT,
+        DEFAULT_POLL_INTERVAL,
+        |client, server| {
+            let client = client?;
+            let server = server?;
+            if client.world().resource::<QuinnetClient>().is_connected() {
+                server
+                    .world()
+                    .resource::<ServerTestData>()
+                    .last_connected_client_id
+            } else {
+                None
+            }
+        },
+    )
 }
 
 pub fn wait_for_all_clients_disconnected(server_app: &mut App) -> ClientId {
-    loop {
-        server_app.update();
-        if server_app
-            .world()
-            .resource::<QuinnetServer>()
-            .endpoint()
-            .clients()
-            .len()
-            == 0
-        {
-            break;
-        }
-    }
-    server_app
-        .world()
-        .resource::<ServerTestData>()
-        .last_disconnected_client_id
-        .expect("A client should have connected")
+    poll_apps_until(
+        "all clients disconnected",
+        None,
+        Some(server_app),
+        DEFAULT_TEST_TIMEOUT,
+        DEFAULT_POLL_INTERVAL,
+        |_, server| {
+            let server = server?;
+            if server
+                .world()
+                .resource::<QuinnetServer>()
+                .endpoint()
+                .clients()
+                .is_empty()
+            {
+                server
+                    .world()
+                    .resource::<ServerTestData>()
+                    .last_disconnected_client_id
+            } else {
+                None
+            }
+        },
+    )
 }
 
 pub fn get_default_client_channel(app: &App) -> ChannelId {
@@ -287,39 +375,45 @@ pub fn wait_for_client_message(
     channel_id: ChannelId,
     server_app: &mut App,
 ) -> bytes::Bytes {
-    for _ in 0..20 {
-        server_app.update();
-        match server_app
-            .world_mut()
-            .resource_mut::<QuinnetServer>()
-            .endpoint_mut()
-            .receive_payload(client_id, channel_id)
-        {
-            Ok(Some(payload)) => return payload,
-            Ok(None) => (),
-            Err(err) => panic!("Error when receiving payload from client: {:?}", err),
-        }
-        sleep(Duration::from_secs_f32(0.05));
-    }
-    panic!("Did not receive a message from client in time");
+    poll_until(
+        "client message",
+        DEFAULT_TEST_TIMEOUT,
+        DEFAULT_POLL_INTERVAL,
+        || {
+            server_app.update();
+            match server_app
+                .world_mut()
+                .resource_mut::<QuinnetServer>()
+                .endpoint_mut()
+                .receive_payload(client_id, channel_id)
+            {
+                Ok(Some(payload)) => Some(payload),
+                Ok(None) => None,
+                Err(err) => panic!("Error when receiving payload from client: {:?}", err),
+            }
+        },
+    )
 }
 
 pub fn wait_for_server_message(client_app: &mut App, channel_id: ChannelId) -> bytes::Bytes {
-    for _ in 0..20 {
-        client_app.update();
-        match client_app
-            .world_mut()
-            .resource_mut::<QuinnetClient>()
-            .connection_mut()
-            .receive_payload(channel_id)
-        {
-            Ok(Some(payload)) => return payload,
-            Ok(None) => (),
-            Err(err) => panic!("Error when receiving payload from server: {:?}", err),
-        }
-        sleep(Duration::from_secs_f32(0.05));
-    }
-    panic!("Did not receive a message from server in time");
+    poll_until(
+        "server message",
+        DEFAULT_TEST_TIMEOUT,
+        DEFAULT_POLL_INTERVAL,
+        || {
+            client_app.update();
+            match client_app
+                .world_mut()
+                .resource_mut::<QuinnetClient>()
+                .connection_mut()
+                .receive_payload(channel_id)
+            {
+                Ok(Some(payload)) => Some(payload),
+                Ok(None) => None,
+                Err(err) => panic!("Error when receiving payload from server: {:?}", err),
+            }
+        },
+    )
 }
 
 pub fn send_and_test_client_message(
