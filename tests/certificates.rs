@@ -1,14 +1,11 @@
-use std::{fs, path::Path};
-
 use bevy::{
     app::ScheduleRunnerPlugin,
     prelude::{App, Update},
 };
 use bevy_quinnet::{
     client::{
-        certificate::{CertVerificationStatus, CertificateVerificationMode, TrustOnFirstUseConfig},
-        ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin,
-        DEFAULT_KNOWN_HOSTS_FILE,
+        certificate::{CertVerificationStatus, CertificateVerificationMode},
+        ClientConnectionConfiguration, QuinnetClient,
     },
     server::{
         certificate::CertificateRetrievalMode, EndpointAddrConfiguration, QuinnetServer,
@@ -46,19 +43,10 @@ fn trust_on_first_use() {
     // -> The server's certificate is treatead as Untrusted by the client, which requests a client action
     // We receive the client action request and ask to abort the connection
 
-    if Path::new(DEFAULT_KNOWN_HOSTS_FILE).exists() {
-        fs::remove_file(DEFAULT_KNOWN_HOSTS_FILE)
-            .expect("Failed to remove default known hosts file");
-    }
+    let hosts = test_hosts_file("trust_on_first_use");
+    clear_hosts_file(&hosts);
 
-    let mut client_app = App::new();
-    client_app
-        .add_plugins((
-            ScheduleRunnerPlugin::default(),
-            QuinnetClientPlugin::default(),
-        ))
-        .insert_resource(ClientTestData::default())
-        .add_systems(Update, handle_client_events);
+    let mut client_app = build_cert_client_app();
 
     let mut server_app = App::new();
     server_app
@@ -101,9 +89,9 @@ fn trust_on_first_use() {
         client
             .open_connection(ClientConnectionConfiguration {
                 addr_config: default_client_addr_configuration(port),
-                cert_mode: CertificateVerificationMode::TrustOnFirstUse(
-                    TrustOnFirstUseConfig::default(),
-                ),
+                cert_mode: CertificateVerificationMode::TrustOnFirstUse(tofu_with_hosts(
+                    &hosts,
+                )),
                 // cert_mode: CertificateVerificationMode::SkipVerification,
                 defaultables: Default::default(),
             })
@@ -149,6 +137,10 @@ fn trust_on_first_use() {
             SERVER_IP.to_string(),
             "The server name should match the one we configured"
         );
+        assert_eq!(
+            client_test_data.cert_interactions_received, 0,
+            "Unknown cert uses immediate TrustAndStore, not client interaction"
+        );
 
         let mut client = client_app.world_mut().resource_mut::<QuinnetClient>();
         assert!(
@@ -163,9 +155,9 @@ fn trust_on_first_use() {
         client
             .open_connection(ClientConnectionConfiguration {
                 addr_config: default_client_addr_configuration(port),
-                cert_mode: CertificateVerificationMode::TrustOnFirstUse(
-                    TrustOnFirstUseConfig::default(),
-                ),
+                cert_mode: CertificateVerificationMode::TrustOnFirstUse(tofu_with_hosts(
+                    &hosts,
+                )),
                 defaultables: Default::default(),
             })
             .unwrap();
@@ -185,6 +177,10 @@ fn trust_on_first_use() {
 
         let client_test_data = client_app.world().resource::<ClientTestData>();
         assert_eq!(client_test_data.cert_trust_update_events_received, 1, "The client should still have only 1 certificate trust update event after his reconnection");
+        assert_eq!(
+            client_test_data.cert_interactions_received, 0,
+            "Trusted cert uses immediate TrustOnce, not client interaction"
+        );
 
         // Clients disconnects
         client_app
@@ -221,9 +217,9 @@ fn trust_on_first_use() {
         client
             .open_connection(ClientConnectionConfiguration {
                 addr_config: default_client_addr_configuration(port),
-                cert_mode: CertificateVerificationMode::TrustOnFirstUse(
-                    TrustOnFirstUseConfig::default(),
-                ),
+                cert_mode: CertificateVerificationMode::TrustOnFirstUse(tofu_with_hosts(
+                    &hosts,
+                )),
                 defaultables: Default::default(),
             })
             .unwrap();
@@ -317,5 +313,122 @@ fn trust_on_first_use() {
     }
 
     // Leave the workspace clean
-    fs::remove_file(DEFAULT_KNOWN_HOSTS_FILE).expect("Failed to remove default known hosts file");
+    let hosts = test_hosts_file("trust_on_first_use");
+    clear_hosts_file(&hosts);
+}
+
+#[test]
+fn tofu_unknown_certificate_client_action() {
+    // Unknown cert with RequestClientAction (not default immediate TrustAndStore)
+    // Client connects with empty cert store
+    // -> CertInteractionEvent(UnknownCertificate); handler applies TrustAndStore
+    // -> Connection succeeds and CertTrustUpdateEvent is raised
+
+    let hosts = test_hosts_file("unknown");
+    clear_hosts_file(&hosts);
+
+    let (mut server_app, port) = start_loaded_cert_server(TEST_CERT_FILE, TEST_KEY_FILE);
+    let mut client_app = build_cert_client_app();
+
+    open_tofu_connection(
+        &mut client_app,
+        port,
+        tofu_config_requesting_client_action(
+            CertVerificationStatus::UnknownCertificate,
+            &hosts,
+        ),
+    );
+    wait_for_cert_interaction(
+        &mut client_app,
+        &mut server_app,
+        CertVerificationStatus::UnknownCertificate,
+    );
+    wait_for_client_connected(&mut client_app, &mut server_app);
+
+    let data = client_app.world().resource::<ClientTestData>();
+    assert_eq!(data.cert_interactions_received, 1);
+    assert_eq!(data.cert_trust_update_events_received, 1);
+    assert_eq!(
+        data.last_trusted_cert_info
+            .as_ref()
+            .unwrap()
+            .fingerprint
+            .to_base64(),
+        TEST_CERT_FINGERPRINT_B64
+    );
+
+    clear_hosts_file(&hosts);
+}
+
+#[test]
+fn tofu_trusted_certificate_client_action() {
+    // Trusted cert with RequestClientAction (not default immediate TrustOnce)
+    // Client connects once with default TOFU to populate the cert store, then disconnects
+    // Client reconnects with TrustedCertificate configured as RequestClientAction
+    // -> CertInteractionEvent(TrustedCertificate); handler applies TrustOnce
+    // -> Connection succeeds without a new CertTrustUpdateEvent
+
+    let hosts = test_hosts_file("trusted");
+    clear_hosts_file(&hosts);
+
+    let (mut server_app, port) = start_loaded_cert_server(TEST_CERT_FILE, TEST_KEY_FILE);
+    let mut client_app = build_cert_client_app();
+
+    open_tofu_connection(&mut client_app, port, tofu_with_hosts(&hosts));
+    wait_for_client_connected(&mut client_app, &mut server_app);
+    client_app
+        .world_mut()
+        .resource_mut::<QuinnetClient>()
+        .close_all_connections();
+
+    open_tofu_connection(
+        &mut client_app,
+        port,
+        tofu_config_requesting_client_action(
+            CertVerificationStatus::TrustedCertificate,
+            &hosts,
+        ),
+    );
+    wait_for_cert_interaction(
+        &mut client_app,
+        &mut server_app,
+        CertVerificationStatus::TrustedCertificate,
+    );
+    wait_for_client_connected(&mut client_app, &mut server_app);
+
+    let data = client_app.world().resource::<ClientTestData>();
+    assert_eq!(data.cert_interactions_received, 1);
+    assert_eq!(data.cert_trust_update_events_received, 1);
+    assert!(client_app
+        .world()
+        .resource::<QuinnetClient>()
+        .is_connected());
+
+    clear_hosts_file(&hosts);
+}
+
+fn start_loaded_cert_server(cert_file: &str, key_file: &str) -> (App, u16) {
+    let mut server_app = App::new();
+    server_app
+        .add_plugins((
+            ScheduleRunnerPlugin::default(),
+            QuinnetServerPlugin::default(),
+        ))
+        .insert_resource(ServerTestData::default())
+        .add_systems(Update, handle_server_events);
+    server_app.update();
+    server_app
+        .world_mut()
+        .resource_mut::<QuinnetServer>()
+        .start_endpoint(ServerEndpointConfiguration {
+            addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, 0),
+            cert_mode: CertificateRetrievalMode::LoadFromFile {
+                cert_file: cert_file.to_string(),
+                key_file: key_file.to_string(),
+            },
+            defaultables: Default::default(),
+        })
+        .unwrap();
+    let port = server_listen_port(&server_app);
+    (server_app, port)
 }

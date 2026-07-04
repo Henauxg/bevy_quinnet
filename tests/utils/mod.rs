@@ -1,5 +1,7 @@
 use std::{
+    fs,
     net::{Ipv6Addr, UdpSocket},
+    path::Path,
     thread::sleep,
     time::{Duration, Instant},
 };
@@ -15,7 +17,7 @@ use bevy_quinnet::{
         certificate::{
             CertConnectionAbortEvent, CertInteractionEvent, CertTrustUpdateEvent,
             CertVerificationInfo, CertVerificationStatus, CertVerifierAction,
-            CertificateVerificationMode,
+            CertVerifierBehaviour, CertificateVerificationMode, KnownHosts, TrustOnFirstUseConfig,
         },
         connection::ClientAddrConfiguration,
         ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin,
@@ -29,6 +31,8 @@ use bevy_quinnet::{
         ClientId,
     },
 };
+
+// --- test resources ---
 
 #[derive(Resource, Debug, Clone, Default)]
 pub struct ClientTestData {
@@ -57,6 +61,8 @@ pub struct ServerTestData {
 #[derive(Resource, Debug, Clone, Default)]
 pub struct Port(u16);
 
+// --- constants ---
+
 pub const TEST_MESSAGE_PAYLOAD: &[u8] = &[0x1, 0x2, 0x3, 0x4];
 
 pub const SERVER_IP: Ipv6Addr = Ipv6Addr::LOCALHOST;
@@ -64,6 +70,8 @@ pub const LOCAL_BIND_IP: Ipv6Addr = Ipv6Addr::UNSPECIFIED;
 
 pub const DEFAULT_TEST_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+// --- polling ---
 
 /// Poll until `f()` returns `Some(T)` or `timeout` is reached.
 pub fn poll_until<T>(
@@ -137,66 +145,7 @@ pub fn wait_for_udp_port_available(port: u16, server_app: Option<&mut App>) {
     );
 }
 
-pub fn build_client_app() -> App {
-    let mut client_app = App::new();
-    client_app
-        .add_plugins((
-            ScheduleRunnerPlugin::default(),
-            QuinnetClientPlugin::default(),
-        ))
-        .insert_resource(ClientTestData::default())
-        .add_systems(Startup, start_simple_connection)
-        .add_systems(Update, handle_client_events);
-    client_app
-}
-
-pub fn build_server_app() -> App {
-    let mut server_app = App::new();
-    server_app
-        .add_plugins((
-            ScheduleRunnerPlugin::default(),
-            QuinnetServerPlugin::default(),
-        ))
-        .insert_resource(ServerTestData::default())
-        .add_systems(Startup, start_listening)
-        .add_systems(Update, handle_server_events);
-    server_app
-}
-
-pub fn default_client_addr_configuration(port: u16) -> ClientAddrConfiguration {
-    ClientAddrConfiguration::from_ips(SERVER_IP, port, LOCAL_BIND_IP, 0)
-}
-
-pub fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port>) {
-    client
-        .open_connection(ClientConnectionConfiguration {
-            addr_config: default_client_addr_configuration(port.0),
-            cert_mode: CertificateVerificationMode::SkipVerification,
-            defaultables: Default::default(),
-        })
-        .unwrap();
-}
-
-pub fn start_listening(mut server: ResMut<QuinnetServer>) {
-    server
-        .start_endpoint(ServerEndpointConfiguration {
-            addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, 0),
-            cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
-                server_hostname: SERVER_IP.to_string(),
-            },
-            defaultables: Default::default(),
-        })
-        .unwrap();
-}
-
-pub fn server_listen_port(server_app: &App) -> u16 {
-    server_app
-        .world()
-        .resource::<QuinnetServer>()
-        .endpoint()
-        .local_addr()
-        .port()
-}
+// --- bevy systems ---
 
 pub fn handle_client_events(
     mut connection_events: MessageReader<client::connection::ConnectionEvent>,
@@ -218,13 +167,15 @@ pub fn handle_client_events(
         test_data.last_cert_interactions_info = Some(cert_interaction.info.clone());
 
         match cert_interaction.status {
-            CertVerificationStatus::UnknownCertificate => todo!(),
-            CertVerificationStatus::UntrustedCertificate => {
-                cert_interaction
-                    .apply_cert_verifier_action(CertVerifierAction::AbortConnection)
-                    .expect("Failed to apply cert verification action");
-            }
-            CertVerificationStatus::TrustedCertificate => todo!(),
+            CertVerificationStatus::UnknownCertificate => cert_interaction
+                .apply_cert_verifier_action(CertVerifierAction::TrustAndStore)
+                .expect("Failed to apply cert verification action"),
+            CertVerificationStatus::UntrustedCertificate => cert_interaction
+                .apply_cert_verifier_action(CertVerifierAction::AbortConnection)
+                .expect("Failed to apply cert verification action"),
+            CertVerificationStatus::TrustedCertificate => cert_interaction
+                .apply_cert_verifier_action(CertVerifierAction::TrustOnce)
+                .expect("Failed to apply cert verification action"),
         }
     }
     for connection_abort in cert_connection_abort_events.read() {
@@ -249,12 +200,80 @@ pub fn handle_server_events(
     }
 }
 
+fn start_simple_connection(mut client: ResMut<QuinnetClient>, port: Res<Port>) {
+    client
+        .open_connection(ClientConnectionConfiguration {
+            addr_config: default_client_addr_configuration(port.0),
+            cert_mode: CertificateVerificationMode::SkipVerification,
+            defaultables: Default::default(),
+        })
+        .unwrap();
+}
+
+fn start_listening(mut server: ResMut<QuinnetServer>) {
+    server
+        .start_endpoint(ServerEndpointConfiguration {
+            addr_config: EndpointAddrConfiguration::from_ip(LOCAL_BIND_IP, 0),
+            cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
+                server_hostname: SERVER_IP.to_string(),
+            },
+            defaultables: Default::default(),
+        })
+        .unwrap();
+}
+
+// --- app setup ---
+
+pub fn build_client_app() -> App {
+    let mut client_app = App::new();
+    client_app
+        .add_plugins((
+            ScheduleRunnerPlugin::default(),
+            QuinnetClientPlugin::default(),
+        ))
+        .insert_resource(ClientTestData::default())
+        .add_systems(Startup, start_simple_connection)
+        .add_systems(Update, handle_client_events);
+    client_app
+}
+
+pub fn build_cert_client_app() -> App {
+    let mut client_app = App::new();
+    client_app
+        .add_plugins((
+            ScheduleRunnerPlugin::default(),
+            QuinnetClientPlugin::default(),
+        ))
+        .insert_resource(ClientTestData::default())
+        .add_systems(Update, handle_client_events);
+    client_app.update();
+    client_app
+}
+
+pub fn build_server_app() -> App {
+    let mut server_app = App::new();
+    server_app
+        .add_plugins((
+            ScheduleRunnerPlugin::default(),
+            QuinnetServerPlugin::default(),
+        ))
+        .insert_resource(ServerTestData::default())
+        .add_systems(Startup, start_listening)
+        .add_systems(Update, handle_server_events);
+    server_app
+}
+
 pub fn start_simple_server_app() -> App {
     let mut server_app = build_server_app();
-
-    // Startup
     server_app.update();
     server_app
+}
+
+pub fn start_simple_client_app(port: u16) -> App {
+    let mut client_app = build_client_app();
+    client_app.insert_resource(Port(port));
+    client_app.update();
+    client_app
 }
 
 pub fn start_test_pair() -> (App, App, u16) {
@@ -264,13 +283,19 @@ pub fn start_test_pair() -> (App, App, u16) {
     (client_app, server_app, port)
 }
 
-pub fn start_simple_client_app(port: u16) -> App {
-    let mut client_app = build_client_app();
-    client_app.insert_resource(Port(port));
+// --- connection ---
 
-    // Startup
-    client_app.update();
-    client_app
+pub fn default_client_addr_configuration(port: u16) -> ClientAddrConfiguration {
+    ClientAddrConfiguration::from_ips(SERVER_IP, port, LOCAL_BIND_IP, 0)
+}
+
+pub fn server_listen_port(server_app: &App) -> u16 {
+    server_app
+        .world()
+        .resource::<QuinnetServer>()
+        .endpoint()
+        .local_addr()
+        .port()
 }
 
 pub fn wait_for_client_connected(client_app: &mut App, server_app: &mut App) -> ClientId {
@@ -322,6 +347,69 @@ pub fn wait_for_all_clients_disconnected(server_app: &mut App) -> ClientId {
     )
 }
 
+// --- certificates ---
+
+pub fn test_hosts_file(name: &str) -> String {
+    format!("target/test-known-hosts/{name}")
+}
+
+pub fn clear_hosts_file(path: &str) {
+    if Path::new(path).exists() {
+        fs::remove_file(path).expect("Failed to remove known hosts file");
+    }
+}
+
+pub fn tofu_with_hosts(hosts_file: &str) -> TrustOnFirstUseConfig {
+    TrustOnFirstUseConfig {
+        known_hosts: KnownHosts::HostsFile(hosts_file.to_string()),
+        ..Default::default()
+    }
+}
+
+pub fn tofu_config_requesting_client_action(
+    status: CertVerificationStatus,
+    hosts_file: &str,
+) -> TrustOnFirstUseConfig {
+    let mut config = tofu_with_hosts(hosts_file);
+    config
+        .verifier_behaviour
+        .insert(status, CertVerifierBehaviour::RequestClientAction);
+    config
+}
+
+pub fn open_tofu_connection(client_app: &mut App, port: u16, config: TrustOnFirstUseConfig) {
+    client_app
+        .world_mut()
+        .resource_mut::<QuinnetClient>()
+        .open_connection(ClientConnectionConfiguration {
+            addr_config: default_client_addr_configuration(port),
+            cert_mode: CertificateVerificationMode::TrustOnFirstUse(config),
+            defaultables: Default::default(),
+        })
+        .unwrap();
+}
+
+pub fn wait_for_cert_interaction(
+    client_app: &mut App,
+    server_app: &mut App,
+    expected: CertVerificationStatus,
+) {
+    poll_apps_until(
+        "cert interaction event",
+        Some(client_app),
+        Some(server_app),
+        DEFAULT_TEST_TIMEOUT,
+        DEFAULT_POLL_INTERVAL,
+        |client, _| {
+            let client = client?;
+            let data = client.world().resource::<ClientTestData>();
+            (data.last_cert_interactions_status.as_ref() == Some(&expected)).then_some(())
+        },
+    );
+}
+
+// --- channels ---
+
 pub fn get_default_client_channel(app: &App) -> ChannelId {
     let client = app.world().resource::<QuinnetClient>();
     client
@@ -369,6 +457,8 @@ pub fn open_server_channel(channel_type: ChannelConfig, app: &mut App) -> Channe
         .open_channel(channel_type)
         .expect("Failed to open channel")
 }
+
+// --- messaging ---
 
 pub fn wait_for_client_message(
     client_id: ClientId,
