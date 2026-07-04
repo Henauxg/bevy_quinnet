@@ -91,6 +91,10 @@ pub(crate) struct Ball;
 #[derive(Component)]
 pub(crate) struct Brick;
 
+/// Marks the main menu UI root (despawning it removes the button tree).
+#[derive(Component)]
+pub(crate) struct MainMenu;
+
 /// The buttons in the main menu.
 #[derive(Clone, Copy, Component)]
 pub(crate) enum MenuItem {
@@ -375,7 +379,6 @@ pub(crate) fn play_collision_sound(
 }
 
 pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // Camera
     commands.spawn(Camera2d);
 
     let button_style = Node {
@@ -404,6 +407,7 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
                 ..default()
             },
             BackgroundColor(Color::NONE),
+            MainMenu,
         ))
         .with_children(|parent| {
             parent
@@ -451,10 +455,8 @@ pub(crate) fn handle_menu_buttons(
     }
 }
 
-pub(crate) fn teardown_main_menu(mut commands: Commands, query: Query<Entity, With<Button>>) {
-    for entity in query.iter() {
-        commands.entity(entity).despawn();
-    }
+pub(crate) fn teardown_main_menu(mut commands: Commands, menu: Single<Entity, With<MainMenu>>) {
+    commands.entity(*menu).despawn();
 }
 
 pub(crate) fn setup_breakout(mut commands: Commands, asset_server: Res<AssetServer>) {
