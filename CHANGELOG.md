@@ -1,5 +1,14 @@
 # Changelog
 
+## Version 0.21.0 (2026-07-04)
+
+- Updated `bevy` to 0.19 (thanks to [ycastorium](https://github.com/ycastorium), PR [#48](https://github.com/Henauxg/bevy_quinnet/pull/48))
+- Updated `thiserror` to 2
+- Updated `rcgen` to 0.14
+- Updated `base64` to 0.22
+- Updated `rustls-platform-verifier` to 0.7
+- Moved examples into workspace sub-crates (`examples/breakout`, `examples/chat`) to isolate their Bevy dependencies from the library crate
+
 ## Version 0.20.0 (2026-01-17)
 
 - Updated `bevy` to 0.18

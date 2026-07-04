@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "bevy_quinnet"
-version = "0.20.0"
+version = "0.21.0"
 description = "Bevy plugin for Client/Server multiplayer games using QUIC"
 repository = "https://github.com/Henauxg/bevy_quinnet"
 documentation = "https://docs.rs/bevy_quinnet"
