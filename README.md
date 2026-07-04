@@ -266,18 +266,20 @@ See more about certificates in the [certificates readme](docs/Certificates.md)
 
 ## Examples
 
+Examples live in the workspace under [`examples/`](examples/) and require cloning this repository (they are not included in the crates.io package).
+
 <details>
   <summary>Chat example</summary>
 
-This demo comes with an headless [server](examples/chat/server.rs), a [terminal client](examples/chat/client.rs) and a shared [protocol](examples/chat/protocol.rs).
+This demo comes with a headless server, a terminal client, and a shared protocol in [`examples/chat/`](examples/chat/).
 
 Start the server with 
 ```
-cargo run --example chat-server --features=bincode-messages
+cargo run -p bevy-quinnet-chat --bin chat-server
 ```
 and as many clients as needed with
 ```
-cargo run --example chat-client --features=bincode-messages
+cargo run -p bevy-quinnet-chat --bin chat-client
 ```
 Type `quit` to disconnect with a client.
 
@@ -290,20 +292,18 @@ Type `quit` to disconnect with a client.
 
 This demo is a modification of the classic [Bevy breakout](https://bevyengine.org/examples/games/breakout/) example to turn it into a 2 players versus game.
 
-It hosts a local server from inside a client, instead of a dedicated headless server as in the chat demo. You can find a [server module](examples/breakout/server.rs), a [client module](examples/breakout/client.rs), a shared [protocol](examples/breakout/protocol.rs) and the [bevy app schedule](examples/breakout/breakout.rs).
+It hosts a local server from inside a client, instead of a dedicated headless server as in the chat demo. Sources are in [`examples/breakout/`](examples/breakout/).
 
 It also makes uses of [`Channels`](#channels). The server broadcasts the paddle position every tick via the `PaddleMoved` message on an `Unreliable` channel, while the `BrickDestroyed`, `BallCollided` and the game setup and start are using `OrderedReliable` channels.
 
 Start two clients with:
 ```
-cargo run --example breakout --features=bincode-messages
+cargo run -p bevy-quinnet-breakout
 ```
 "Host" on one and "Join" on the other.
 
 [breakout_versus_demo_short.mp4](https://user-images.githubusercontent.com/19689618/213700921-85967bd7-9a47-44ac-9471-77a33938569f.mp4)
 </details>
-
-Examples can be found in the [examples](examples) directory.
 
 ## Replicon integration
 

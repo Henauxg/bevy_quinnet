@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "examples/breakout", "examples/chat"]
+resolver = "2"
+
 [package]
 name = "bevy_quinnet"
 version = "0.20.0"
@@ -9,7 +13,7 @@ license = "MIT OR Apache-2.0"
 keywords = ["gamedev", "networking", "quic", "bevy", "plugin"]
 categories = ["game-development", "network-programming"]
 readme = "README.md"
-exclude = ["assets/"]
+exclude = ["examples/"]
 
 [dependencies]
 bevy = { version = "0.19.0", default-features = false, features = ["bevy_log"] }
@@ -49,35 +53,6 @@ bincode-messages = ["bincode", "serde"]
 
 [dev-dependencies]
 bevy = { version = "0.19.0", default-features = false, features = [
-	"bevy_asset",
-	"bevy_audio",
-	"vorbis",             # OGG/VORBIS audio format support
-	"bevy_window",        # Windowing layer
-	"bevy_render",
-	"bevy_sprite",
-	"bevy_sprite_render",
-	"bevy_ui",
-	"bevy_ui_render",
-	"bevy_state",
-	"bevy_text",
-	"bevy_core_pipeline",
+	"bevy_log",
 	"serialize",
-	"x11",                # X11 display server support
 ] }
-rand = "0.10.1"
-strum = { version = "0.28.0", features = ["derive"] }
-
-[[example]]
-name = "breakout"
-path = "examples/breakout/breakout.rs"
-required-features = ["bincode-messages"]
-
-[[example]]
-name = "chat-server"
-path = "examples/chat/server.rs"
-required-features = ["bincode-messages"]
-
-[[example]]
-name = "chat-client"
-path = "examples/chat/client.rs"
-required-features = ["bincode-messages"]

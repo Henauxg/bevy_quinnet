@@ -27,8 +27,8 @@ mod utils;
 ///                                                     ///
 ///////////////////////////////////////////////////////////
 
-const TEST_CERT_FILE: &str = "assets/tests/cert.pem.test";
-const TEST_KEY_FILE: &str = "assets/tests/key.pem.test";
+const TEST_CERT_FILE: &str = "tests/fixtures/cert.pem.test";
+const TEST_KEY_FILE: &str = "tests/fixtures/key.pem.test";
 const TEST_CERT_FINGERPRINT_B64: &str = "sieQJ9J6DIrQP37HAlUFk2hYhLZDY9G5OZQpqzkWlKo=";
 
 #[test]

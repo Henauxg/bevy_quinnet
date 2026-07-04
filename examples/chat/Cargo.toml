@@ -1,0 +1,27 @@
+[package]
+name = "bevy-quinnet-chat"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "bevy_quinnet_chat"
+path = "src/lib.rs"
+
+[[bin]]
+name = "chat-server"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "chat-client"
+path = "src/bin/client.rs"
+
+[dependencies]
+bevy_quinnet = { path = "../..", features = ["bincode-messages"] }
+bevy = { version = "0.19.0", default-features = false, features = [
+	"bevy_log",
+	"serialize",
+] }
+rand = "0.10"
+serde = { version = "1.0.145", features = ["derive"] }
+tokio = { version = "1.36", features = ["sync"] }

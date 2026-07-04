@@ -22,14 +22,9 @@ use bevy_quinnet::{
     },
     shared::ClientId,
 };
+use bevy_quinnet_chat::protocol::{ClientMessage, ServerMessage};
 use rand::{distr::Alphanumeric, RngExt};
 use tokio::sync::mpsc;
-
-use protocol::{ClientMessage, ServerMessage};
-
-// use crate::protocol::NetworkChannels;
-
-mod protocol;
 
 #[derive(Resource, Debug, Clone, Default)]
 struct Users {

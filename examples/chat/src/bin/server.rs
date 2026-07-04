@@ -8,10 +8,7 @@ use bevy_quinnet::{
     },
     shared::ClientId,
 };
-
-use protocol::{ClientMessage, ServerMessage};
-
-mod protocol;
+use bevy_quinnet_chat::protocol::{ClientMessage, ServerMessage};
 
 #[derive(Resource, Debug, Clone, Default)]
 struct Users {

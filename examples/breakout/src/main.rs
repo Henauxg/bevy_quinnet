@@ -3,7 +3,7 @@
 
 use std::net::Ipv6Addr;
 
-use bevy::prelude::*;
+use bevy::{asset::AssetPlugin, prelude::*};
 use bevy_quinnet::{
     client::QuinnetClientPlugin,
     server::{QuinnetServer, QuinnetServerPlugin},
@@ -120,7 +120,10 @@ fn server_is_listening(server: Res<QuinnetServer>) -> bool {
 fn main() {
     let mut app = App::new();
     app.add_plugins((
-        DefaultPlugins,
+        DefaultPlugins.set(AssetPlugin {
+            file_path: "../assets".into(),
+            ..default()
+        }),
         QuinnetServerPlugin::default(),
         QuinnetClientPlugin::default(),
     ));

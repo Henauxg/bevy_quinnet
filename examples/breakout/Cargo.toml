@@ -1,0 +1,26 @@
+[package]
+name = "bevy-quinnet-breakout"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+bevy_quinnet = { path = "../..", features = ["bincode-messages"] }
+bevy = { version = "0.19.0", default-features = false, features = [
+	"bevy_asset",
+	"bevy_audio",
+	"vorbis",
+	"bevy_window",
+	"bevy_render",
+	"bevy_sprite",
+	"bevy_sprite_render",
+	"bevy_ui",
+	"bevy_ui_render",
+	"bevy_state",
+	"bevy_text",
+	"bevy_core_pipeline",
+	"serialize",
+	"x11",
+] }
+strum = { version = "0.28.0", features = ["derive"] }
+serde = { version = "1.0.145", features = ["derive"] }
