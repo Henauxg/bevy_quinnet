@@ -5,8 +5,8 @@ default:
 
 # Mini local CI (workspace-aware)
 check:
-    @echo "==> building workspace"
-    cargo build --workspace --all-features
+    @echo "==> checking workspace"
+    cargo check --workspace --all-features
     @echo "==> testing library"
     cargo test -p bevy_quinnet --all-features
     @echo "==> docs"
