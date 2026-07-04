@@ -1,0 +1,4 @@
+# MSVC debug PDBs hit module/size limits (LNK1140) on large Bevy binaries.
+# https://github.com/rust-lang/rust/issues/67012
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/DEBUG:NONE"]
