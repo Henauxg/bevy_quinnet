@@ -1,23 +1,25 @@
 use std::{
     collections::HashMap,
-    thread::{self, sleep},
-    time::Duration,
+    thread,
+    time::{Duration, Instant},
 };
 
 use bevy::{
     app::{AppExit, ScheduleRunnerPlugin},
     ecs::{
         message::{MessageReader, MessageWriter},
-        schedule::IntoScheduleConfigs,
+        schedule::{common_conditions::resource_exists, IntoScheduleConfigs},
     },
     log::{info, warn, LogPlugin},
-    prelude::{App, Commands, Deref, DerefMut, PostUpdate, ResMut, Resource, Startup, Update},
+    prelude::{App, Commands, Deref, DerefMut, Res, ResMut, Resource, Startup, Update},
 };
 use bevy_quinnet::{
     client::{
         certificate::CertificateVerificationMode,
         client_connected,
-        connection::{ClientAddrConfiguration, ConnectionEvent, ConnectionFailedEvent},
+        connection::{
+            ClientAddrConfiguration, ConnectionEvent, ConnectionFailedEvent, ConnectionLostEvent,
+        },
         ClientConnectionConfiguration, QuinnetClient, QuinnetClientPlugin,
     },
     shared::ClientId,
@@ -25,6 +27,8 @@ use bevy_quinnet::{
 use bevy_quinnet_chat::protocol::{ClientMessage, ServerMessage, SERVER_PORT};
 use rand::{distr::Alphanumeric, RngExt};
 use tokio::sync::mpsc;
+
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Resource, Debug, Clone, Default)]
 struct Users {
@@ -35,15 +39,9 @@ struct Users {
 #[derive(Resource, Deref, DerefMut)]
 struct TerminalReceiver(mpsc::Receiver<String>);
 
-pub fn on_app_exit(app_exit_events: MessageReader<AppExit>, mut client: ResMut<QuinnetClient>) {
-    if !app_exit_events.is_empty() {
-        client
-            .connection_mut()
-            .send_message(ClientMessage::Disconnect {})
-            .unwrap();
-        // TODO Clean: event to let the async client send his last messages.
-        sleep(Duration::from_secs_f32(0.1));
-    }
+#[derive(Resource)]
+struct ShuttingDown {
+    started_at: Instant,
 }
 
 fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<QuinnetClient>) {
@@ -85,18 +83,52 @@ fn handle_server_messages(mut users: ResMut<Users>, mut client: ResMut<QuinnetCl
 
 fn handle_terminal_messages(
     mut terminal_messages: ResMut<TerminalReceiver>,
-    mut app_exit_events: MessageWriter<AppExit>,
+    mut commands: Commands,
     mut client: ResMut<QuinnetClient>,
+    shutting_down: Option<Res<ShuttingDown>>,
 ) {
+    if shutting_down.is_some() {
+        return;
+    }
+
     while let Ok(message) = terminal_messages.try_recv() {
         if message == "quit" {
-            app_exit_events.write(AppExit::Success);
+            client
+                .connection_mut()
+                .send_message(ClientMessage::Disconnect {})
+                .unwrap();
+            commands.insert_resource(ShuttingDown {
+                started_at: Instant::now(),
+            });
         } else {
             client
                 .connection_mut()
                 .try_send_message(ClientMessage::ChatMessage { message });
         }
     }
+}
+
+fn exit_after_disconnect(
+    connection_lost_events: MessageReader<ConnectionLostEvent>,
+    mut app_exit_events: MessageWriter<AppExit>,
+) {
+    if !connection_lost_events.is_empty() {
+        app_exit_events.write(AppExit::Success);
+    }
+}
+
+fn shutdown_timeout_fallback(
+    shutting_down: Res<ShuttingDown>,
+    mut client: ResMut<QuinnetClient>,
+    mut app_exit_events: MessageWriter<AppExit>,
+) {
+    if shutting_down.started_at.elapsed() < SHUTDOWN_TIMEOUT {
+        return;
+    }
+
+    warn!("Shutdown timed out waiting for server disconnect; closing locally");
+    client.connection_mut().try_disconnect();
+    app_exit_events.write(AppExit::Success);
 }
 
 fn start_terminal_listener(mut commands: Commands) {
@@ -174,9 +206,9 @@ fn main() {
             (
                 handle_client_events,
                 (handle_terminal_messages, handle_server_messages).run_if(client_connected),
+                exit_after_disconnect,
+                shutdown_timeout_fallback.run_if(resource_exists::<ShuttingDown>),
             ),
         )
-        // CoreSet::PostUpdate so that AppExit events generated in the previous stage are available
-        .add_systems(PostUpdate, on_app_exit)
         .run();
 }

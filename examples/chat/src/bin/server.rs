@@ -106,16 +106,20 @@ fn handle_disconnect(endpoint: &mut Endpoint, users: &mut ResMut<Users>, client_
 }
 
 fn start_listening(mut server: ResMut<QuinnetServer>) {
-    server
-        .start_endpoint(ServerEndpointConfiguration {
-            addr_config: EndpointAddrConfiguration::from_string(&format!("[::]:{SERVER_PORT}"))
-                .unwrap(),
-            cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
-                server_hostname: "::1".to_owned(),
-            },
-            defaultables: Default::default(),
-        })
-        .unwrap();
+    if let Err(err) = server.start_endpoint(ServerEndpointConfiguration {
+        addr_config: EndpointAddrConfiguration::from_string(&format!("[::]:{SERVER_PORT}"))
+            .unwrap(),
+        cert_mode: CertificateRetrievalMode::GenerateSelfSigned {
+            server_hostname: "::1".to_owned(),
+        },
+        defaultables: Default::default(),
+    }) {
+        eprintln!(
+            "Failed to start chat server on port {SERVER_PORT}: {err}\n\
+             Is another chat-server already running? Close it or run the chat server again."
+        );
+        std::process::exit(1);
+    }
 }
 
 fn main() {
