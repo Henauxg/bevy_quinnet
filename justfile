@@ -3,8 +3,12 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 default:
     @just --list
 
-# Mini local CI (workspace-aware)
+# Mini local CI
 check:
+    @echo "==> fmt"
+    cargo fmt --all -- --check
+    @echo "==> clippy"
+    cargo clippy --workspace --all-features -- -D warnings
     @echo "==> checking workspace"
     cargo check --workspace --all-features
     @echo "==> testing library"
@@ -13,6 +17,10 @@ check:
     cargo doc -p bevy_quinnet --no-deps --all-features
     @echo "==> machete"
     cargo machete
+
+# Format all Rust code
+format:
+    cargo fmt --all
 
 chat-server:
     cargo run -p bevy-quinnet-chat --bin chat-server

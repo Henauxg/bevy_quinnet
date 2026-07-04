@@ -333,7 +333,7 @@ Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/
 With [just](https://github.com/casey/just) installed (`cargo install just`):
 
 ```
-just check          # build workspace, test, doc, machete
+just check          # fmt, clippy, check, test, doc, machete
 just run-examples   # launch chat + breakout examples
 ```
 
