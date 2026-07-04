@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use bevy::{log::error, platform::collections::HashMap};
 use bytes::Bytes;
 use tokio::sync::{
@@ -34,6 +36,8 @@ pub struct Endpoint {
     from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
     /// Address configuration for this endpoint
     addr_config: EndpointAddrConfiguration,
+    /// Local socket address this endpoint is bound to
+    local_addr: SocketAddr,
     stats: EndpointStats,
 
     /// Parameters for all connections on this endpoint
@@ -46,6 +50,7 @@ impl Endpoint {
         endpoint_close_send: broadcast::Sender<()>,
         from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
         addr_config: EndpointAddrConfiguration,
+        local_addr: SocketAddr,
         #[cfg(feature = "recv_channels")]
         recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
     ) -> Self {
@@ -58,6 +63,7 @@ impl Endpoint {
             from_async_endpoint_recv,
             stats: EndpointStats::default(),
             addr_config,
+            local_addr,
             #[cfg(feature = "recv_channels")]
             recv_channels_cfg,
         }
@@ -466,10 +472,23 @@ impl Endpoint {
         self.from_async_endpoint_recv.try_recv()
     }
 
-    /// Returns the current address configuration of this server endpoint
+    /// Returns the requested address configuration for this server endpoint.
+    ///
+    /// When the bind port was `0`, this still returns port `0`. Use [`Self::local_addr`]
+    /// to read the OS-assigned address after [`crate::server::QuinnetServer::start_endpoint`].
     #[inline(always)]
     pub fn addr_config(&self) -> &EndpointAddrConfiguration {
         &self.addr_config
+    }
+
+    /// Returns the local socket address this endpoint is bound to.
+    ///
+    /// When the bind port in [`EndpointAddrConfiguration`] was `0`, this returns
+    /// the OS-assigned port (unlike [`Self::addr_config`], which returns the
+    /// requested configuration).
+    #[inline(always)]
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
     }
 }
 

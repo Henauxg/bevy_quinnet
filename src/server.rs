@@ -69,7 +69,9 @@ pub struct ConnectionLostEvent {
 /// Configuration of a server's [Endpoint]
 #[derive(Debug, Clone)]
 pub struct EndpointAddrConfiguration {
-    /// Local address and port to bind to.
+    /// Local address and port to bind to. Use port `0` to let the OS assign a port;
+    /// read the bound address with [`endpoint::Endpoint::local_addr`] after
+    /// [`QuinnetServer::start_endpoint`].
     pub local_bind_addr: SocketAddr,
 }
 
@@ -102,7 +104,7 @@ impl EndpointAddrConfiguration {
     /// # Arguments
     ///
     /// * `local_bind_ip` - Local IP address to bind to. The address should usually be a wildcard like `0.0.0.0` (for an IPv4) or `0:0:0:0:0:0:0:0` (for an IPv6), which allow communication with any reachable IPv4 or IPv6 address. See [`std::net::Ipv4Addr`] and [`std::net::Ipv6Addr`] for more precision.
-    /// * `local_bind_port` - Local port to bind to.
+    /// * `local_bind_port` - Local port to bind to. Use `0` to get an OS-assigned port.
     ///
     /// # Examples
     ///
@@ -111,6 +113,13 @@ impl EndpointAddrConfiguration {
     /// use std::net::Ipv6Addr;
     /// use bevy_quinnet::server::EndpointAddrConfiguration;
     /// let config = EndpointAddrConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 6000);
+    /// ```
+    ///
+    /// Bind on an OS-assigned port:
+    /// ```
+    /// use std::net::Ipv6Addr;
+    /// use bevy_quinnet::server::EndpointAddrConfiguration;
+    /// let config = EndpointAddrConfiguration::from_ip(Ipv6Addr::UNSPECIFIED, 0);
     /// ```
     pub fn from_ip(local_bind_ip: impl Into<IpAddr>, local_bind_port: u16) -> Self {
         Self::from_addr(SocketAddr::new(local_bind_ip.into(), local_bind_port))
@@ -252,11 +261,9 @@ impl QuinnetServer {
             broadcast::channel(DEFAULT_KILL_MESSAGE_QUEUE_SIZE);
 
         let socket = std::net::UdpSocket::bind(config.addr_config.local_bind_addr)?;
+        let local_addr = socket.local_addr()?;
 
-        info!(
-            "Starting endpoint on: {} ...",
-            config.addr_config.local_bind_addr
-        );
+        info!("Starting endpoint on: {local_addr} ...");
         #[cfg(feature = "recv_channels")]
         let recv_channels_cfg_clone = config.defaultables.recv_channels_cfg.clone();
         self.runtime.spawn(async move {
@@ -275,6 +282,7 @@ impl QuinnetServer {
             endpoint_close_send,
             from_async_endpoint_recv,
             config.addr_config,
+            local_addr,
             #[cfg(feature = "recv_channels")]
             config.defaultables.recv_channels_cfg,
         );
