@@ -126,6 +126,7 @@ fn main() {
     ));
     app.init_state::<GameState>();
     app.add_observer(client::play_collision_sound);
+    app.add_observer(client::handle_menu_button_activate);
     app.insert_resource(ClearColor(BACKGROUND_COLOR))
         .insert_resource(client::Scoreboard { score: 0 })
         .insert_resource(client::ClientData::default())
@@ -137,7 +138,7 @@ fn main() {
         .add_systems(OnEnter(GameState::MainMenu), client::setup_main_menu)
         .add_systems(
             Update,
-            client::handle_menu_buttons.run_if(in_state(GameState::MainMenu)),
+            client::update_menu_button_colors.run_if(in_state(GameState::MainMenu)),
         )
         .add_systems(OnExit(GameState::MainMenu), client::teardown_main_menu);
 

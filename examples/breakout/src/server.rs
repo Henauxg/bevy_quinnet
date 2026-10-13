@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use bevy::{
     ecs::message::MessageReader,
-    math::bounding::{Aabb2d, BoundingCircle, BoundingVolume, IntersectsVolume},
     prelude::{
         default, Bundle, Commands, Component, Entity, Query, ResMut, Resource, Transform, Vec2,
         Vec3, With,
     },
+    shape::{Aabb2d, BoundingCircle, BoundingVolume, IntersectsVolume},
 };
 use bevy_quinnet::{
     server::{
