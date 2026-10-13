@@ -20,7 +20,7 @@ pub(crate) fn spawn_client_id_sender(
 
         let mut msg_bytes = BytesMut::with_capacity(CLIENT_ID_LEN);
         msg_bytes.put_uint(client_id, CLIENT_ID_LEN);
-        if let Err(err) = frame_sender.send(msg_bytes.into()).await {
+        if let Err(err) = frame_sender.send(msg_bytes.freeze()).await {
             error!(
                 "Error while sending client Id {} on Quinnet Protocol Channel, {}",
                 client_id, err

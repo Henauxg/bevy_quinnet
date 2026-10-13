@@ -5,15 +5,17 @@ use bevy::{
     audio::{AudioPlayer, Volume},
     ecs::system::Single,
     input::ButtonInput,
+    picking::hover::Hovered,
     prelude::*,
     sprite::Sprite,
     sprite_render::{ColorMaterial, MeshMaterial2d},
     state::state::NextState,
     text::{FontSize, TextColor, TextFont, TextSpan},
     ui::{
-        AlignItems, BackgroundColor, FlexDirection, Interaction, JustifyContent, Node,
-        PositionType, Val,
+        AlignItems, BackgroundColor, FlexDirection, JustifyContent, Node, PositionType, Pressed,
+        Val,
     },
+    ui_widgets::{Activate, Button},
 };
 use bevy_quinnet::{
     client::{
@@ -423,6 +425,7 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
             (
                 button_style.clone(),
                 Button,
+                Hovered::default(),
                 BackgroundColor(NORMAL_BUTTON_COLOR),
                 MenuItem::Host,
                 children![(Text::new("Host"), text_font.clone(), text_color)],
@@ -430,6 +433,7 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
             (
                 button_style,
                 Button,
+                Hovered::default(),
                 BackgroundColor(NORMAL_BUTTON_COLOR),
                 MenuItem::Join,
                 children![(Text::new("Join"), text_font, text_color)],
@@ -438,25 +442,28 @@ pub(crate) fn setup_main_menu(mut commands: Commands, asset_server: Res<AssetSer
     ));
 }
 
-pub(crate) fn handle_menu_buttons(
-    mut interaction_query: Query<
-        (&Interaction, &mut BackgroundColor, &MenuItem),
-        (Changed<Interaction>, With<Button>),
-    >,
+pub(crate) fn update_menu_button_colors(
+    mut buttons: Query<(&Hovered, Has<Pressed>, &mut BackgroundColor), With<MenuItem>>,
+) {
+    for (hovered, pressed, mut color) in &mut buttons {
+        *color = match (hovered.get(), pressed) {
+            (_, true) => PRESSED_BUTTON_COLOR,
+            (true, false) => HOVERED_BUTTON_COLOR,
+            (false, false) => NORMAL_BUTTON_COLOR,
+        }
+        .into();
+    }
+}
+
+pub(crate) fn handle_menu_button_activate(
+    activate: On<Activate>,
+    items: Query<&MenuItem>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    for (interaction, mut color, item) in &mut interaction_query {
-        match *interaction {
-            Interaction::Pressed => {
-                *color = PRESSED_BUTTON_COLOR.into();
-                match item {
-                    MenuItem::Host => next_state.set(GameState::HostingLobby),
-                    MenuItem::Join => next_state.set(GameState::JoiningLobby),
-                }
-            }
-            Interaction::Hovered => *color = HOVERED_BUTTON_COLOR.into(),
-            Interaction::None => *color = NORMAL_BUTTON_COLOR.into(),
-        }
+    match items.get(activate.entity) {
+        Ok(MenuItem::Host) => next_state.set(GameState::HostingLobby),
+        Ok(MenuItem::Join) => next_state.set(GameState::JoiningLobby),
+        Err(_) => {}
     }
 }
 

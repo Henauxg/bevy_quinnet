@@ -1,5 +1,10 @@
 # Changelog
 
+## Version 0.22.0 (2026-10-13)
+
+- Updated `bevy` to 0.20
+- Fixed a build failure with `tokio-util` 0.7.20 and newer
+
 ## Version 0.21.0 (2026-07-04)
 
 - Updated `bevy` to 0.19 (thanks to [ycastorium](https://github.com/ycastorium), PR [#48](https://github.com/Henauxg/bevy_quinnet/pull/48))

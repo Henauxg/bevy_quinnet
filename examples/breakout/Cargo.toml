@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 bevy_quinnet = { path = "../..", features = ["bincode-messages"] }
-bevy = { version = "0.19.0", default-features = false, features = [
+bevy = { version = "0.20.0", default-features = false, features = [
 	"bevy_asset",
 	"bevy_audio",
 	"vorbis",
@@ -16,6 +16,8 @@ bevy = { version = "0.19.0", default-features = false, features = [
 	"bevy_sprite_render",
 	"bevy_ui",
 	"bevy_ui_render",
+	"bevy_ui_widgets",
+	"ui_picking",
 	"bevy_state",
 	"bevy_text",
 	"bevy_core_pipeline",
