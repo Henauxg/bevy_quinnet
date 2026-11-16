@@ -1,4 +1,4 @@
-use std::{mem::size_of, time::Duration};
+use std::time::Duration;
 
 use bevy::{
     ecs::schedule::SystemSet,
@@ -36,6 +36,7 @@ pub(crate) const DEFAULT_KILL_MESSAGE_QUEUE_SIZE: usize = 10;
 
 /// Represents the id of a client on the server.
 pub type ClientId = u64;
+#[cfg(feature = "shared-client-id")]
 pub(crate) const CLIENT_ID_LEN: usize = size_of::<ClientId>();
 
 /// Async runtime newtype wrapping the tokio runtime handle. used by both quinnet client and server's async back-ends.

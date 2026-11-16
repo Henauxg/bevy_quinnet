@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use bevy::log::{error, info, trace};
+use bevy::log::{error, info};
 use bytes::Bytes;
 use quinn::{crypto::rustls::QuicClientConfig, ClientConfig, Endpoint};
 use quinn_proto::ConnectionStats;
@@ -732,7 +732,7 @@ pub(crate) async fn async_connection_task(
                         .await
                         .expect("Failed to signal connection failure to sync client");
                 }
-                client_id::ClientIdReception::Interrupted => trace!(
+                client_id::ClientIdReception::Interrupted => bevy::log::trace!(
                     "Connection {}, reception of client_id was interrupted",
                     local_id
                 ),
