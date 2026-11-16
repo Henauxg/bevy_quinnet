@@ -22,10 +22,8 @@ use crate::shared::{
     DEFAULT_KILL_MESSAGE_QUEUE_SIZE, DEFAULT_MESSAGE_QUEUE_SIZE,
 };
 
-#[cfg(feature = "recv_channels")]
 mod recv_channels;
 
-#[cfg(feature = "recv_channels")]
 pub use recv_channels::*;
 
 pub(crate) type PayloadSend = mpsc::Sender<(ChannelId, Bytes)>;
@@ -103,10 +101,8 @@ pub struct PeerConnection<S> {
     stats: ConnectionStats,
 
     /// Buffers of received payloads per receive channel
-    #[cfg(feature = "recv_channels")]
     recv_channels_payloads: Vec<std::collections::VecDeque<Bytes>>,
     /// Parameters for the connection
-    #[cfg(feature = "recv_channels")]
     recv_channels_cfg: RecvChannelsConfiguration,
 }
 
@@ -117,14 +113,10 @@ impl<S> PeerConnection<S> {
         close_send: broadcast::Sender<CloseReason>,
         from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
         to_channels_send: mpsc::Sender<ChannelSyncMessage>,
-        #[cfg(feature = "recv_channels")] recv_channels_cfg: RecvChannelsConfiguration,
+        recv_channels_cfg: RecvChannelsConfiguration,
     ) -> Self {
         Self {
-            #[cfg(feature = "recv_channels")]
-            recv_channels_payloads: Vec::with_capacity(
-                recv_channels_cfg.max_receive_channels_count,
-            ),
-            #[cfg(feature = "recv_channels")]
+            recv_channels_payloads: Vec::new(),
             recv_channels_cfg,
 
             specific,
@@ -157,7 +149,7 @@ impl<S> PeerConnection<S> {
     /// - the [ChannelId] the payload was received on, and the payload itself, as [Ok] if any
     /// - a [TryRecvError::Empty] if there is no payload to dequeue
     ///
-    /// If using the `recv_channels` feature, you should probably **not call** this method as it is already automatically called by the plugins during each Update. If not using the `recv_channels` feature, this is the only way to get received payloads on a [PeerConnection].
+    /// By default, the plugins call this method during each Update to move received payloads into per-channel buffers, which `receive_payload` and similar methods read. Calling it yourself takes payloads before or after them, so each reader misses some. To read every payload with this method, set `disable_recv_channels` on the `QuinnetClientPlugin` or `QuinnetServerPlugin`.
     pub fn dequeue_undispatched_bytes_from_peer(
         &mut self,
     ) -> Result<(ChannelId, Bytes), TryRecvError> {
@@ -278,7 +270,6 @@ impl<S> PeerConnection<S> {
         self.send_channels = Vec::with_capacity(send_channels_capacity);
         self.stats_mut().reset();
 
-        #[cfg(feature = "recv_channels")]
         self.recv_channels_payloads.clear();
     }
 }

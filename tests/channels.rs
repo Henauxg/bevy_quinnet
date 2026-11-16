@@ -1,8 +1,8 @@
 use bevy::prelude::App;
 
 use bevy_quinnet::{
-    client::{ClientPayloadSendError, QuinnetClient},
-    server::{QuinnetServer, ServerGroupPayloadSendError},
+    client::{ClientPayloadSendError, QuinnetClient, QuinnetClientPlugin},
+    server::{QuinnetServer, QuinnetServerPlugin, ServerGroupPayloadSendError},
     shared::channels::ChannelConfig,
 };
 
@@ -158,4 +158,73 @@ fn multi_instance_channels() {
             );
         }
     }
+}
+
+///////////////////////////////////////////////////////////
+///                                                     ///
+///                        Test                         ///
+///                                                     ///
+///////////////////////////////////////////////////////////
+
+#[test]
+fn disable_recv_channels() {
+    let mut server_app = start_server_app_with(QuinnetServerPlugin {
+        disable_recv_channels: true,
+        ..Default::default()
+    });
+    let port = server_listen_port(&server_app);
+    let mut client_app = start_client_app_with(
+        QuinnetClientPlugin {
+            disable_recv_channels: true,
+            ..Default::default()
+        },
+        port,
+    );
+    let client_id = wait_for_client_connected(&mut client_app, &mut server_app);
+
+    client_app
+        .world_mut()
+        .resource_mut::<QuinnetClient>()
+        .connection_mut()
+        .send_payload(TEST_MESSAGE_PAYLOAD)
+        .unwrap();
+    let (_, payload) = poll_until(
+        "client payload",
+        DEFAULT_TEST_TIMEOUT,
+        DEFAULT_POLL_INTERVAL,
+        || {
+            server_app.update();
+            server_app
+                .world_mut()
+                .resource_mut::<QuinnetServer>()
+                .endpoint_mut()
+                .connection_mut(client_id)
+                .unwrap()
+                .dequeue_undispatched_bytes_from_peer()
+                .ok()
+        },
+    );
+    assert_eq!(payload, TEST_MESSAGE_PAYLOAD);
+
+    server_app
+        .world_mut()
+        .resource_mut::<QuinnetServer>()
+        .endpoint_mut()
+        .send_payload(client_id, TEST_MESSAGE_PAYLOAD)
+        .unwrap();
+    let (_, payload) = poll_until(
+        "server payload",
+        DEFAULT_TEST_TIMEOUT,
+        DEFAULT_POLL_INTERVAL,
+        || {
+            client_app.update();
+            client_app
+                .world_mut()
+                .resource_mut::<QuinnetClient>()
+                .connection_mut()
+                .dequeue_undispatched_bytes_from_peer()
+                .ok()
+        },
+    );
+    assert_eq!(payload, TEST_MESSAGE_PAYLOAD);
 }

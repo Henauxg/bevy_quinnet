@@ -197,7 +197,6 @@ pub struct ServerEndpointConfigurationDefaultables {
     /// Configuration of the send channels opened on each connection accepted by this endpoint
     pub send_channels_cfg: SendChannelsConfiguration,
     /// Configuration for the recv channels for each connection accepted by this endpoint
-    #[cfg(feature = "recv_channels")]
     pub recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
 }
 
@@ -264,7 +263,6 @@ impl QuinnetServer {
         let local_addr = socket.local_addr()?;
 
         info!("Starting endpoint on: {local_addr} ...");
-        #[cfg(feature = "recv_channels")]
         let recv_channels_cfg_clone = config.defaultables.recv_channels_cfg.clone();
         self.runtime.spawn(async move {
             endpoint_task(
@@ -272,7 +270,6 @@ impl QuinnetServer {
                 quinn_endpoint_config,
                 to_sync_endpoint_send.clone(),
                 endpoint_close_recv,
-                #[cfg(feature = "recv_channels")]
                 recv_channels_cfg_clone,
             )
             .await;
@@ -283,7 +280,6 @@ impl QuinnetServer {
             from_async_endpoint_recv,
             config.addr_config,
             local_addr,
-            #[cfg(feature = "recv_channels")]
             config.defaultables.recv_channels_cfg,
         );
         for channel_type in config.defaultables.send_channels_cfg.configs() {
@@ -322,7 +318,6 @@ async fn endpoint_task(
     endpoint_config: ServerConfig,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
     mut endpoint_close_recv: broadcast::Receiver<()>,
-    #[cfg(feature = "recv_channels")]
     recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
 ) {
     let endpoint = QuinnEndpoint::new(
@@ -344,13 +339,11 @@ async fn endpoint_task(
                     Err(err) => error!("An incoming connection failed: {}", err),
                     Ok(connection) => {
                         let to_sync_endpoint_send = to_sync_endpoint_send.clone();
-                        #[cfg(feature = "recv_channels")]
                         let recv_channels_cfg = recv_channels_cfg.clone();
                         tokio::spawn(async move {
                             client_connection_task(
                                 connection,
                                 to_sync_endpoint_send,
-                                #[cfg(feature = "recv_channels")]
                                 recv_channels_cfg
                             )
                             .await
@@ -365,7 +358,6 @@ async fn endpoint_task(
 async fn client_connection_task(
     connection_handle: quinn::Connection,
     to_sync_endpoint_send: mpsc::Sender<ServerAsyncMessage>,
-    #[cfg(feature = "recv_channels")]
     recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
 ) {
     let (client_close_send, client_close_recv) =
@@ -387,7 +379,6 @@ async fn client_connection_task(
             client_close_send.clone(),
             from_channels_recv,
             to_channels_send,
-            #[cfg(feature = "recv_channels")]
             recv_channels_cfg,
         )))
         .await
@@ -500,11 +491,9 @@ pub fn handle_server_events(
     }
 }
 
-#[cfg(feature = "recv_channels")]
 /// Type alias for the server's recv channel error event
 pub type ServerRecvChannelError = crate::shared::error::RecvChannelErrorEvent<ClientId>;
 
-#[cfg(feature = "recv_channels")]
 /// - Receives events from the async server tasks
 ///
 /// This system generates server's bevy events
@@ -519,7 +508,6 @@ pub fn dispatch_received_payloads(
     endpoint.dispatch_received_payloads(&mut recv_error_events);
 }
 
-#[cfg(feature = "recv_channels")]
 /// Clears stale payloads on all receive channels
 pub fn clear_stale_received_payloads(mut server: ResMut<QuinnetServer>) {
     let Some(endpoint) = server.get_endpoint_mut() else {
@@ -540,12 +528,16 @@ pub struct QuinnetServerPlugin {
     /// Server systems are scheduled to only run if the `Server` resource exists.
     /// A Bevy command to create the resource `commands.init_resource::<Server>();` can be done later on, when needed.
     pub initialize_later: bool,
+    /// If `true`, the plugin doesn't add the systems that move received payloads into per-channel buffers, so `receive_payload` and similar methods return nothing.
+    /// Set this when payloads are read with [`PeerConnection::dequeue_undispatched_bytes_from_peer`](crate::shared::peer_connection::PeerConnection::dequeue_undispatched_bytes_from_peer) instead, for example by `bevy_replicon_quinnet`.
+    pub disable_recv_channels: bool,
 }
 
 impl Plugin for QuinnetServerPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<ConnectionEvent>()
-            .add_message::<ConnectionLostEvent>();
+            .add_message::<ConnectionLostEvent>()
+            .add_message::<ServerRecvChannelError>();
 
         if !self.initialize_later {
             app.init_resource::<QuinnetServer>();
@@ -557,9 +549,7 @@ impl Plugin for QuinnetServerPlugin {
                 .in_set(QuinnetSyncPreUpdate)
                 .run_if(resource_exists::<QuinnetServer>),
         );
-        #[cfg(feature = "recv_channels")]
-        {
-            app.add_message::<ServerRecvChannelError>();
+        if !self.disable_recv_channels {
             app.add_systems(
                 PreUpdate,
                 dispatch_received_payloads

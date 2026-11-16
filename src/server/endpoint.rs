@@ -11,7 +11,7 @@ use crate::{
     server::{
         connection::ServerConnection, EndpointAddrConfiguration, ServerAsyncMessage,
         ServerDisconnectError, ServerGroupPayloadSendError, ServerGroupSendError,
-        ServerPayloadSendError, ServerSendError, ServerSyncMessage,
+        ServerPayloadSendError, ServerRecvChannelError, ServerSendError, ServerSyncMessage,
     },
     shared::{
         channels::{Channel, ChannelConfig, ChannelId, CloseReason},
@@ -41,7 +41,6 @@ pub struct Endpoint {
     stats: EndpointStats,
 
     /// Parameters for all connections on this endpoint
-    #[cfg(feature = "recv_channels")]
     recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
 }
 
@@ -51,7 +50,6 @@ impl Endpoint {
         from_async_endpoint_recv: mpsc::Receiver<ServerAsyncMessage>,
         addr_config: EndpointAddrConfiguration,
         local_addr: SocketAddr,
-        #[cfg(feature = "recv_channels")]
         recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
     ) -> Self {
         Self {
@@ -64,7 +62,6 @@ impl Endpoint {
             stats: EndpointStats::default(),
             addr_config,
             local_addr,
-            #[cfg(feature = "recv_channels")]
             recv_channels_cfg,
         }
     }
@@ -492,10 +489,6 @@ impl Endpoint {
     }
 }
 
-#[cfg(feature = "recv_channels")]
-use crate::server::ServerRecvChannelError;
-
-#[cfg(feature = "recv_channels")]
 impl Endpoint {
     /// Attempts to receive a full payload sent by the specified client.
     ///

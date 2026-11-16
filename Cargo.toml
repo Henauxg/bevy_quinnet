@@ -39,15 +39,13 @@ bincode = { version = "2.0.1", optional = true, features = ["serde"] }
 serde = { version = "1.0.145", optional = true, features = ["derive"] }
 
 [features]
-default = ["client", "server", "recv_channels", "shared-client-id"]
+default = ["client", "server", "shared-client-id"]
 
 # Enables client features
 client = []
 # Enables server features
 server = []
 
-# Automatically dispatches received payloads to channel specific queues (for both client and server) 
-recv_channels = []
 # Server sends the client id to the client, client wait for it before being “connected”
 shared-client-id = []
 # Adds some quick utility methods on server and client to send messages directly (serialized/deserialized with bincode)

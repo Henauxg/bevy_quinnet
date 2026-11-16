@@ -56,8 +56,6 @@ Message helpers such as `send_message` and `try_receive_message` require the `bi
 bevy_quinnet = { version = "0.22", features = ["bincode-messages"] }
 ```
 
-Receiving payloads uses the default `recv_channels` feature (`receive_payload`, etc.).
-
 ### Client
 
 - Add the `QuinnetClientPlugin` to the bevy app:
