@@ -62,7 +62,6 @@ pub enum ConnectionSendError {
 #[error("Connection is already closed")]
 pub struct ConnectionAlreadyClosed;
 
-#[cfg(feature = "recv_channels")]
 /// Error while receiving payloads on a recv channel
 #[derive(thiserror::Error, Debug, Clone)]
 #[error("Error while receiving payload on a recv channel")]
@@ -77,7 +76,6 @@ pub enum RecvChannelError {
     MaxRecvChannelCountReached(ChannelId),
 }
 
-#[cfg(feature = "recv_channels")]
 /// Event raised when there is an error while receiving data from the server
 #[derive(bevy::ecs::message::Message, Debug, Clone)]
 pub struct RecvChannelErrorEvent<T> {

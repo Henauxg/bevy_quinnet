@@ -62,7 +62,6 @@ pub struct ClientConnectionConfigurationDefaultables {
     /// Configuration of the send channels opened on the connection
     pub send_channels_cfg: SendChannelsConfiguration,
     /// Configuration for the receive channels on the connection
-    #[cfg(feature = "recv_channels")]
     pub recv_channels_cfg: crate::shared::peer_connection::RecvChannelsConfiguration,
 }
 
@@ -249,7 +248,6 @@ impl QuinnetClient {
             close_send,
             from_channels_recv,
             to_channels_send,
-            #[cfg(feature = "recv_channels")]
             config.defaultables.recv_channels_cfg,
         );
 
@@ -405,11 +403,9 @@ pub fn handle_client_events(
     }
 }
 
-#[cfg(feature = "recv_channels")]
 /// Type alias for the recv channel error event for the client
 pub type ClientRecvChannelError = crate::shared::error::RecvChannelErrorEvent<ConnectionLocalId>;
 
-#[cfg(feature = "recv_channels")]
 /// Dispatches received payloads to their respective channel buffers
 ///
 /// This system generates client's bevy events
@@ -439,7 +435,6 @@ pub fn dispatch_received_payloads(
     }
 }
 
-#[cfg(feature = "recv_channels")]
 /// Clears stale payloads on all receive channels
 pub fn clear_stale_received_payloads(mut client: ResMut<QuinnetClient>) {
     for connection in client.connections.values_mut() {
@@ -456,6 +451,9 @@ pub struct QuinnetClientPlugin {
     /// Client systems are scheduled to only run if the `Client` resource exists.
     /// A Bevy command to create the resource `commands.init_resource::<Client>();` can be done later on, when needed.
     pub initialize_later: bool,
+    /// If `true`, the plugin doesn't add the systems that move received payloads into per-channel buffers, so `receive_payload` and similar methods return nothing.
+    /// Set this when payloads are read with [`PeerConnection::dequeue_undispatched_bytes_from_peer`](crate::shared::peer_connection::PeerConnection::dequeue_undispatched_bytes_from_peer) instead, for example by `bevy_replicon_quinnet`.
+    pub disable_recv_channels: bool,
 }
 
 impl Plugin for QuinnetClientPlugin {
@@ -465,7 +463,8 @@ impl Plugin for QuinnetClientPlugin {
             .add_message::<ConnectionLostEvent>()
             .add_message::<CertInteractionEvent>()
             .add_message::<CertTrustUpdateEvent>()
-            .add_message::<CertConnectionAbortEvent>();
+            .add_message::<CertConnectionAbortEvent>()
+            .add_message::<ClientRecvChannelError>();
 
         if !self.initialize_later {
             app.init_resource::<QuinnetClient>();
@@ -477,9 +476,7 @@ impl Plugin for QuinnetClientPlugin {
                 .in_set(QuinnetSyncPreUpdate)
                 .run_if(resource_exists::<QuinnetClient>),
         );
-        #[cfg(feature = "recv_channels")]
-        {
-            app.add_message::<ClientRecvChannelError>();
+        if !self.disable_recv_channels {
             app.add_systems(
                 PreUpdate,
                 dispatch_received_payloads

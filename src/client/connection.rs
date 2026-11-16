@@ -598,7 +598,6 @@ impl ClientSideConnection {
     }
 }
 
-#[cfg(feature = "recv_channels")]
 impl ClientSideConnection {
     /// Attempts to receive a full payload sent by the server.
     ///

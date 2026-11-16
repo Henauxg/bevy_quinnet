@@ -225,12 +225,13 @@ fn start_listening(mut server: ResMut<QuinnetServer>) {
 // --- app setup ---
 
 pub fn build_client_app() -> App {
+    build_client_app_with(QuinnetClientPlugin::default())
+}
+
+pub fn build_client_app_with(plugin: QuinnetClientPlugin) -> App {
     let mut client_app = App::new();
     client_app
-        .add_plugins((
-            ScheduleRunnerPlugin::default(),
-            QuinnetClientPlugin::default(),
-        ))
+        .add_plugins((ScheduleRunnerPlugin::default(), plugin))
         .insert_resource(ClientTestData::default())
         .add_systems(Startup, start_simple_connection)
         .add_systems(Update, handle_client_events);
@@ -251,12 +252,13 @@ pub fn build_cert_client_app() -> App {
 }
 
 pub fn build_server_app() -> App {
+    build_server_app_with(QuinnetServerPlugin::default())
+}
+
+pub fn build_server_app_with(plugin: QuinnetServerPlugin) -> App {
     let mut server_app = App::new();
     server_app
-        .add_plugins((
-            ScheduleRunnerPlugin::default(),
-            QuinnetServerPlugin::default(),
-        ))
+        .add_plugins((ScheduleRunnerPlugin::default(), plugin))
         .insert_resource(ServerTestData::default())
         .add_systems(Startup, start_listening)
         .add_systems(Update, handle_server_events);
@@ -264,13 +266,21 @@ pub fn build_server_app() -> App {
 }
 
 pub fn start_simple_server_app() -> App {
-    let mut server_app = build_server_app();
+    start_server_app_with(QuinnetServerPlugin::default())
+}
+
+pub fn start_server_app_with(plugin: QuinnetServerPlugin) -> App {
+    let mut server_app = build_server_app_with(plugin);
     server_app.update();
     server_app
 }
 
 pub fn start_simple_client_app(port: u16) -> App {
-    let mut client_app = build_client_app();
+    start_client_app_with(QuinnetClientPlugin::default(), port)
+}
+
+pub fn start_client_app_with(plugin: QuinnetClientPlugin, port: u16) -> App {
+    let mut client_app = build_client_app_with(plugin);
     client_app.insert_resource(Port(port));
     client_app.update();
     client_app
