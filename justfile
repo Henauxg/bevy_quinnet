@@ -20,7 +20,8 @@ check:
     @echo "==> docs"
     cargo doc -p bevy_quinnet --no-deps --all-features --locked
     @echo "==> machete"
-    cargo machete
+    # With `cargo machete`, cargo-machete 0.9.1 reads "machete" as a folder to scan and fails.
+    cargo-machete
 
 # Format all Rust code
 format:

@@ -55,6 +55,7 @@ impl<S> PeerConnection<S> {
         }
     }
 
+    #[cfg(feature = "client")]
     pub(crate) fn clear_stale_received_payloads(&mut self) {
         if self.recv_channels_cfg.clear_stale_received_payloads {
             self.clear_received_payloads();

@@ -1,26 +1,26 @@
 use bevy::log::trace;
 use bytes::Bytes;
 use quinn::VarInt;
-use tokio::sync::{
-    broadcast,
-    mpsc::{self},
-};
+use tokio::sync::mpsc;
 
-use crate::shared::channels::{
-    reliable::{
-        recv::reliable_channels_receiver_task,
-        send::{ordered_reliable_channel_task, unordered_reliable_channel_task},
+use crate::shared::{
+    channels::{
+        reliable::{
+            recv::reliable_channels_receiver_task,
+            send::{ordered_reliable_channel_task, unordered_reliable_channel_task},
+        },
+        unreliable::{recv::unreliable_channel_receiver_task, send::unreliable_channel_task},
+        ChannelConfig, ChannelId, ChannelSyncMessage, CloseRecv,
     },
-    unreliable::{recv::unreliable_channel_receiver_task, send::unreliable_channel_task},
-    ChannelAsyncMessage, ChannelConfig, ChannelId, ChannelSyncMessage, CloseReason, CloseRecv,
+    peer_connection::{ChannelAsyncMsgSend, ChannelSyncMsgRecv, PayloadSend},
 };
 
 /// Spawn a task to handle send channels creation for this connection
 pub(crate) fn spawn_send_channels_tasks_spawner(
     connection_handle: quinn::Connection,
-    close_recv: broadcast::Receiver<CloseReason>,
-    to_channels_recv: mpsc::Receiver<ChannelSyncMessage>,
-    from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
+    close_recv: CloseRecv,
+    to_channels_recv: ChannelSyncMsgRecv,
+    from_channels_send: ChannelAsyncMsgSend,
 ) {
     tokio::spawn(async move {
         send_channels_tasks_spawner(
@@ -37,7 +37,7 @@ pub(crate) struct SendChannelTaskData {
     pub(crate) connection: quinn::Connection,
     pub(crate) id: ChannelId,
     pub(crate) channels_keepalive: mpsc::Sender<()>,
-    pub(crate) from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
+    pub(crate) from_channels_send: ChannelAsyncMsgSend,
     pub(crate) close_recv: CloseRecv,
     pub(crate) channel_close_recv: mpsc::Receiver<()>,
     pub(crate) bytes_recv: mpsc::Receiver<Bytes>,
@@ -45,9 +45,9 @@ pub(crate) struct SendChannelTaskData {
 
 pub(crate) async fn send_channels_tasks_spawner(
     connection: quinn::Connection,
-    mut close_recv: broadcast::Receiver<CloseReason>,
-    mut to_channels_recv: mpsc::Receiver<ChannelSyncMessage>,
-    from_channels_send: mpsc::Sender<ChannelAsyncMessage>,
+    mut close_recv: CloseRecv,
+    mut to_channels_recv: ChannelSyncMsgRecv,
+    from_channels_send: ChannelAsyncMsgSend,
 ) {
     // Use an mpsc channel where, instead of sending messages, we wait for the channel to be closed, which happens when every sender has been dropped. We can't use a JoinSet as simply here since we would also need to drain closed channels from it.
     let (channel_tasks_keepalive, mut channel_tasks_waiter) = mpsc::channel::<()>(1);
@@ -106,8 +106,8 @@ pub(crate) async fn send_channels_tasks_spawner(
 pub(crate) fn spawn_recv_channels_tasks(
     connection_handle: quinn::Connection,
     connection_id: u64,
-    close_recv: broadcast::Receiver<CloseReason>,
-    bytes_incoming_send: mpsc::Sender<(ChannelId, Bytes)>,
+    close_recv: CloseRecv,
+    bytes_incoming_send: PayloadSend,
 ) {
     // Spawn a task to listen for reliable messages
     {

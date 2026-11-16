@@ -18,15 +18,15 @@ pub use utils::*;
 
 mod utils;
 
+const TEST_CERT_FILE: &str = "tests/fixtures/cert.pem.test";
+const TEST_KEY_FILE: &str = "tests/fixtures/key.pem.test";
+const TEST_CERT_FINGERPRINT_B64: &str = "sieQJ9J6DIrQP37HAlUFk2hYhLZDY9G5OZQpqzkWlKo=";
+
 ///////////////////////////////////////////////////////////
 ///                                                     ///
 ///                        Test                         ///
 ///                                                     ///
 ///////////////////////////////////////////////////////////
-
-const TEST_CERT_FILE: &str = "tests/fixtures/cert.pem.test";
-const TEST_KEY_FILE: &str = "tests/fixtures/key.pem.test";
-const TEST_CERT_FINGERPRINT_B64: &str = "sieQJ9J6DIrQP37HAlUFk2hYhLZDY9G5OZQpqzkWlKo=";
 
 #[test]
 fn trust_on_first_use() {
@@ -301,7 +301,7 @@ fn trust_on_first_use() {
 
         let client = client_app.world().resource::<QuinnetClient>();
         assert!(
-            client.is_connected() == false,
+            !client.is_connected(),
             "The default connection should not be connected to the server"
         );
     }

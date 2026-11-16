@@ -26,7 +26,7 @@ fn default_channel() {
     let client_default_channel = get_default_client_channel(&client_app);
     let server_default_channel = get_default_server_channel(&server_app);
 
-    for channel in vec![client_default_channel, server_default_channel] {
+    for channel in [client_default_channel, server_default_channel] {
         assert!(matches!(channel, 0), "Default channel id should be 0");
     }
 
@@ -101,7 +101,7 @@ fn multi_instance_channels() {
     let mut server_app: App = start_simple_server_app();
     let port = server_listen_port(&server_app);
 
-    for channel_type in vec![
+    for channel_type in [
         ChannelConfig::default_ordered_reliable(),
         ChannelConfig::default_unordered_reliable(),
         ChannelConfig::default_unreliable(),
@@ -117,7 +117,7 @@ fn multi_instance_channels() {
         let server_channel_2 = open_server_channel(channel_type, &mut server_app);
 
         let mut msg_counter = 0;
-        for channel in vec![client_1_channel_1, client_1_channel_2] {
+        for channel in [client_1_channel_1, client_1_channel_2] {
             send_and_test_client_message(
                 client_id_1,
                 channel,
@@ -126,7 +126,7 @@ fn multi_instance_channels() {
                 &mut msg_counter,
             );
         }
-        for channel in vec![server_channel_1, server_channel_2] {
+        for channel in [server_channel_1, server_channel_2] {
             send_and_test_server_message(
                 client_id_1,
                 channel,
@@ -140,7 +140,7 @@ fn multi_instance_channels() {
         let client_id_2 = wait_for_client_connected(&mut client_app_2, &mut server_app);
 
         for (client_id, mut client_app) in
-            vec![(client_id_1, client_app_1), (client_id_2, client_app_2)]
+            [(client_id_1, client_app_1), (client_id_2, client_app_2)]
         {
             send_and_test_server_message(
                 client_id,
