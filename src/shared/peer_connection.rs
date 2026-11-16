@@ -1,13 +1,9 @@
 use std::collections::BTreeSet;
 
-use bevy::log::error;
 use bytes::Bytes;
-use tokio::sync::{
-    broadcast,
-    mpsc::{
-        self,
-        error::{TryRecvError, TrySendError},
-    },
+use tokio::sync::mpsc::{
+    self,
+    error::{TryRecvError, TrySendError},
 };
 
 use crate::shared::{
@@ -92,12 +88,12 @@ pub struct PeerConnection<S> {
     /// Send channels opened on this connection
     send_channels: Vec<Option<Channel>>,
     /// Internal queue of received bytes from the peer
-    bytes_from_peer_recv: mpsc::Receiver<(ChannelId, Bytes)>,
+    bytes_from_peer_recv: PayloadRecv,
     /// Sender for internal quinnet messages going to the async channels task
-    to_channels_send: mpsc::Sender<ChannelSyncMessage>,
+    to_channels_send: ChannelSyncMsgSend,
     /// Receiver for internal quinnet messages coming from the async channels task
-    from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
-    close_send: broadcast::Sender<CloseReason>,
+    from_channels_recv: ChannelAsyncMsgRecv,
+    close_send: CloseSend,
     stats: ConnectionStats,
 
     /// Buffers of received payloads per receive channel
@@ -109,10 +105,10 @@ pub struct PeerConnection<S> {
 impl<S> PeerConnection<S> {
     pub(crate) fn new(
         specific: S,
-        bytes_from_peer_recv: mpsc::Receiver<(ChannelId, Bytes)>,
-        close_send: broadcast::Sender<CloseReason>,
-        from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
-        to_channels_send: mpsc::Sender<ChannelSyncMessage>,
+        bytes_from_peer_recv: PayloadRecv,
+        close_send: CloseSend,
+        from_channels_recv: ChannelAsyncMsgRecv,
+        to_channels_send: ChannelSyncMsgSend,
         recv_channels_cfg: RecvChannelsConfiguration,
     ) -> Self {
         Self {
@@ -248,18 +244,20 @@ impl<S> PeerConnection<S> {
         &self.stats
     }
 
+    #[cfg(feature = "server")]
     pub(crate) fn try_close(&mut self, reason: CloseReason) {
         match &self.close(reason) {
             Ok(_) => (),
-            Err(err) => error!("Failed to properly close clonnection: {}", err),
+            Err(err) => bevy::log::error!("Failed to properly close clonnection: {}", err),
         }
     }
 
+    #[cfg(feature = "client")]
     pub(crate) fn internal_reset(
         &mut self,
         close_send: CloseSend,
         to_channels_send: ChannelSyncMsgSend,
-        from_channels_recv: mpsc::Receiver<ChannelAsyncMessage>,
+        from_channels_recv: ChannelAsyncMsgRecv,
         bytes_from_peer_recv: PayloadRecv,
         send_channels_capacity: usize,
     ) {
