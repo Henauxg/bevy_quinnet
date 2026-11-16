@@ -53,7 +53,7 @@ The implementation uses [tokio channels](https://tokio.rs/tokio/tutorial/channel
 Message helpers such as `send_message` and `try_receive_message` require the `bincode-messages` feature:
 
 ```toml
-bevy_quinnet = { version = "0.22", features = ["bincode-messages"] }
+bevy_quinnet = { version = "0.23", features = ["bincode-messages"] }
 ```
 
 ### Client
@@ -320,6 +320,7 @@ Bevy Quinnet can be used as a transport in [`bevy_replicon`](https://github.com/
 
 | bevy_quinnet | bevy |
 | :----------- | :--- |
+| 0.23         | 0.20 |
 | 0.22         | 0.20 |
 | 0.21         | 0.19 |
 | 0.20         | 0.18 |

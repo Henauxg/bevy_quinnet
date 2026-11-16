@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Version 0.23.0 (2026-11-16)
 
 - Breaking: removed the `recv_channels` feature. The per-channel receive buffers and the `receive_payload` family of methods are always available. Any crate could turn the feature on for the whole build, which stopped crates that read payloads with `dequeue_undispatched_bytes_from_peer` from receiving anything ([bevy_replicon_quinnet#7](https://github.com/Henauxg/bevy_replicon_quinnet/issues/7))
 - Added `disable_recv_channels` to `QuinnetClientPlugin` and `QuinnetServerPlugin`. When set, the plugins don't fill the per-channel buffers, so `dequeue_undispatched_bytes_from_peer` receives every payload
