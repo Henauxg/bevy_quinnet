@@ -26,3 +26,8 @@ bevy = { version = "0.20.0", default-features = false, features = [
 ] }
 strum = { version = "0.28.0", features = ["derive"] }
 serde = { version = "1.0.145", features = ["derive"] }
+
+[lints.clippy]
+# Bevy systems often need many parameters and long Query types.
+too_many_arguments = "allow"
+type_complexity = "allow"
